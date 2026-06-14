@@ -20,6 +20,8 @@ import {
   validateEverQuestDirectory,
   type FileSystemDirectoryHandleLike,
 } from '../shared/fileSystemAccess'
+import { useSender } from '../shared/clientEventBusHooks'
+import { MessageType } from '../shared/messages'
 
 type LogStatus = 'idle' | 'reading' | 'ready'
 type TriggerStatus = 'idle' | 'starting' | 'started'
@@ -30,6 +32,7 @@ interface StartupButtonProps {
 }
 
 export function StartupButton({ onPipChange }: StartupButtonProps) {
+  const send = useSender()
   const [logStatus, setLogStatus] = useState<LogStatus>('idle')
   const [triggerStatus, setTriggerStatus] = useState<TriggerStatus>('idle')
   const [isChoosingDirectory, setIsChoosingDirectory] = useState(false)
@@ -107,6 +110,9 @@ export function StartupButton({ onPipChange }: StartupButtonProps) {
       setSavedDirectoryHandle(selectedDirectoryHandle)
       setDirectoryHandle(selectedDirectoryHandle)
       setLogStatus('ready')
+      send(MessageType.EverQuestDirectoryOpened, {
+        directoryHandle: selectedDirectoryHandle,
+      })
     } catch (error) {
       setDirectoryHandle(null)
       setLogStatus('idle')

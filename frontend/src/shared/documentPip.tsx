@@ -1,5 +1,7 @@
 import { createRoot, type Root } from 'react-dom/client'
 import { Pip } from '../pip/pip'
+import { clientEventBus } from './clientEventBus'
+import { ClientEventBusProvider } from './ClientEventBusProvider'
 
 interface DocumentPictureInPictureOptions {
   height?: number
@@ -99,7 +101,11 @@ function renderPip(targetWindow: Window) {
   targetDocument.body.append(rootElement)
 
   pipRoot = createRoot(rootElement)
-  pipRoot.render(<Pip />)
+  pipRoot.render(
+    <ClientEventBusProvider bus={clientEventBus}>
+      <Pip />
+    </ClientEventBusProvider>,
+  )
 }
 
 function cleanupPipWindow() {
