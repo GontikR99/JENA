@@ -24,7 +24,38 @@ export type CloneablePayload =
   | { [key: string]: CloneablePayload }
   | CloneablePayload[]
 
-export type EndpointMessages = Record<never, never>
+export interface RegexPatternRegistration {
+  id: string
+  regularExpression: string
+}
+
+export interface RegexCaptures {
+  named: Record<string, string | null>
+  positional: Array<string | null>
+}
+
+export interface RegexMatchFoundMessage {
+  captures: RegexCaptures
+  characterName: string
+  patternId: string
+  serverName: string
+  text: string
+  timestamp: string
+}
+
+export interface EverQuestCharacter {
+  characterName: string
+  serverName: string
+}
+
+export interface FileWatcherCharactersMessage {
+  characters: EverQuestCharacter[]
+}
+
+export interface EndpointMessages {
+  'client.file-watcher.characters': FileWatcherCharactersMessage
+  'client.matcher.match-found': RegexMatchFoundMessage
+}
 
 export interface EverQuestLogFile {
   characterName: string
@@ -40,10 +71,10 @@ export interface RpcEndpoints {
       }
       response: Record<string, never>
     }
-    enumerateLogs: {
+    getCharacters: {
       request: Record<string, never>
       response: {
-        logs: EverQuestLogFile[]
+        characters: EverQuestCharacter[]
       }
     }
     startWatch: {
@@ -52,6 +83,14 @@ export interface RpcEndpoints {
     }
     stopWatch: {
       request: Record<string, never>
+      response: Record<string, never>
+    }
+  }
+  'worker.matcher-service': {
+    'add-patterns': {
+      request: {
+        patterns: RegexPatternRegistration[]
+      }
       response: Record<string, never>
     }
   }

@@ -1,0 +1,192 @@
+import { describe, expect, it } from 'vitest'
+import { MessageBroker, MessageBus } from '../../shared/messageBroker'
+import type { RegexMatchFoundMessage } from '../../shared/messages'
+import { install, installInstance, type Deps } from '../di'
+import {
+  FileWatcher,
+  type EverQuestLogLineRecord,
+  type FileWatcherObserver,
+} from '../FileWatcher'
+import { MatcherService } from '../MatcherService'
+import { MessageBroker as WorkerMessageBroker } from '../MessageBroker'
+
+describe('MatcherService', () => {
+  it('sends match messages with positional and named captures', async () => {
+    const { broker, fileWatcher } = createHarness()
+    const receivedMatches: RegexMatchFoundMessage[] = []
+
+    broker.listen('client.matcher.match-found', (message) => {
+      receivedMatches.push(message.payload as RegexMatchFoundMessage)
+    })
+
+    await broker.call('test.matcher-service', 'matcher-service', 'add-patterns', {
+      patterns: [
+        {
+          id: 'positional-say',
+          regularExpression: "(.+) says, '(.*)'",
+        },
+        {
+          id: 'named-say',
+          regularExpression: "(?<speaker>.+) says, '(?<quote>.*)'",
+        },
+      ],
+    })
+
+    fileWatcher.emit({
+      characterName: 'Testcharacter',
+      serverName: 'Testserver',
+      text: "Arias says, 'Relax for a moment.'",
+      timestamp: 'Fri Oct 24 13:33:11 2025',
+    })
+    await flushAsyncWork()
+
+    expect(receivedMatches).toEqual([
+      {
+        captures: {
+          named: {},
+          positional: ['Arias', 'Relax for a moment.'],
+        },
+        characterName: 'Testcharacter',
+        patternId: 'positional-say',
+        serverName: 'Testserver',
+        text: "Arias says, 'Relax for a moment.'",
+        timestamp: 'Fri Oct 24 13:33:11 2025',
+      },
+      {
+        captures: {
+          named: {
+            quote: 'Relax for a moment.',
+            speaker: 'Arias',
+          },
+          positional: ['Arias', 'Relax for a moment.'],
+        },
+        characterName: 'Testcharacter',
+        patternId: 'named-say',
+        serverName: 'Testserver',
+        text: "Arias says, 'Relax for a moment.'",
+        timestamp: 'Fri Oct 24 13:33:11 2025',
+      },
+    ])
+  })
+
+  it('does not emit a match message for non-matching log lines', async () => {
+    const { broker, fileWatcher } = createHarness()
+    const receivedMatches: RegexMatchFoundMessage[] = []
+
+    broker.listen('client.matcher.match-found', (message) => {
+      receivedMatches.push(message.payload as RegexMatchFoundMessage)
+    })
+
+    await broker.call('test.matcher-service', 'matcher-service', 'add-patterns', {
+      patterns: [
+        {
+          id: 'healing',
+          regularExpression: 'healed you for (\\d+) points',
+        },
+      ],
+    })
+
+    fileWatcher.emit({
+      characterName: 'Testcharacter',
+      serverName: 'Testserver',
+      text: "Arias says, 'Relax for a moment.'",
+      timestamp: 'Fri Oct 24 13:33:11 2025',
+    })
+    await flushAsyncWork()
+
+    expect(receivedMatches).toEqual([])
+  })
+
+  it('rejects bad regular expressions without replacing existing patterns', async () => {
+    const { broker, fileWatcher } = createHarness()
+    const receivedMatches: RegexMatchFoundMessage[] = []
+
+    broker.listen('client.matcher.match-found', (message) => {
+      receivedMatches.push(message.payload as RegexMatchFoundMessage)
+    })
+
+    await broker.call('test.matcher-service', 'matcher-service', 'add-patterns', {
+      patterns: [
+        {
+          id: 'arias',
+          regularExpression: 'Arias',
+        },
+      ],
+    })
+
+    await expect(
+      broker.call('test.matcher-service', 'matcher-service', 'add-patterns', {
+        patterns: [
+          {
+            id: 'bad',
+            regularExpression: '(',
+          },
+        ],
+      }),
+    ).rejects.toThrow()
+
+    fileWatcher.emit({
+      characterName: 'Testcharacter',
+      serverName: 'Testserver',
+      text: "Arias says, 'Relax for a moment.'",
+      timestamp: 'Fri Oct 24 13:33:11 2025',
+    })
+    await flushAsyncWork()
+
+    expect(receivedMatches).toEqual([
+      {
+        captures: {
+          named: {},
+          positional: [],
+        },
+        characterName: 'Testcharacter',
+        patternId: 'arias',
+        serverName: 'Testserver',
+        text: "Arias says, 'Relax for a moment.'",
+        timestamp: 'Fri Oct 24 13:33:11 2025',
+      },
+    ])
+  })
+})
+
+function createHarness() {
+  const deps: Deps = new Map()
+  const bus = new MessageBus()
+  const broker = new MessageBroker(bus)
+  const fileWatcher = new FakeFileWatcher()
+
+  installInstance(
+    deps,
+    WorkerMessageBroker,
+    broker as unknown as WorkerMessageBroker,
+  )
+  installInstance(deps, FileWatcher, fileWatcher as unknown as FileWatcher)
+  install(deps, MatcherService)
+
+  return {
+    broker,
+    fileWatcher,
+  }
+}
+
+function flushAsyncWork() {
+  return new Promise((resolve) => {
+    globalThis.setTimeout(resolve, 0)
+  })
+}
+
+class FakeFileWatcher {
+  private observer: FileWatcherObserver | null = null
+
+  observe(observer: FileWatcherObserver) {
+    this.observer = observer
+
+    return () => {
+      this.observer = null
+    }
+  }
+
+  emit(record: EverQuestLogLineRecord) {
+    this.observer?.onLogLine(record)
+  }
+}

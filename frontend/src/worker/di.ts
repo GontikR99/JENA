@@ -19,6 +19,16 @@ export function install<TInstance>(
   return instance
 }
 
+export function installInstance<TInstance>(
+  deps: Deps,
+  ComponentClass: ComponentClass<TInstance>,
+  instance: TInstance,
+) {
+  deps.set(ComponentClass, instance)
+
+  return instance
+}
+
 export function getDependency<TInstance>(
   deps: Deps,
   ComponentClass: ComponentClass<TInstance>,

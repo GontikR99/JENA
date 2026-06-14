@@ -153,7 +153,7 @@ Worker-to-client routing rules:
 
 `frontend/src/worker/MessageBus.ts` is the worker-side bus. It receives `BusMessage` envelopes from the main thread and posts worker-originated `BusMessage` envelopes back through `self.postMessage`.
 
-`frontend/src/worker/di.ts` provides a minimal class-based dependency map. `frontend/src/worker/worker.ts` creates the dependency map and installs `WorkerMessageBus`, worker `MessageBroker`, and `FileWatcher`.
+`frontend/src/worker/di.ts` provides a minimal class-based dependency map. `frontend/src/worker/worker.ts` creates the dependency map and installs `WorkerMessageBus`, worker `MessageBroker`, `FileWatcher`, and `MatcherService`.
 
 ## Styling
 
@@ -171,10 +171,20 @@ Run commands from `frontend/`:
 npm run dev
 npm run build
 npm run lint
+npm run test
 npm run preview
 ```
 
-`npm run build` runs TypeScript project build first, then Vite build. There is no test script configured at this time.
+`npm run build` runs TypeScript project build first, then Vite build. `npm run test` runs Vitest once.
+
+Tests live in a `__tests__` directory under the major subcomponent they cover:
+
+- `frontend/src/main/__tests__/`
+- `frontend/src/pip/__tests__/`
+- `frontend/src/shared/__tests__/`
+- `frontend/src/worker/__tests__/`
+
+Use `frontend/src/worker/di.ts`'s `installInstance` helper when a test needs to provide a mock or fake dependency before installing the component under test.
 
 ## Implementation Notes For Agents
 

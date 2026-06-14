@@ -2,7 +2,7 @@ import type {
   FileSystemDirectoryHandleLike,
   FileSystemHandleLike,
 } from '../shared/fileSystemAccess'
-import type { EverQuestLogFile } from '../shared/messages'
+import type { EverQuestCharacter, EverQuestLogFile } from '../shared/messages'
 import { getDependency, type Deps } from './di'
 import { MessageBroker } from './MessageBroker'
 
@@ -29,19 +29,24 @@ export interface FileWatcherObserver {
 
 export class FileWatcher {
   private fileHandle: FileSystemHandleLike | null = null
+  private readonly broker: MessageBroker
   private readonly unregister: () => void
   private readonly observers = new Set<FileWatcherObserver>()
   private readonly scanTasks = new Map<string, ScanTask>()
   private readonly watchedLogFileNames = new Set<string>()
+  private readonly announcedCharacterKeys = new Set<string>()
+  private cachedLogFiles: EverQuestLogFile[] = []
+  private hasScannedLogDirectory = false
   private isWatchRunning = false
   private watchTimeoutId: ReturnType<typeof globalThis.setTimeout> | null = null
 
   constructor(deps: Deps) {
     const broker = getDependency(deps, MessageBroker)
+    this.broker = broker
 
     this.unregister = broker.register('file-watcher', {
       setFileHandle: this.setFileHandle,
-      enumerateLogs: this.enumerateLogs,
+      getCharacters: this.getCharacters,
       startWatch: this.startWatch,
       stopWatch: this.stopWatch,
     })
@@ -69,20 +74,27 @@ export class FileWatcher {
     this.stopWatching()
     this.fileHandle = params.fileHandle
     this.watchedLogFileNames.clear()
+    this.announcedCharacterKeys.clear()
+    this.cachedLogFiles = []
+    this.hasScannedLogDirectory = false
 
     return {}
   }
 
-  private readonly enumerateLogs = async () => {
+  private readonly getCharacters = async () => {
     const everQuestDirectoryHandle = this.getEverQuestDirectoryHandle()
 
     if (!everQuestDirectoryHandle) {
       console.warn('[FileWatcher] no EverQuest directory handle is stored')
-      return { logs: [] }
+      return { characters: [] }
+    }
+
+    if (!this.hasScannedLogDirectory) {
+      await this.refreshLogCache(false)
     }
 
     return {
-      logs: await enumerateEverQuestLogs(everQuestDirectoryHandle),
+      characters: getCharactersFromLogs(this.cachedLogFiles),
     }
   }
 
@@ -120,7 +132,7 @@ export class FileWatcher {
         return
       }
 
-      const logs = await enumerateEverQuestLogs(everQuestDirectoryHandle)
+      const logs = await this.refreshLogCache(true)
 
       logs.forEach((logFile) => {
         if (this.watchedLogFileNames.has(logFile.fileName)) {
@@ -264,6 +276,47 @@ export class FileWatcher {
     })
   }
 
+  private async refreshLogCache(announceNewCharacters: boolean) {
+    const everQuestDirectoryHandle = this.getEverQuestDirectoryHandle()
+
+    if (!everQuestDirectoryHandle) {
+      this.cachedLogFiles = []
+      this.hasScannedLogDirectory = true
+      return []
+    }
+
+    const logs = await enumerateEverQuestLogs(everQuestDirectoryHandle)
+
+    this.cachedLogFiles = logs
+    this.hasScannedLogDirectory = true
+
+    if (announceNewCharacters) {
+      this.announceNewCharacters(logs)
+    }
+
+    return logs
+  }
+
+  private announceNewCharacters(logs: EverQuestLogFile[]) {
+    const characters = getCharactersFromLogs(logs)
+    const hasNewCharacter = characters.some((character) => {
+      return !this.announcedCharacterKeys.has(getCharacterKey(character))
+    })
+
+    if (!hasNewCharacter) {
+      return
+    }
+
+    this.announcedCharacterKeys.clear()
+    characters.forEach((character) => {
+      this.announcedCharacterKeys.add(getCharacterKey(character))
+    })
+
+    this.broker.send('file-watcher', 'client.file-watcher.characters', {
+      characters,
+    })
+  }
+
   private stopWatching() {
     this.isWatchRunning = false
 
@@ -375,7 +428,7 @@ export async function enumerateEverQuestLogs(
     logs.push(logFile)
   }
 
-  return logs
+  return sortLogs(logs)
 }
 
 async function getLogsDirectoryHandle(
@@ -424,6 +477,66 @@ function parseEverQuestLogLine(line: string) {
     text,
     timestamp,
   }
+}
+
+function getCharactersFromLogs(logs: EverQuestLogFile[]): EverQuestCharacter[] {
+  const charactersByKey = new Map<string, EverQuestCharacter>()
+
+  logs.forEach((log) => {
+    const character = {
+      characterName: log.characterName,
+      serverName: log.serverName,
+    }
+
+    charactersByKey.set(getCharacterKey(character), character)
+  })
+
+  return [...charactersByKey.values()].sort(compareCharacters)
+}
+
+function getCharacterKey(character: EverQuestCharacter) {
+  return `${character.serverName.toLocaleLowerCase()}\0${character.characterName.toLocaleLowerCase()}`
+}
+
+function sortLogs(logs: EverQuestLogFile[]) {
+  return [...logs].sort((left, right) => {
+    const characterComparison = compareStrings(
+      left.characterName,
+      right.characterName,
+    )
+
+    if (characterComparison !== 0) {
+      return characterComparison
+    }
+
+    const serverComparison = compareStrings(left.serverName, right.serverName)
+
+    if (serverComparison !== 0) {
+      return serverComparison
+    }
+
+    return compareStrings(left.fileName, right.fileName)
+  })
+}
+
+function compareCharacters(
+  left: EverQuestCharacter,
+  right: EverQuestCharacter,
+) {
+  const characterComparison = compareStrings(
+    left.characterName,
+    right.characterName,
+  )
+
+  if (characterComparison !== 0) {
+    return characterComparison
+  }
+
+  return compareStrings(left.serverName, right.serverName)
+}
+
+function compareStrings(left: string, right: string) {
+  return left.localeCompare(right, undefined, { sensitivity: 'base' })
 }
 
 function isDirectoryHandle(
