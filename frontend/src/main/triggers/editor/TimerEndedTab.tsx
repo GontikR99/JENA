@@ -1,5 +1,5 @@
 import Form from 'react-bootstrap/Form'
-import type { EverQuestCharacter } from '../../../shared/messages'
+import type { CharacterPresence } from '../../../shared/messages'
 import { AudioSettingsSection } from './AudioSettingsSection'
 import { TextSettingsSection } from './TextSettingsSection'
 import {
@@ -10,7 +10,7 @@ import {
 } from './triggerEditorModel'
 
 interface TimerEndedTabProps {
-  characters: EverQuestCharacter[]
+  characters: CharacterPresence[]
   onChange: (timer: TriggerEditorTimerState) => void
   timer: TriggerEditorTimerState
 }

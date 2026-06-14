@@ -1,11 +1,13 @@
 import { useEffect, useRef } from 'react'
 import { useMessageBroker } from '../shared/messageBrokerHooks'
 import {
-  addWorkerEndpointPrefix,
   isBusMessage,
-  stripWorkerEndpointPrefix,
   WorkerEndpointPrefix,
 } from '../shared/messages'
+import {
+  prepareMessageForWorker,
+  prepareMessageFromWorker,
+} from './WorkerBridgeProtocol'
 
 export function WorkerBridge() {
   const broker = useMessageBroker()
@@ -21,12 +23,7 @@ export function WorkerBridge() {
         return
       }
 
-      broker.sendMessage({
-        ...event.data,
-        source: event.data.source
-          ? addWorkerEndpointPrefix(event.data.source)
-          : null,
-      })
+      broker.sendMessage(prepareMessageFromWorker(event.data))
     }
 
     function ensureWorker() {
@@ -66,10 +63,7 @@ export function WorkerBridge() {
         return
       }
 
-      worker.postMessage({
-        ...message,
-        destination: stripWorkerEndpointPrefix(message.destination),
-      })
+      worker.postMessage(prepareMessageForWorker(message))
     })
 
     return () => {

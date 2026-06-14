@@ -1,13 +1,13 @@
 import Button from 'react-bootstrap/Button'
 import Form from 'react-bootstrap/Form'
 import type { JenaSpeechAction } from '../../../shared/triggers'
-import type { EverQuestCharacter } from '../../../shared/messages'
+import type { CharacterPresence } from '../../../shared/messages'
 import { Section } from './Section'
 import type { TriggerEditorAudioMode } from './triggerEditorModel'
 
 interface AudioSettingsSectionProps {
   audioMode: TriggerEditorAudioMode
-  characters: EverQuestCharacter[]
+  characters: CharacterPresence[]
   disabled?: boolean
   onChange?: (state: {
     mode: TriggerEditorAudioMode

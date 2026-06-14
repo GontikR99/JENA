@@ -1,5 +1,12 @@
 import { MessageBus } from '../shared/messageBroker'
-import { isBusMessage, type BusMessage } from '../shared/messages'
+import {
+  addClientEndpointPrefix,
+  ClientEndpointPrefix,
+  isBusMessage,
+  ServerEndpointPrefix,
+  stripClientEndpointPrefix,
+  type BusMessage,
+} from '../shared/messages'
 import type { Deps } from './di'
 
 export class WorkerMessageBus extends MessageBus {
@@ -11,7 +18,20 @@ export class WorkerMessageBus extends MessageBus {
 
   override send(message: BusMessage) {
     super.send(message)
-    self.postMessage(message)
+
+    if (message.destination.startsWith(ServerEndpointPrefix)) {
+      self.postMessage(message)
+      return
+    }
+
+    if (!message.destination.startsWith(ClientEndpointPrefix)) {
+      return
+    }
+
+    self.postMessage({
+      ...message,
+      destination: stripClientEndpointPrefix(message.destination),
+    })
   }
 
   private readonly handleMessage = (event: MessageEvent<unknown>) => {
@@ -19,6 +39,11 @@ export class WorkerMessageBus extends MessageBus {
       return
     }
 
-    this.dispatch(event.data)
+    this.dispatch({
+      ...event.data,
+      source: event.data.source
+        ? addClientEndpointPrefix(event.data.source)
+        : null,
+    })
   }
 }

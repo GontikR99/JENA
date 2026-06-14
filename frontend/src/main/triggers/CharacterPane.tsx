@@ -2,25 +2,25 @@ import { useEffect, useState } from 'react'
 import activeCharacterUrl from '../../assets/activity-indicator-active.webp'
 import inactiveCharacterUrl from '../../assets/activity-indicator-inactive.webp'
 import type {
-  EverQuestCharacter,
-  FileWatcherCharactersMessage,
+  CharacterPresence,
+  CharacterPresenceCharactersMessage,
 } from '../../shared/messages'
 import { useListen, useRpc } from '../../shared/messageBrokerHooks'
 
 interface CharacterPaneProps {
-  selectedCharacter: EverQuestCharacter | null
-  setCharacter: (character: EverQuestCharacter) => void
+  selectedCharacter: CharacterPresence | null
+  setCharacter: (character: CharacterPresence) => void
 }
 
 export function CharacterPane({
   selectedCharacter,
   setCharacter,
 }: CharacterPaneProps) {
-  const callWorker = useRpc('client.character-pane')
-  const [characters, setCharacters] = useState<EverQuestCharacter[]>([])
+  const callWorker = useRpc('character-pane')
+  const [characters, setCharacters] = useState<CharacterPresence[]>([])
 
-  useListen('client.file-watcher.characters', (message) => {
-    const nextCharacters = (message.payload as FileWatcherCharactersMessage)
+  useListen('character-presence.characters', (message) => {
+    const nextCharacters = (message.payload as CharacterPresenceCharactersMessage)
       .characters
     setCharacters(nextCharacters)
   })
@@ -28,7 +28,7 @@ export function CharacterPane({
   useEffect(() => {
     let isCurrent = true
 
-    void callWorker('worker.file-watcher', 'getCharacters', {})
+    void callWorker('worker.character-presence', 'getCharacters', {})
       .then(({ characters: nextCharacters }) => {
         if (isCurrent) {
           setCharacters(nextCharacters)
@@ -75,7 +75,11 @@ export function CharacterPane({
               >
                 <div className="character-option-text">
                   <strong>{character.characterName}</strong>
-                  <span>{character.serverName}</span>
+                  <span>
+                    {character.zone
+                      ? `${character.zone} — ${character.serverName}`
+                      : character.serverName}
+                  </span>
                 </div>
                 <img
                   alt=""
@@ -100,8 +104,8 @@ export function CharacterPane({
 }
 
 function isSameCharacter(
-  left: EverQuestCharacter,
-  right: EverQuestCharacter | null,
+  left: CharacterPresence,
+  right: CharacterPresence | null,
 ) {
   return (
     !!right &&

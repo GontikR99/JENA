@@ -3,6 +3,7 @@ import type { FileSystemHandleLike } from './fileSystemAccess'
 export type Endpoint = string
 
 export interface BusMessage<TPayload = unknown> {
+  authToken?: string
   id: string
   source: Endpoint | null
   destination: Endpoint
@@ -53,9 +54,26 @@ export interface FileWatcherCharactersMessage {
   characters: EverQuestCharacter[]
 }
 
+export interface CharacterPresence {
+  active: boolean
+  characterName: string
+  serverName: string
+  zone: string
+}
+
+export interface CharacterPresenceCharactersMessage {
+  characters: CharacterPresence[]
+}
+
+export interface NearbyCharacterPresenceMessage {
+  characters: CharacterPresence[]
+}
+
 export interface EndpointMessages {
-  'client.file-watcher.characters': FileWatcherCharactersMessage
-  'client.matcher.match-found': RegexMatchFoundMessage
+  'character-presence.characters': CharacterPresenceCharactersMessage
+  'file-watcher.characters': FileWatcherCharactersMessage
+  'matcher.match-found': RegexMatchFoundMessage
+  'worldwide-presence.nearby-characters': NearbyCharacterPresenceMessage
 }
 
 export interface EverQuestLogFile {
@@ -78,14 +96,6 @@ export interface RpcEndpoints {
         characters: EverQuestCharacter[]
       }
     }
-    startWatch: {
-      request: Record<string, never>
-      response: Record<string, never>
-    }
-    stopWatch: {
-      request: Record<string, never>
-      response: Record<string, never>
-    }
   }
   'worker.matcher-service': {
     'add-patterns': {
@@ -93,6 +103,14 @@ export interface RpcEndpoints {
         patterns: RegexPatternRegistration[]
       }
       response: Record<string, never>
+    }
+  }
+  'worker.character-presence': {
+    getCharacters: {
+      request: Record<string, never>
+      response: {
+        characters: CharacterPresence[]
+      }
     }
   }
 }
@@ -144,6 +162,8 @@ export type RpcResponse<
   : never
 
 export const WorkerEndpointPrefix = 'worker.'
+export const ServerEndpointPrefix = 'server.'
+export const ClientEndpointPrefix = 'client.'
 
 export function createBusMessage<TPayload>({
   correlationId,
@@ -256,6 +276,30 @@ export function addWorkerEndpointPrefix(endpoint: Endpoint) {
   return endpoint.startsWith(WorkerEndpointPrefix)
     ? endpoint
     : `${WorkerEndpointPrefix}${endpoint}`
+}
+
+export function stripServerEndpointPrefix(endpoint: Endpoint) {
+  return endpoint.startsWith(ServerEndpointPrefix)
+    ? endpoint.slice(ServerEndpointPrefix.length)
+    : endpoint
+}
+
+export function addServerEndpointPrefix(endpoint: Endpoint) {
+  return endpoint.startsWith(ServerEndpointPrefix)
+    ? endpoint
+    : `${ServerEndpointPrefix}${endpoint}`
+}
+
+export function stripClientEndpointPrefix(endpoint: Endpoint) {
+  return endpoint.startsWith(ClientEndpointPrefix)
+    ? endpoint.slice(ClientEndpointPrefix.length)
+    : endpoint
+}
+
+export function addClientEndpointPrefix(endpoint: Endpoint) {
+  return endpoint.startsWith(ClientEndpointPrefix)
+    ? endpoint
+    : `${ClientEndpointPrefix}${endpoint}`
 }
 
 function isSerializedError(value: unknown): value is SerializedError {

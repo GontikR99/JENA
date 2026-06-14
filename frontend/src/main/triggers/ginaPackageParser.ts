@@ -9,6 +9,7 @@ import type {
   JenaTriggerTimer,
   JenaTriggerTimerType,
 } from '../../shared/triggers'
+import { createContentHashUuid } from '../../shared/hashIds'
 
 const yieldByteInterval = 16 * 1024
 const progressByteInterval = 128 * 1024
@@ -704,19 +705,7 @@ async function createTriggerId(trigger: JenaTrigger) {
     actions: trigger.actions,
     timer: trigger.timer,
   }
-  const bytes = new TextEncoder().encode(JSON.stringify(canonicalTrigger))
-  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))
-  const hex = [...digest.slice(0, 16)]
-    .map((byte) => byte.toString(16).padStart(2, '0'))
-    .join('')
-
-  return [
-    hex.slice(0, 8),
-    hex.slice(8, 12),
-    hex.slice(12, 16),
-    hex.slice(16, 20),
-    hex.slice(20, 32),
-  ].join('-')
+  return createContentHashUuid(canonicalTrigger)
 }
 
 function parseGinaBoolean(text: string) {

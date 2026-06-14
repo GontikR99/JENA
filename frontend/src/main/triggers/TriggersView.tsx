@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Group, Panel, Separator } from 'react-resizable-panels'
-import type { EverQuestCharacter } from '../../shared/messages'
+import type { CharacterPresence } from '../../shared/messages'
 import { CharacterPane } from './CharacterPane'
 import { TriggerLogTable } from './TriggerLogTable'
 import type { TriggerLogRecord } from './types'
@@ -8,7 +8,7 @@ import './TriggersView.css'
 
 export function TriggersView() {
   const [selectedCharacter, setSelectedCharacter] =
-    useState<EverQuestCharacter | null>(null)
+    useState<CharacterPresence | null>(null)
   const [triggerLogRecords] = useState<TriggerLogRecord[]>([])
 
   function handleTriggerClick(triggerId: string) {

@@ -31,7 +31,7 @@ interface StartupButtonProps {
 }
 
 export function StartupButton({ onPipChange }: StartupButtonProps) {
-  const callWorker = useRpc('client.startup-button')
+  const callWorker = useRpc('startup-button')
   const [logStatus, setLogStatus] = useState<LogStatus>('idle')
   const [triggerStatus, setTriggerStatus] = useState<TriggerStatus>('idle')
   const [isWorkerPending, setIsWorkerPending] = useState(false)
@@ -162,7 +162,6 @@ export function StartupButton({ onPipChange }: StartupButtonProps) {
           isPipClosedByUser = true
           setTriggerStatus('idle')
           onPipChange('closed')
-          void stopWorkerWatch()
         },
       })
 
@@ -170,7 +169,6 @@ export function StartupButton({ onPipChange }: StartupButtonProps) {
         return
       }
 
-      await startWorkerWatch()
       setTriggerStatus('started')
       onPipChange('open')
     } catch (error) {
@@ -185,7 +183,6 @@ export function StartupButton({ onPipChange }: StartupButtonProps) {
     setTriggerStatus('stopping')
 
     try {
-      await stopWorkerWatch()
       closePipProgrammatically()
       setTriggerStatus('idle')
       onPipChange('closed')
@@ -253,26 +250,6 @@ export function StartupButton({ onPipChange }: StartupButtonProps) {
       await callWorker('worker.file-watcher', 'setFileHandle', {
         fileHandle,
       })
-    } finally {
-      setIsWorkerPending(false)
-    }
-  }
-
-  async function startWorkerWatch() {
-    setIsWorkerPending(true)
-
-    try {
-      await callWorker('worker.file-watcher', 'startWatch', {})
-    } finally {
-      setIsWorkerPending(false)
-    }
-  }
-
-  async function stopWorkerWatch() {
-    setIsWorkerPending(true)
-
-    try {
-      await callWorker('worker.file-watcher', 'stopWatch', {})
     } finally {
       setIsWorkerPending(false)
     }

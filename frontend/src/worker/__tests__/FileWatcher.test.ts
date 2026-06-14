@@ -59,7 +59,7 @@ describe('FileWatcher', () => {
     ])
     const receivedMessages: FileWatcherCharactersMessage[] = []
 
-    broker.listen('client.file-watcher.characters', (message) => {
+    broker.listen('file-watcher.characters', (message) => {
       receivedMessages.push(message.payload as FileWatcherCharactersMessage)
     })
 
@@ -86,7 +86,7 @@ describe('FileWatcher', () => {
     ])
   })
 
-  it('stops tailing without stopping directory scans', async () => {
+  it('tails log files as soon as a file handle is set', async () => {
     const { broker, fileWatcher, logsDirectory, setFileHandle } = createHarness([
       'eqlog_Arias_bertox.txt',
     ])
@@ -99,13 +99,12 @@ describe('FileWatcher', () => {
         receivedLines.push(record)
       },
     })
-    broker.listen('client.file-watcher.characters', (message) => {
+    broker.listen('file-watcher.characters', (message) => {
       receivedMessages.push(message.payload as FileWatcherCharactersMessage)
     })
 
     await setFileHandle()
     await waitFor(() => receivedMessages.length === 1)
-    await broker.call('test.file-watcher', 'file-watcher', 'startWatch', {})
     await wait(20)
 
     ariasLog.append("[Sun Jun 14 10:00:00 2026] Arias says, 'Ready.'\n")
@@ -115,10 +114,6 @@ describe('FileWatcher', () => {
         message.characters.some((character) => character.active),
       )
     })
-
-    await broker.call('test.file-watcher', 'file-watcher', 'stopWatch', {})
-    ariasLog.append("[Sun Jun 14 10:00:01 2026] Arias says, 'Stopped.'\n")
-    await wait(50)
 
     logsDirectory.addFile('eqlog_Brell_seru.txt')
     await waitFor(() => {
@@ -141,7 +136,7 @@ describe('FileWatcher', () => {
     ])
     expect(receivedMessages.at(-1)).toEqual({
       characters: [
-        { active: false, characterName: 'Arias', serverName: 'bertox' },
+        { active: true, characterName: 'Arias', serverName: 'bertox' },
         { active: false, characterName: 'Brell', serverName: 'seru' },
       ],
     })
@@ -166,7 +161,6 @@ describe('FileWatcher', () => {
 
     await setFileHandle()
     await waitFor(() => logsDirectory.valuesCallCount >= 1)
-    await broker.call('test.file-watcher', 'file-watcher', 'startWatch', {})
 
     await setNullFileHandle()
     const valuesCallCountAfterClear = logsDirectory.valuesCallCount

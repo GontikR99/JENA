@@ -59,8 +59,6 @@ export class FileWatcher {
     this.unregister = broker.register('file-watcher', {
       setFileHandle: this.setFileHandle,
       getCharacters: this.getCharacters,
-      startWatch: this.startWatch,
-      stopWatch: this.stopWatch,
     })
   }
 
@@ -93,7 +91,10 @@ export class FileWatcher {
     this.lastAnnouncedCharactersSignature = ''
 
     if (this.getEverQuestDirectoryHandle()) {
+      this.isTailRunning = true
       this.startDirectoryScanning()
+      this.startTailingCachedLogs()
+      this.scheduleActivityExpiryCheck()
     }
 
     return {}
@@ -110,34 +111,6 @@ export class FileWatcher {
     return {
       characters: this.getCachedCharacters(),
     }
-  }
-
-  private readonly startWatch = () => {
-    const everQuestDirectoryHandle = this.getEverQuestDirectoryHandle()
-
-    if (!everQuestDirectoryHandle) {
-      console.warn('[FileWatcher] no EverQuest directory handle is stored')
-      return {}
-    }
-
-    if (this.isTailRunning) {
-      return {}
-    }
-
-    this.isTailRunning = true
-    this.startTailingCachedLogs()
-    this.announceCharactersIfChanged()
-    this.scheduleActivityExpiryCheck()
-
-    return {}
-  }
-
-  private readonly stopWatch = () => {
-    this.stopTailing()
-    this.watchedLogFileNames.clear()
-    this.announceCharactersIfChanged()
-
-    return {}
   }
 
   private startDirectoryScanning() {
@@ -387,7 +360,7 @@ export class FileWatcher {
 
     this.lastAnnouncedCharactersSignature = signature
 
-    this.broker.send('file-watcher', 'client.file-watcher.characters', {
+    this.broker.send('file-watcher', 'file-watcher.characters', {
       characters,
     })
   }

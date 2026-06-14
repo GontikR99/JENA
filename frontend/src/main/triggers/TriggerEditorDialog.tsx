@@ -6,8 +6,8 @@ import Tab from 'react-bootstrap/Tab'
 import Tabs from 'react-bootstrap/Tabs'
 import type { JenaTrigger } from '../../shared/triggers'
 import type {
-  EverQuestCharacter,
-  FileWatcherCharactersMessage,
+  CharacterPresence,
+  CharacterPresenceCharactersMessage,
 } from '../../shared/messages'
 import { useListen, useRpc } from '../../shared/messageBrokerHooks'
 import { AudioSettingsSection } from './editor/AudioSettingsSection'
@@ -38,9 +38,9 @@ export function TriggerEditorDialog({
   shown,
   trigger,
 }: TriggerEditorDialogProps) {
-  const callWorker = useRpc('client.trigger-editor')
+  const callWorker = useRpc('trigger-editor')
   const initialDraft = useMemo(() => createDraftFromTrigger(trigger), [trigger])
-  const [characters, setCharacters] = useState<EverQuestCharacter[]>([])
+  const [characters, setCharacters] = useState<CharacterPresence[]>([])
   const [validationErrors, setValidationErrors] = useState<string[]>([])
   const [draftState, setDraftState] = useState<{
     draft: TriggerEditorDraft
@@ -54,8 +54,10 @@ export function TriggerEditorDialog({
 
   const isDirty = JSON.stringify(draft) !== JSON.stringify(initialDraft)
 
-  useListen('client.file-watcher.characters', (message) => {
-    setCharacters((message.payload as FileWatcherCharactersMessage).characters)
+  useListen('character-presence.characters', (message) => {
+    setCharacters(
+      (message.payload as CharacterPresenceCharactersMessage).characters,
+    )
   })
 
   useEffect(() => {
@@ -65,7 +67,7 @@ export function TriggerEditorDialog({
 
     let isCurrent = true
 
-    void callWorker('worker.file-watcher', 'getCharacters', {})
+    void callWorker('worker.character-presence', 'getCharacters', {})
       .then(({ characters: nextCharacters }) => {
         if (isCurrent) {
           setCharacters(nextCharacters)

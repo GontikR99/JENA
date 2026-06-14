@@ -7,10 +7,13 @@ dist/
 **/dist/
 dist-ssr/
 **/dist-ssr/
+backend/static/
 
 # Logs and local env
 logs/
 *.log
+backend/*.db
+backend/*.db-*
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
