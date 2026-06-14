@@ -1,7 +1,7 @@
 import { createRoot, type Root } from 'react-dom/client'
 import { Pip } from '../pip/pip'
-import { clientEventBus } from './clientEventBus'
-import { ClientEventBusProvider } from './ClientEventBusProvider'
+import { messageBroker } from './messageBroker'
+import { MessageBrokerProvider } from './MessageBrokerProvider'
 
 interface DocumentPictureInPictureOptions {
   height?: number
@@ -102,9 +102,9 @@ function renderPip(targetWindow: Window) {
 
   pipRoot = createRoot(rootElement)
   pipRoot.render(
-    <ClientEventBusProvider bus={clientEventBus}>
+    <MessageBrokerProvider broker={messageBroker}>
       <Pip />
-    </ClientEventBusProvider>,
+    </MessageBrokerProvider>,
   )
 }
 

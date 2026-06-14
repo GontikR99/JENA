@@ -5,11 +5,14 @@ export interface FileSystemHandleLike {
 
 export interface FileSystemFileHandleLike extends FileSystemHandleLike {
   kind: 'file'
+  getFile(): Promise<File>
 }
 
 export interface FileSystemDirectoryHandleLike extends FileSystemHandleLike {
   kind: 'directory'
+  getDirectoryHandle(name: string): Promise<FileSystemDirectoryHandleLike>
   getFileHandle(name: string): Promise<FileSystemFileHandleLike>
+  values(): AsyncIterable<FileSystemHandleLike>
   queryPermission(descriptor?: FileSystemPermissionDescriptor): Promise<PermissionState>
   requestPermission(descriptor?: FileSystemPermissionDescriptor): Promise<PermissionState>
 }

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
 import Button from 'react-bootstrap/Button'
 import ButtonGroup from 'react-bootstrap/ButtonGroup'
@@ -20,11 +20,10 @@ import {
   validateEverQuestDirectory,
   type FileSystemDirectoryHandleLike,
 } from '../shared/fileSystemAccess'
-import { useSender } from '../shared/clientEventBusHooks'
-import { MessageType } from '../shared/messages'
+import { useRpc } from '../shared/messageBrokerHooks'
 
 type LogStatus = 'idle' | 'reading' | 'ready'
-type TriggerStatus = 'idle' | 'starting' | 'started'
+type TriggerStatus = 'idle' | 'starting' | 'started' | 'stopping'
 export type PipState = 'open' | 'closed'
 
 interface StartupButtonProps {
@@ -32,10 +31,12 @@ interface StartupButtonProps {
 }
 
 export function StartupButton({ onPipChange }: StartupButtonProps) {
-  const send = useSender()
+  const callWorker = useRpc('client.startup-button')
   const [logStatus, setLogStatus] = useState<LogStatus>('idle')
   const [triggerStatus, setTriggerStatus] = useState<TriggerStatus>('idle')
+  const [isWorkerPending, setIsWorkerPending] = useState(false)
   const [isChoosingDirectory, setIsChoosingDirectory] = useState(false)
+  const isProgrammaticallyClosingPip = useRef(false)
   const [savedDirectoryHandle, setSavedDirectoryHandle] =
     useState<FileSystemDirectoryHandleLike | null>(null)
   const [isSavedDirectoryLoaded, setIsSavedDirectoryLoaded] = useState(false)
@@ -46,31 +47,41 @@ export function StartupButton({ onPipChange }: StartupButtonProps) {
   const isReadingLogs = logStatus === 'reading'
   const areTriggersStarted = triggerStatus === 'started'
   const areTriggersStarting = triggerStatus === 'starting'
+  const areTriggersStopping = triggerStatus === 'stopping'
   const primaryButtonLabel = getPrimaryButtonLabel({
     areTriggersStarted,
+    areTriggersStopping,
     hasActiveDirectoryHandle,
     hasSavedDirectoryHandle: savedDirectoryHandle !== null,
   })
   const canUseStoredDirectoryMenu =
-    !hasActiveDirectoryHandle &&
     !isReadingLogs &&
+    !isWorkerPending &&
     !areTriggersStarting &&
     !areTriggersStarted &&
+    !areTriggersStopping &&
     !isChoosingDirectory &&
     isSavedDirectoryLoaded &&
     savedDirectoryHandle !== null
   const isReadLogsDisabled =
     isReadingLogs ||
+    isWorkerPending ||
     isChoosingDirectory ||
     hasActiveDirectoryHandle ||
     !isSavedDirectoryLoaded
   const isStartTriggersDisabled =
-    areTriggersStarting || (!areTriggersStarted && !hasActiveDirectoryHandle)
+    isWorkerPending ||
+    areTriggersStarting ||
+    areTriggersStopping ||
+    (!areTriggersStarted && !hasActiveDirectoryHandle)
   const isPrimaryButtonDisabled = hasActiveDirectoryHandle
     ? isStartTriggersDisabled
     : isReadLogsDisabled
   const shouldShowStoredDirectoryMenu =
-    savedDirectoryHandle !== null && !hasActiveDirectoryHandle
+    savedDirectoryHandle !== null &&
+    !areTriggersStarting &&
+    !areTriggersStarted &&
+    !areTriggersStopping
 
   useEffect(() => {
     let isMounted = true
@@ -107,12 +118,11 @@ export function StartupButton({ onPipChange }: StartupButtonProps) {
       const selectedDirectoryHandle =
         await activateEverQuestDirectoryHandle(savedDirectoryHandle)
 
+      await setWorkerFileHandle(selectedDirectoryHandle)
+
       setSavedDirectoryHandle(selectedDirectoryHandle)
       setDirectoryHandle(selectedDirectoryHandle)
       setLogStatus('ready')
-      send(MessageType.EverQuestDirectoryOpened, {
-        directoryHandle: selectedDirectoryHandle,
-      })
     } catch (error) {
       setDirectoryHandle(null)
       setLogStatus('idle')
@@ -128,7 +138,7 @@ export function StartupButton({ onPipChange }: StartupButtonProps) {
 
   async function handleStartTriggers() {
     if (areTriggersStarted) {
-      stopTriggers()
+      void stopTriggers()
       return
     }
 
@@ -141,25 +151,49 @@ export function StartupButton({ onPipChange }: StartupButtonProps) {
         )
       }
 
+      let isPipClosedByUser = false
+
       await openPipWindow({
         onClose: () => {
+          if (isProgrammaticallyClosingPip.current) {
+            return
+          }
+
+          isPipClosedByUser = true
           setTriggerStatus('idle')
           onPipChange('closed')
+          void stopWorkerWatch()
         },
       })
 
+      if (isPipClosedByUser) {
+        return
+      }
+
+      await startWorkerWatch()
       setTriggerStatus('started')
       onPipChange('open')
     } catch (error) {
-      closePipWindow()
+      closePipProgrammatically()
       setTriggerStatus('idle')
       onPipChange('closed')
       toast.error(getErrorMessage(error))
     }
   }
 
-  function stopTriggers() {
-    closePipWindow()
+  async function stopTriggers() {
+    setTriggerStatus('stopping')
+
+    try {
+      await stopWorkerWatch()
+      closePipProgrammatically()
+      setTriggerStatus('idle')
+      onPipChange('closed')
+    } catch (error) {
+      isProgrammaticallyClosingPip.current = false
+      setTriggerStatus('started')
+      toast.error(getErrorMessage(error))
+    }
   }
 
   function handlePrimaryAction() {
@@ -176,6 +210,12 @@ export function StartupButton({ onPipChange }: StartupButtonProps) {
 
     try {
       const selectedDirectoryHandle = await pickAndSaveEverQuestDirectory()
+
+      if (hasActiveDirectoryHandle) {
+        await setWorkerFileHandle(selectedDirectoryHandle)
+        setDirectoryHandle(selectedDirectoryHandle)
+        setLogStatus('ready')
+      }
 
       setSavedDirectoryHandle(selectedDirectoryHandle)
       toast.success('EverQuest directory saved.')
@@ -195,9 +235,55 @@ export function StartupButton({ onPipChange }: StartupButtonProps) {
     try {
       await forgetSavedEverQuestDirectoryHandle()
       setSavedDirectoryHandle(null)
+      setDirectoryHandle(null)
+      setLogStatus('idle')
       toast.success('Stored directory forgotten.')
     } catch (error) {
       toast.error(getErrorMessage(error))
+    }
+  }
+
+  async function setWorkerFileHandle(
+    fileHandle: FileSystemDirectoryHandleLike,
+  ) {
+    setIsWorkerPending(true)
+
+    try {
+      await callWorker('worker.file-watcher', 'setFileHandle', {
+        fileHandle,
+      })
+    } finally {
+      setIsWorkerPending(false)
+    }
+  }
+
+  async function startWorkerWatch() {
+    setIsWorkerPending(true)
+
+    try {
+      await callWorker('worker.file-watcher', 'startWatch', {})
+    } finally {
+      setIsWorkerPending(false)
+    }
+  }
+
+  async function stopWorkerWatch() {
+    setIsWorkerPending(true)
+
+    try {
+      await callWorker('worker.file-watcher', 'stopWatch', {})
+    } finally {
+      setIsWorkerPending(false)
+    }
+  }
+
+  function closePipProgrammatically() {
+    isProgrammaticallyClosingPip.current = true
+
+    try {
+      closePipWindow()
+    } finally {
+      isProgrammaticallyClosingPip.current = false
     }
   }
 
@@ -250,13 +336,19 @@ export function StartupButton({ onPipChange }: StartupButtonProps) {
 
 function getPrimaryButtonLabel({
   areTriggersStarted,
+  areTriggersStopping,
   hasActiveDirectoryHandle,
   hasSavedDirectoryHandle,
 }: {
   areTriggersStarted: boolean
+  areTriggersStopping: boolean
   hasActiveDirectoryHandle: boolean
   hasSavedDirectoryHandle: boolean
 }) {
+  if (areTriggersStopping) {
+    return 'Stopping Triggers'
+  }
+
   if (areTriggersStarted) {
     return 'Stop Triggers'
   }
