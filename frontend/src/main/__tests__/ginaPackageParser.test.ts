@@ -51,10 +51,6 @@ describe('parseGinaPackageFile', () => {
           enabled: true,
           text: '/rs Running',
         },
-        media: {
-          enabled: true,
-          source: null,
-        },
       },
       timer: {
         type: 'countdown',
@@ -72,10 +68,6 @@ describe('parseGinaPackageFile', () => {
             interrupt: false,
             text: 'Almost done',
           },
-          media: {
-            enabled: false,
-            source: null,
-          },
         },
         endedAction: {
           display: {
@@ -86,10 +78,6 @@ describe('parseGinaPackageFile', () => {
             enabled: false,
             interrupt: false,
             text: '',
-          },
-          media: {
-            enabled: false,
-            source: null,
           },
         },
         earlyEnders: ['Timer done', 'done (?<target>.+)'],

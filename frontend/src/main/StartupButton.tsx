@@ -233,6 +233,7 @@ export function StartupButton({ onPipChange }: StartupButtonProps) {
 
   async function handleForgetStoredDirectory() {
     try {
+      await setWorkerFileHandle(null)
       await forgetSavedEverQuestDirectoryHandle()
       setSavedDirectoryHandle(null)
       setDirectoryHandle(null)
@@ -244,7 +245,7 @@ export function StartupButton({ onPipChange }: StartupButtonProps) {
   }
 
   async function setWorkerFileHandle(
-    fileHandle: FileSystemDirectoryHandleLike,
+    fileHandle: FileSystemDirectoryHandleLike | null,
   ) {
     setIsWorkerPending(true)
 
@@ -288,7 +289,7 @@ export function StartupButton({ onPipChange }: StartupButtonProps) {
   }
 
   return (
-    <main className="main-view">
+    <>
       {shouldShowStoredDirectoryMenu ? (
         <Dropdown as={ButtonGroup}>
           <Button
@@ -330,7 +331,7 @@ export function StartupButton({ onPipChange }: StartupButtonProps) {
           {primaryButtonLabel}
         </Button>
       )}
-    </main>
+    </>
   )
 }
 

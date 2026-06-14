@@ -1,11 +1,3 @@
-.main-view {
-  align-items: flex-start;
-  display: flex;
-  flex-direction: column;
-  padding: 8px;
-  text-align: left;
-}
-
 .startup-button {
   font-size: 0.8125rem;
   line-height: 1.2;

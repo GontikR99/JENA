@@ -1,7 +1,6 @@
 import { Parser } from 'htmlparser2'
 import { Unzip, UnzipInflate } from 'fflate'
 import type {
-  JenaMediaAction,
   JenaSpeechAction,
   JenaTextAction,
   JenaTimerAction,
@@ -582,7 +581,6 @@ function toJenaTrigger(rawTrigger: RawTrigger, author: string): JenaTrigger {
         enabled: rawTrigger.copyToClipboard,
         text: rawTrigger.clipboardText,
       },
-      media: createMediaAction(rawTrigger.playMediaFile),
     },
     timer: createTimer(rawTrigger),
   }
@@ -622,7 +620,6 @@ function toTimerAction(rawTimerAction: RawTimerAction): JenaTimerAction {
       rawTimerAction.textToVoiceText,
       rawTimerAction.interruptSpeech,
     ),
-    media: createMediaAction(rawTimerAction.playMediaFile),
   }
 }
 
@@ -642,13 +639,6 @@ function createSpeechAction(
     enabled,
     text,
     interrupt,
-  }
-}
-
-function createMediaAction(enabled: boolean): JenaMediaAction {
-  return {
-    enabled,
-    source: null,
   }
 }
 

@@ -37,7 +37,6 @@ type TriggerActions struct {
 	Display   TextAction      `json:"display"`
 	Speech    SpeechAction    `json:"speech"`
 	Clipboard ClipboardAction `json:"clipboard"`
-	Media     MediaAction     `json:"media"`
 }
 
 type TextAction struct {
@@ -56,11 +55,6 @@ type ClipboardAction struct {
 	Text    string `json:"text"`
 }
 
-type MediaAction struct {
-	Enabled bool    `json:"enabled"`
-	Source  *string `json:"source"`
-}
-
 type TriggerTimer struct {
 	Type           TriggerTimerType   `json:"type"`
 	Name           string             `json:"name"`
@@ -75,5 +69,4 @@ type TriggerTimer struct {
 type TimerAction struct {
 	Display TextAction   `json:"display"`
 	Speech  SpeechAction `json:"speech"`
-	Media   MediaAction  `json:"media"`
 }

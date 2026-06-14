@@ -44,6 +44,7 @@ export interface RegexMatchFoundMessage {
 }
 
 export interface EverQuestCharacter {
+  active: boolean
   characterName: string
   serverName: string
 }
@@ -67,7 +68,7 @@ export interface RpcEndpoints {
   'worker.file-watcher': {
     setFileHandle: {
       request: {
-        fileHandle: FileSystemHandleLike
+        fileHandle: FileSystemHandleLike | null
       }
       response: Record<string, never>
     }

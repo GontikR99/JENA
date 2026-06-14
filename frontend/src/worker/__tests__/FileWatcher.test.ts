@@ -10,17 +10,29 @@ import type {
   FileWatcherCharactersMessage,
 } from '../../shared/messages'
 import { installInstance, type Deps } from '../di'
-import { FileWatcher } from '../FileWatcher'
+import {
+  FileWatcher,
+  type EverQuestLogLineRecord,
+} from '../FileWatcher'
 import { MessageBroker as WorkerMessageBroker } from '../MessageBroker'
 
 describe('FileWatcher', () => {
-  it('answers getCharacters from the cached log directory scan', async () => {
-    const { broker, fileWatcher, logsDirectory, setFileHandle } = createHarness([
+  it('starts directory scanning when a file handle is set and answers getCharacters from cache', async () => {
+    const {
+      broker,
+      fileWatcher,
+      logsDirectory,
+      setFileHandle,
+      setNullFileHandle,
+    } = createHarness([
       'eqlog_Arias_bertox.txt',
       'eqlog_Brell_seru.txt',
     ])
 
     await setFileHandle()
+    await waitFor(async () => {
+      return (await getCharacters(broker)).characters.length === 2
+    })
 
     const firstResult = await getCharacters(broker)
     const secondResult = await getCharacters(broker)
@@ -30,17 +42,18 @@ describe('FileWatcher', () => {
     const cachedResult = await getCharacters(broker)
 
     expect(firstResult.characters).toEqual([
-      { characterName: 'Arias', serverName: 'bertox' },
-      { characterName: 'Brell', serverName: 'seru' },
+      { active: false, characterName: 'Arias', serverName: 'bertox' },
+      { active: false, characterName: 'Brell', serverName: 'seru' },
     ])
     expect(secondResult).toEqual(firstResult)
     expect(cachedResult).toEqual(firstResult)
-    expect(logsDirectory.valuesCallCount).toBe(1)
+    expect(logsDirectory.valuesCallCount).toBeGreaterThanOrEqual(1)
 
+    await setNullFileHandle()
     fileWatcher.dispose()
   })
 
-  it('announces all characters when a watch scan detects a new character', async () => {
+  it('announces all characters when directory scanning detects a new character', async () => {
     const { broker, fileWatcher, logsDirectory, setFileHandle } = createHarness([
       'eqlog_Arias_bertox.txt',
     ])
@@ -51,7 +64,6 @@ describe('FileWatcher', () => {
     })
 
     await setFileHandle()
-    await broker.call('test.file-watcher', 'file-watcher', 'startWatch', {})
     await waitFor(() => receivedMessages.length === 1)
 
     logsDirectory.addFile('eqlog_Brell_seru.txt')
@@ -61,15 +73,115 @@ describe('FileWatcher', () => {
 
     expect(receivedMessages).toEqual([
       {
-        characters: [{ characterName: 'Arias', serverName: 'bertox' }],
+        characters: [
+          { active: false, characterName: 'Arias', serverName: 'bertox' },
+        ],
       },
       {
         characters: [
-          { characterName: 'Arias', serverName: 'bertox' },
-          { characterName: 'Brell', serverName: 'seru' },
+          { active: false, characterName: 'Arias', serverName: 'bertox' },
+          { active: false, characterName: 'Brell', serverName: 'seru' },
         ],
       },
     ])
+  })
+
+  it('stops tailing without stopping directory scans', async () => {
+    const { broker, fileWatcher, logsDirectory, setFileHandle } = createHarness([
+      'eqlog_Arias_bertox.txt',
+    ])
+    const receivedLines: EverQuestLogLineRecord[] = []
+    const receivedMessages: FileWatcherCharactersMessage[] = []
+    const ariasLog = logsDirectory.getFile('eqlog_Arias_bertox.txt')
+
+    fileWatcher.observe({
+      onLogLine: (record) => {
+        receivedLines.push(record)
+      },
+    })
+    broker.listen('client.file-watcher.characters', (message) => {
+      receivedMessages.push(message.payload as FileWatcherCharactersMessage)
+    })
+
+    await setFileHandle()
+    await waitFor(() => receivedMessages.length === 1)
+    await broker.call('test.file-watcher', 'file-watcher', 'startWatch', {})
+    await wait(20)
+
+    ariasLog.append("[Sun Jun 14 10:00:00 2026] Arias says, 'Ready.'\n")
+    await waitFor(() => receivedLines.length === 1)
+    await waitFor(() => {
+      return receivedMessages.some((message) =>
+        message.characters.some((character) => character.active),
+      )
+    })
+
+    await broker.call('test.file-watcher', 'file-watcher', 'stopWatch', {})
+    ariasLog.append("[Sun Jun 14 10:00:01 2026] Arias says, 'Stopped.'\n")
+    await wait(50)
+
+    logsDirectory.addFile('eqlog_Brell_seru.txt')
+    await waitFor(() => {
+      return receivedMessages.some((message) =>
+        message.characters.some(
+          (character) => character.characterName === 'Brell',
+        ),
+      )
+    })
+
+    fileWatcher.dispose()
+
+    expect(receivedLines).toEqual([
+      {
+        characterName: 'Arias',
+        serverName: 'bertox',
+        text: "Arias says, 'Ready.'",
+        timestamp: 'Sun Jun 14 10:00:00 2026',
+      },
+    ])
+    expect(receivedMessages.at(-1)).toEqual({
+      characters: [
+        { active: false, characterName: 'Arias', serverName: 'bertox' },
+        { active: false, characterName: 'Brell', serverName: 'seru' },
+      ],
+    })
+  })
+
+  it('stops directory scanning and tailing when the file handle is cleared', async () => {
+    const {
+      broker,
+      fileWatcher,
+      logsDirectory,
+      setFileHandle,
+      setNullFileHandle,
+    } = createHarness(['eqlog_Arias_bertox.txt'])
+    const receivedLines: EverQuestLogLineRecord[] = []
+    const ariasLog = logsDirectory.getFile('eqlog_Arias_bertox.txt')
+
+    fileWatcher.observe({
+      onLogLine: (record) => {
+        receivedLines.push(record)
+      },
+    })
+
+    await setFileHandle()
+    await waitFor(() => logsDirectory.valuesCallCount >= 1)
+    await broker.call('test.file-watcher', 'file-watcher', 'startWatch', {})
+
+    await setNullFileHandle()
+    const valuesCallCountAfterClear = logsDirectory.valuesCallCount
+
+    logsDirectory.addFile('eqlog_Brell_seru.txt')
+    ariasLog.append("[Sun Jun 14 10:00:00 2026] Arias says, 'Ignored.'\n")
+    await wait(150)
+
+    const result = await getCharacters(broker)
+
+    fileWatcher.dispose()
+
+    expect(result.characters).toEqual([])
+    expect(receivedLines).toEqual([])
+    expect(logsDirectory.valuesCallCount).toBe(valuesCallCountAfterClear)
   })
 })
 
@@ -101,6 +213,10 @@ function createHarness(logFileNames: string[]) {
       broker.call('test.file-watcher', 'file-watcher', 'setFileHandle', {
         fileHandle: everQuestDirectory,
       }),
+    setNullFileHandle: () =>
+      broker.call('test.file-watcher', 'file-watcher', 'setFileHandle', {
+        fileHandle: null,
+      }),
   }
 }
 
@@ -112,10 +228,10 @@ async function getCharacters(broker: MessageBroker) {
   return result
 }
 
-async function waitFor(predicate: () => boolean) {
+async function waitFor(predicate: () => boolean | Promise<boolean>) {
   const startedAt = Date.now()
 
-  while (!predicate()) {
+  while (!(await predicate())) {
     if (Date.now() - startedAt > 1000) {
       throw new Error('Timed out waiting for predicate.')
     }
@@ -126,18 +242,28 @@ async function waitFor(predicate: () => boolean) {
   }
 }
 
+function wait(milliseconds: number) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, milliseconds)
+  })
+}
+
 class FakeFileHandle implements FileSystemFileHandleLike {
   readonly kind = 'file'
   readonly name: string
-  private readonly file: File
+  private text: string
 
   constructor(name: string, text = '') {
     this.name = name
-    this.file = new File([text], name)
+    this.text = text
+  }
+
+  append(text: string) {
+    this.text += text
   }
 
   async getFile() {
-    return this.file
+    return new File([this.text], this.name)
   }
 }
 
@@ -156,7 +282,19 @@ class FakeDirectoryHandle implements FileSystemDirectoryHandleLike {
   }
 
   addFile(name: string, text = '') {
-    this.handles.set(name, new FakeFileHandle(name, text))
+    const handle = new FakeFileHandle(name, text)
+    this.handles.set(name, handle)
+    return handle
+  }
+
+  getFile(name: string) {
+    const handle = this.handles.get(name)
+
+    if (handle?.kind === 'file') {
+      return handle as FakeFileHandle
+    }
+
+    throw new Error(`Fake file ${name} does not exist.`)
   }
 
   async getDirectoryHandle(name: string) {

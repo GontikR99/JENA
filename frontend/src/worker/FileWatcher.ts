@@ -6,14 +6,20 @@ import type { EverQuestCharacter, EverQuestLogFile } from '../shared/messages'
 import { getDependency, type Deps } from './di'
 import { MessageBroker } from './MessageBroker'
 
-const watchIntervalMs = 100
-const scanIntervalMs = 10
+const directoryScanIntervalMs = 100
+const tailIntervalMs = 10
+const characterActiveWindowMs = 5 * 60 * 1000
 
-interface ScanTask {
+interface TailTask {
   logFile: EverQuestLogFile
   offset: number
   pendingText: string
   timeoutId: ReturnType<typeof globalThis.setTimeout> | null
+}
+
+interface CharacterIdentity {
+  characterName: string
+  serverName: string
 }
 
 export interface EverQuestLogLineRecord {
@@ -32,13 +38,19 @@ export class FileWatcher {
   private readonly broker: MessageBroker
   private readonly unregister: () => void
   private readonly observers = new Set<FileWatcherObserver>()
-  private readonly scanTasks = new Map<string, ScanTask>()
+  private readonly tailTasks = new Map<string, TailTask>()
   private readonly watchedLogFileNames = new Set<string>()
-  private readonly announcedCharacterKeys = new Set<string>()
+  private readonly characterLastLogLineReceivedAt = new Map<string, number>()
   private cachedLogFiles: EverQuestLogFile[] = []
-  private hasScannedLogDirectory = false
-  private isWatchRunning = false
-  private watchTimeoutId: ReturnType<typeof globalThis.setTimeout> | null = null
+  private lastAnnouncedCharactersSignature = ''
+  private isDirectoryScanRunning = false
+  private isTailRunning = false
+  private directoryScanTimeoutId: ReturnType<
+    typeof globalThis.setTimeout
+  > | null = null
+  private activityExpiryTimeoutId: ReturnType<
+    typeof globalThis.setTimeout
+  > | null = null
 
   constructor(deps: Deps) {
     const broker = getDependency(deps, MessageBroker)
@@ -55,7 +67,8 @@ export class FileWatcher {
   dispose() {
     this.unregister()
     this.observers.clear()
-    this.stopWatching()
+    this.stopDirectoryScanning()
+    this.stopTailing()
   }
 
   observe(observer: FileWatcherObserver) {
@@ -71,12 +84,17 @@ export class FileWatcher {
       throw new Error('Invalid setFileHandle request.')
     }
 
-    this.stopWatching()
+    this.stopDirectoryScanning()
+    this.stopTailing()
     this.fileHandle = params.fileHandle
     this.watchedLogFileNames.clear()
-    this.announcedCharacterKeys.clear()
+    this.characterLastLogLineReceivedAt.clear()
     this.cachedLogFiles = []
-    this.hasScannedLogDirectory = false
+    this.lastAnnouncedCharactersSignature = ''
+
+    if (this.getEverQuestDirectoryHandle()) {
+      this.startDirectoryScanning()
+    }
 
     return {}
   }
@@ -89,12 +107,8 @@ export class FileWatcher {
       return { characters: [] }
     }
 
-    if (!this.hasScannedLogDirectory) {
-      await this.refreshLogCache(false)
-    }
-
     return {
-      characters: getCharactersFromLogs(this.cachedLogFiles),
+      characters: this.getCachedCharacters(),
     }
   }
 
@@ -106,64 +120,96 @@ export class FileWatcher {
       return {}
     }
 
-    if (this.isWatchRunning) {
+    if (this.isTailRunning) {
       return {}
     }
 
-    this.isWatchRunning = true
-    void this.runWatchCycle()
+    this.isTailRunning = true
+    this.startTailingCachedLogs()
+    this.announceCharactersIfChanged()
+    this.scheduleActivityExpiryCheck()
 
     return {}
   }
 
   private readonly stopWatch = () => {
-    this.stopWatching()
+    this.stopTailing()
     this.watchedLogFileNames.clear()
+    this.announceCharactersIfChanged()
 
     return {}
   }
 
-  private async runWatchCycle() {
+  private startDirectoryScanning() {
+    if (this.isDirectoryScanRunning) {
+      return
+    }
+
+    this.isDirectoryScanRunning = true
+    void this.runDirectoryScanCycle()
+  }
+
+  private stopDirectoryScanning() {
+    this.isDirectoryScanRunning = false
+
+    if (this.directoryScanTimeoutId) {
+      globalThis.clearTimeout(this.directoryScanTimeoutId)
+      this.directoryScanTimeoutId = null
+    }
+  }
+
+  private async runDirectoryScanCycle() {
     try {
       const everQuestDirectoryHandle = this.getEverQuestDirectoryHandle()
 
       if (!everQuestDirectoryHandle) {
         console.warn('[FileWatcher] no EverQuest directory handle is stored')
+        this.stopDirectoryScanning()
         return
       }
 
       const logs = await this.refreshLogCache(true)
 
-      logs.forEach((logFile) => {
-        if (this.watchedLogFileNames.has(logFile.fileName)) {
-          return
-        }
-
-        this.watchedLogFileNames.add(logFile.fileName)
-        void this.scanFile(logFile).catch((error: unknown) => {
-          console.error('[FileWatcher] scan file failed', error)
-        })
-      })
+      if (this.isTailRunning) {
+        this.startTailingLogs(logs)
+      }
     } catch (error) {
-      console.error('[FileWatcher] watch cycle failed', error)
+      console.error('[FileWatcher] directory scan cycle failed', error)
     } finally {
-      this.scheduleNextWatchCycle()
+      this.scheduleNextDirectoryScanCycle()
     }
   }
 
-  private scheduleNextWatchCycle() {
-    if (!this.isWatchRunning) {
+  private scheduleNextDirectoryScanCycle() {
+    if (!this.isDirectoryScanRunning) {
       return
     }
 
-    this.watchTimeoutId = globalThis.setTimeout(() => {
-      this.watchTimeoutId = null
-      void this.runWatchCycle()
-    }, watchIntervalMs)
+    this.directoryScanTimeoutId = globalThis.setTimeout(() => {
+      this.directoryScanTimeoutId = null
+      void this.runDirectoryScanCycle()
+    }, directoryScanIntervalMs)
   }
 
-  private readonly scanFile = async (logFile: EverQuestLogFile) => {
-    if (this.scanTasks.has(logFile.fileName)) {
+  private startTailingCachedLogs() {
+    this.startTailingLogs(this.cachedLogFiles)
+  }
+
+  private startTailingLogs(logs: EverQuestLogFile[]) {
+    logs.forEach((logFile) => {
+      if (this.watchedLogFileNames.has(logFile.fileName)) {
+        return
+      }
+
+      this.watchedLogFileNames.add(logFile.fileName)
+      void this.startTailingLogFile(logFile).catch((error: unknown) => {
+        console.error('[FileWatcher] tail log file failed', error)
+      })
+    })
+  }
+
+  private readonly startTailingLogFile = async (logFile: EverQuestLogFile) => {
+    if (this.tailTasks.has(logFile.fileName)) {
       return
     }
 
@@ -174,76 +220,76 @@ export class FileWatcher {
       return
     }
 
-    const scanTask: ScanTask = {
+    const tailTask: TailTask = {
       logFile,
       offset: file.size,
       pendingText: '',
       timeoutId: null,
     }
 
-    this.scanTasks.set(logFile.fileName, scanTask)
-    this.scheduleNextScanCycle(scanTask)
+    this.tailTasks.set(logFile.fileName, tailTask)
+    this.scheduleNextTailCycle(tailTask)
   }
 
-  private async runScanCycle(scanTask: ScanTask) {
-    if (!this.scanTasks.has(scanTask.logFile.fileName)) {
+  private async runTailCycle(tailTask: TailTask) {
+    if (!this.tailTasks.has(tailTask.logFile.fileName)) {
       return
     }
 
     try {
-      const file = await this.getLogFile(scanTask.logFile)
+      const file = await this.getLogFile(tailTask.logFile)
 
       if (!file) {
         console.warn(
           '[FileWatcher] log file disappeared',
-          scanTask.logFile.fileName,
+          tailTask.logFile.fileName,
         )
-        this.stopScanTask(scanTask.logFile.fileName)
+        this.stopTailTask(tailTask.logFile.fileName)
         return
       }
 
-      if (file.size < scanTask.offset) {
-        scanTask.offset = file.size
-        scanTask.pendingText = ''
+      if (file.size < tailTask.offset) {
+        tailTask.offset = file.size
+        tailTask.pendingText = ''
         return
       }
 
-      if (file.size === scanTask.offset) {
+      if (file.size === tailTask.offset) {
         return
       }
 
-      const text = await file.slice(scanTask.offset).text()
+      const text = await file.slice(tailTask.offset).text()
 
-      scanTask.offset = file.size
-      this.reportCompleteLines(scanTask, text)
+      tailTask.offset = file.size
+      this.reportCompleteLines(tailTask, text)
     } catch (error) {
-      console.error('[FileWatcher] scan cycle failed', error)
+      console.error('[FileWatcher] tail cycle failed', error)
     } finally {
-      this.scheduleNextScanCycle(scanTask)
+      this.scheduleNextTailCycle(tailTask)
     }
   }
 
-  private scheduleNextScanCycle(scanTask: ScanTask) {
-    if (!this.scanTasks.has(scanTask.logFile.fileName)) {
+  private scheduleNextTailCycle(tailTask: TailTask) {
+    if (!this.tailTasks.has(tailTask.logFile.fileName)) {
       return
     }
 
-    scanTask.timeoutId = globalThis.setTimeout(() => {
-      scanTask.timeoutId = null
-      void this.runScanCycle(scanTask)
-    }, scanIntervalMs)
+    tailTask.timeoutId = globalThis.setTimeout(() => {
+      tailTask.timeoutId = null
+      void this.runTailCycle(tailTask)
+    }, tailIntervalMs)
   }
 
-  private reportCompleteLines(scanTask: ScanTask, text: string) {
-    const combinedText = `${scanTask.pendingText}${text}`
+  private reportCompleteLines(tailTask: TailTask, text: string) {
+    const combinedText = `${tailTask.pendingText}${text}`
     const lastNewlineIndex = combinedText.lastIndexOf('\n')
 
     if (lastNewlineIndex === -1) {
-      scanTask.pendingText = combinedText
+      tailTask.pendingText = combinedText
       return
     }
 
-    scanTask.pendingText = combinedText.slice(lastNewlineIndex + 1)
+    tailTask.pendingText = combinedText.slice(lastNewlineIndex + 1)
 
     combinedText
       .slice(0, lastNewlineIndex)
@@ -258,8 +304,8 @@ export class FileWatcher {
         const parsedLine = parseEverQuestLogLine(line)
 
         this.reportLogLine({
-          characterName: scanTask.logFile.characterName,
-          serverName: scanTask.logFile.serverName,
+          characterName: tailTask.logFile.characterName,
+          serverName: tailTask.logFile.serverName,
           text: parsedLine.text,
           timestamp: parsedLine.timestamp,
         })
@@ -267,6 +313,8 @@ export class FileWatcher {
   }
 
   private reportLogLine(record: EverQuestLogLineRecord) {
+    this.markCharacterLogLineReceived(record)
+
     this.observers.forEach((observer) => {
       try {
         observer.onLogLine(record)
@@ -281,70 +329,135 @@ export class FileWatcher {
 
     if (!everQuestDirectoryHandle) {
       this.cachedLogFiles = []
-      this.hasScannedLogDirectory = true
       return []
     }
 
     const logs = await enumerateEverQuestLogs(everQuestDirectoryHandle)
 
     this.cachedLogFiles = logs
-    this.hasScannedLogDirectory = true
 
     if (announceNewCharacters) {
-      this.announceNewCharacters(logs)
+      this.announceCharactersIfChanged()
     }
 
     return logs
   }
 
-  private announceNewCharacters(logs: EverQuestLogFile[]) {
-    const characters = getCharactersFromLogs(logs)
-    const hasNewCharacter = characters.some((character) => {
-      return !this.announcedCharacterKeys.has(getCharacterKey(character))
+  private markCharacterLogLineReceived(record: EverQuestLogLineRecord) {
+    this.characterLastLogLineReceivedAt.set(getCharacterKey(record), Date.now())
+    this.announceCharactersIfChanged()
+    this.scheduleActivityExpiryCheck()
+  }
+
+  private getCachedCharacters() {
+    return getCharactersFromLogs(
+      this.cachedLogFiles,
+      this.getActiveCharacterKeys(),
+    )
+  }
+
+  private getActiveCharacterKeys() {
+    const activeCharacterKeys = new Set<string>()
+
+    if (!this.isTailRunning) {
+      return activeCharacterKeys
+    }
+
+    const now = Date.now()
+
+    this.characterLastLogLineReceivedAt.forEach((receivedAt, key) => {
+      if (now - receivedAt <= characterActiveWindowMs) {
+        activeCharacterKeys.add(key)
+        return
+      }
+
+      this.characterLastLogLineReceivedAt.delete(key)
     })
 
-    if (!hasNewCharacter) {
+    return activeCharacterKeys
+  }
+
+  private announceCharactersIfChanged() {
+    const characters = this.getCachedCharacters()
+    const signature = getCharactersSignature(characters)
+
+    if (signature === this.lastAnnouncedCharactersSignature) {
       return
     }
 
-    this.announcedCharacterKeys.clear()
-    characters.forEach((character) => {
-      this.announcedCharacterKeys.add(getCharacterKey(character))
-    })
+    this.lastAnnouncedCharactersSignature = signature
 
     this.broker.send('file-watcher', 'client.file-watcher.characters', {
       characters,
     })
   }
 
-  private stopWatching() {
-    this.isWatchRunning = false
+  private stopTailing() {
+    this.isTailRunning = false
+    this.clearActivityExpiryTimer()
 
-    if (this.watchTimeoutId) {
-      globalThis.clearTimeout(this.watchTimeoutId)
-      this.watchTimeoutId = null
-    }
-
-    this.scanTasks.forEach((scanTask) => {
-      if (scanTask.timeoutId) {
-        globalThis.clearTimeout(scanTask.timeoutId)
+    this.tailTasks.forEach((tailTask) => {
+      if (tailTask.timeoutId) {
+        globalThis.clearTimeout(tailTask.timeoutId)
       }
     })
-    this.scanTasks.clear()
+    this.tailTasks.clear()
   }
 
-  private stopScanTask(fileName: string) {
-    const scanTask = this.scanTasks.get(fileName)
+  private stopTailTask(fileName: string) {
+    const tailTask = this.tailTasks.get(fileName)
 
-    if (!scanTask) {
+    if (!tailTask) {
       return
     }
 
-    if (scanTask.timeoutId) {
-      globalThis.clearTimeout(scanTask.timeoutId)
+    if (tailTask.timeoutId) {
+      globalThis.clearTimeout(tailTask.timeoutId)
     }
 
-    this.scanTasks.delete(fileName)
+    this.tailTasks.delete(fileName)
+  }
+
+  private scheduleActivityExpiryCheck() {
+    this.clearActivityExpiryTimer()
+
+    if (!this.isTailRunning) {
+      return
+    }
+
+    const now = Date.now()
+    let nextExpiryAt: number | null = null
+
+    this.characterLastLogLineReceivedAt.forEach((receivedAt) => {
+      const expiresAt = receivedAt + characterActiveWindowMs
+
+      if (expiresAt <= now) {
+        return
+      }
+
+      if (nextExpiryAt === null || expiresAt < nextExpiryAt) {
+        nextExpiryAt = expiresAt
+      }
+    })
+
+    if (nextExpiryAt === null) {
+      return
+    }
+
+    this.activityExpiryTimeoutId = globalThis.setTimeout(() => {
+      this.activityExpiryTimeoutId = null
+      this.announceCharactersIfChanged()
+      this.scheduleActivityExpiryCheck()
+    }, Math.max(0, nextExpiryAt - now + 1))
+  }
+
+  private clearActivityExpiryTimer() {
+    if (!this.activityExpiryTimeoutId) {
+      return
+    }
+
+    globalThis.clearTimeout(this.activityExpiryTimeoutId)
+    this.activityExpiryTimeoutId = null
   }
 
   private async getLogFile(logFile: EverQuestLogFile) {
@@ -386,15 +499,22 @@ export class FileWatcher {
 
 function isSetFileHandleRequest(
   value: unknown,
-): value is { fileHandle: FileSystemHandleLike } {
+): value is { fileHandle: FileSystemHandleLike | null } {
   if (!value || typeof value !== 'object') {
     return false
   }
 
-  const candidate = value as Partial<{ fileHandle: FileSystemHandleLike }>
+  const candidate = value as Partial<{ fileHandle: FileSystemHandleLike | null }>
+
+  if (!('fileHandle' in candidate)) {
+    return false
+  }
+
+  if (candidate.fileHandle === null) {
+    return true
+  }
 
   return (
-    !!candidate.fileHandle &&
     typeof candidate.fileHandle === 'object' &&
     typeof candidate.fileHandle.name === 'string' &&
     (candidate.fileHandle.kind === 'file' ||
@@ -479,22 +599,35 @@ function parseEverQuestLogLine(line: string) {
   }
 }
 
-function getCharactersFromLogs(logs: EverQuestLogFile[]): EverQuestCharacter[] {
+function getCharactersFromLogs(
+  logs: EverQuestLogFile[],
+  activeCharacterKeys: Set<string>,
+): EverQuestCharacter[] {
   const charactersByKey = new Map<string, EverQuestCharacter>()
 
   logs.forEach((log) => {
+    const key = getCharacterKey(log)
     const character = {
+      active: activeCharacterKeys.has(key),
       characterName: log.characterName,
       serverName: log.serverName,
     }
 
-    charactersByKey.set(getCharacterKey(character), character)
+    charactersByKey.set(key, character)
   })
 
   return [...charactersByKey.values()].sort(compareCharacters)
 }
 
-function getCharacterKey(character: EverQuestCharacter) {
+function getCharactersSignature(characters: EverQuestCharacter[]) {
+  return characters
+    .map((character) => {
+      return `${getCharacterKey(character)}\0${character.active ? '1' : '0'}`
+    })
+    .join('\0')
+}
+
+function getCharacterKey(character: CharacterIdentity) {
   return `${character.serverName.toLocaleLowerCase()}\0${character.characterName.toLocaleLowerCase()}`
 }
 

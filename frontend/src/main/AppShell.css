@@ -1,0 +1,76 @@
+.app-shell {
+  display: grid;
+  grid-template-rows: 64px minmax(0, 1fr);
+  height: 100svh;
+  min-height: 0;
+}
+
+.app-topbar {
+  align-items: center;
+  background: #111827;
+  border-bottom: 1px solid #263244;
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: 184px auto minmax(12rem, 1fr) auto;
+  height: 64px;
+  padding: 0 0.75rem;
+}
+
+.app-logo-slot {
+  align-items: center;
+  display: flex;
+  height: 64px;
+  width: 184px;
+}
+
+.app-logo {
+  display: block;
+  height: 64px;
+  object-fit: contain;
+  object-position: left center;
+  width: 184px;
+}
+
+.app-nav {
+  align-items: center;
+  display: flex;
+  gap: 1.25rem;
+}
+
+.app-nav-link {
+  background: transparent;
+  border: 0;
+  color: #8b98aa;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  padding: 0;
+}
+
+.app-nav-link:not(:disabled):hover {
+  color: #f9fafb;
+}
+
+.app-nav-link-active {
+  color: #fff;
+}
+
+.app-nav-link:disabled {
+  color: #6b7280;
+  cursor: default;
+}
+
+.app-startup-slot {
+  justify-self: center;
+}
+
+.app-account-slot {
+  display: flex;
+  gap: 0.5rem;
+  justify-self: end;
+}
+
+.app-main {
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}

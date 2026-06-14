@@ -26,7 +26,6 @@ export interface JenaTriggerActions {
   display: JenaTextAction
   speech: JenaSpeechAction
   clipboard: JenaClipboardAction
-  media: JenaMediaAction
 }
 
 export interface JenaTextAction {
@@ -45,11 +44,6 @@ export interface JenaClipboardAction {
   text: string
 }
 
-export interface JenaMediaAction {
-  enabled: boolean
-  source: string | null
-}
-
 export interface JenaTriggerTimer {
   type: JenaTriggerTimerType
   name: string
@@ -64,5 +58,44 @@ export interface JenaTriggerTimer {
 export interface JenaTimerAction {
   display: JenaTextAction
   speech: JenaSpeechAction
-  media: JenaMediaAction
+}
+
+export function createEmptyTrigger(): JenaTrigger {
+  return {
+    actions: {
+      clipboard: createClipboardAction(),
+      display: createTextAction(),
+      speech: createSpeechAction(),
+    },
+    author: '',
+    category: 'Default',
+    comments: '',
+    groupPath: [],
+    id: 'draft-trigger',
+    match: '',
+    name: '',
+    timer: null,
+  }
+}
+
+export function createTextAction(): JenaTextAction {
+  return {
+    enabled: false,
+    text: '',
+  }
+}
+
+export function createClipboardAction(): JenaClipboardAction {
+  return {
+    enabled: false,
+    text: '',
+  }
+}
+
+export function createSpeechAction(): JenaSpeechAction {
+  return {
+    enabled: false,
+    interrupt: false,
+    text: '',
+  }
 }
