@@ -1,10 +1,8 @@
-import { useEffect } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import type { MessageBroker } from '../shared/messageBroker'
 import { useMessageBroker } from '../shared/messageBrokerHooks'
-import {
-  ServerEndpointPrefix,
-  type BusMessage,
-} from '../shared/messages'
+import { ServerEndpointPrefix, type BusMessage } from '../shared/messages'
+import { useAuthToken } from './AuthContext'
 import {
   ExpiringMessageDeduper,
   getDefaultServerBridgeUrl,
@@ -18,7 +16,6 @@ import './ServerBridge.css'
 export type ServerBridgeStatus = 'closed' | 'connecting' | 'open' | 'stale'
 
 interface ServerBridgeProps {
-  getAuthToken?: () => string | null
   onStatusChange: (status: ServerBridgeStatus) => void
 }
 
@@ -34,11 +31,16 @@ const dedupWindowMs = 10 * 60_000
 const reconnectDelayMs = 250
 const maxReconnectDelayMs = 2_000
 
-export function ServerBridge({
-  getAuthToken = () => null,
-  onStatusChange,
-}: ServerBridgeProps) {
+export function ServerBridge({ onStatusChange }: ServerBridgeProps) {
   const broker = useMessageBroker()
+  const authToken = useAuthToken()
+  const authTokenRef = useRef<string | null>(authToken)
+
+  useEffect(() => {
+    authTokenRef.current = authToken
+  }, [authToken])
+
+  const getAuthToken = useCallback(() => authTokenRef.current, [])
 
   useEffect(() => {
     const controller = new ServerBridgeController({

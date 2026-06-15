@@ -1,6 +1,8 @@
-export async function createContentHashUuid(value: unknown) {
+import { sha256 } from '@noble/hashes/sha2.js'
+
+export function createContentHashUuid(value: unknown) {
   const bytes = new TextEncoder().encode(JSON.stringify(value))
-  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))
+  const digest = sha256(bytes)
   const hex = [...digest.slice(0, 16)]
     .map((byte) => byte.toString(16).padStart(2, '0'))
     .join('')

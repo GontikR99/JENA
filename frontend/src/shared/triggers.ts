@@ -1,3 +1,5 @@
+import { createContentHashUuid } from './hashIds'
+
 export type JenaTriggerId = string
 export type JenaTriggerMatcher = string
 export type JenaTimerEarlyEnder = string
@@ -13,7 +15,6 @@ export type JenaTimerStartBehavior =
 export interface JenaTrigger {
   id: JenaTriggerId
   name: string
-  author: string
   comments: string
   category: string
   groupPath: string[]
@@ -60,6 +61,45 @@ export interface JenaTimerAction {
   speech: JenaSpeechAction
 }
 
+export interface JenaCharacterServer {
+  characterName: string
+  serverName: string
+}
+
+export interface JenaExtendedTrigger {
+  triggerId: JenaTriggerId
+  enabledFor: JenaCharacterServer[]
+}
+
+export interface JenaResolvedTrigger {
+  trigger: JenaTrigger
+  enabledFor: JenaCharacterServer[]
+}
+
+export interface JenaTriggerEnablementChange {
+  triggerId: JenaTriggerId
+  character: JenaCharacterServer
+  enabled: boolean
+}
+
+export interface JenaTriggerUpsert {
+  trigger: JenaTrigger
+  enabledFor?: JenaCharacterServer[]
+}
+
+export interface JenaUserTriggerFetchResponse {
+  records: JenaExtendedTrigger[]
+  revision: string
+  triggers: JenaTrigger[]
+}
+
+export interface JenaUserTriggerUpdate {
+  deletedTriggerIds: JenaTriggerId[]
+  revision: string
+  upsertedRecords: JenaExtendedTrigger[]
+  upsertedTriggers: JenaTrigger[]
+}
+
 export function createEmptyTrigger(): JenaTrigger {
   return {
     actions: {
@@ -67,7 +107,6 @@ export function createEmptyTrigger(): JenaTrigger {
       display: createTextAction(),
       speech: createSpeechAction(),
     },
-    author: '',
     category: 'Default',
     comments: '',
     groupPath: [],
@@ -76,6 +115,19 @@ export function createEmptyTrigger(): JenaTrigger {
     name: '',
     timer: null,
   }
+}
+
+export function withCanonicalTriggerId(trigger: JenaTrigger): JenaTrigger {
+  const content = getJenaTriggerHashContent(trigger)
+
+  return {
+    ...content,
+    id: createContentHashUuid(content),
+  }
+}
+
+export function createJenaTriggerId(trigger: JenaTrigger): JenaTriggerId {
+  return createContentHashUuid(getJenaTriggerHashContent(trigger))
 }
 
 export function createTextAction(): JenaTextAction {
@@ -97,5 +149,64 @@ export function createSpeechAction(): JenaSpeechAction {
     enabled: false,
     interrupt: false,
     text: '',
+  }
+}
+
+function getJenaTriggerHashContent(trigger: JenaTrigger) {
+  return {
+    actions: getTriggerActionsHashContent(trigger.actions),
+    category: trigger.category,
+    comments: trigger.comments,
+    groupPath: [...trigger.groupPath],
+    match: trigger.match,
+    name: trigger.name,
+    timer: trigger.timer ? getTriggerTimerHashContent(trigger.timer) : null,
+  }
+}
+
+function getTriggerActionsHashContent(actions: JenaTriggerActions) {
+  return {
+    display: getTextActionHashContent(actions.display),
+    speech: getSpeechActionHashContent(actions.speech),
+    clipboard: getTextActionHashContent(actions.clipboard),
+  }
+}
+
+function getTriggerTimerHashContent(timer: JenaTriggerTimer) {
+  return {
+    type: timer.type,
+    name: timer.name,
+    durationMs: timer.durationMs,
+    startBehavior: timer.startBehavior,
+    warningSeconds: timer.warningSeconds,
+    warningAction: timer.warningAction
+      ? getTimerActionHashContent(timer.warningAction)
+      : null,
+    endedAction: timer.endedAction
+      ? getTimerActionHashContent(timer.endedAction)
+      : null,
+    earlyEnders: [...timer.earlyEnders],
+  }
+}
+
+function getTimerActionHashContent(action: JenaTimerAction) {
+  return {
+    display: getTextActionHashContent(action.display),
+    speech: getSpeechActionHashContent(action.speech),
+  }
+}
+
+function getTextActionHashContent(action: JenaTextAction | JenaClipboardAction) {
+  return {
+    enabled: action.enabled,
+    text: action.text,
+  }
+}
+
+function getSpeechActionHashContent(action: JenaSpeechAction) {
+  return {
+    enabled: action.enabled,
+    text: action.text,
+    interrupt: action.interrupt,
   }
 }

@@ -13,7 +13,6 @@ describe('parseGinaPackageFile', () => {
     const file = createGinaPackageFile(createShareDataXml())
 
     const triggers = await parseGinaPackageFile(file, {
-      author: 'Test Author',
       onProgress: (
         bytesProcessed,
         bytesTotal,
@@ -32,7 +31,6 @@ describe('parseGinaPackageFile', () => {
     expect(triggers).toHaveLength(2)
     expect(triggers[0]).toMatchObject({
       name: 'Literal Trigger',
-      author: 'Test Author',
       comments: 'Literal comments',
       category: 'Warnings',
       groupPath: ['Root Group', 'Raid Group'],

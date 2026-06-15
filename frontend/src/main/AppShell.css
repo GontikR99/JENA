@@ -69,6 +69,10 @@
   justify-self: end;
 }
 
+.app-login-button {
+  min-width: 4.75rem;
+}
+
 .app-main {
   min-height: 0;
   min-width: 0;

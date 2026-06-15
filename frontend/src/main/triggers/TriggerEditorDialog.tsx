@@ -4,7 +4,10 @@ import Button from 'react-bootstrap/Button'
 import Modal from 'react-bootstrap/Modal'
 import Tab from 'react-bootstrap/Tab'
 import Tabs from 'react-bootstrap/Tabs'
-import type { JenaTrigger } from '../../shared/triggers'
+import {
+  withCanonicalTriggerId,
+  type JenaTrigger,
+} from '../../shared/triggers'
 import type {
   CharacterPresence,
   CharacterPresenceCharactersMessage,
@@ -102,7 +105,7 @@ export function TriggerEditorDialog({
       return
     }
 
-    setTrigger(createTriggerFromDraft(draft))
+    setTrigger(withCanonicalTriggerId(createTriggerFromDraft(draft)))
     setShown(false)
   }
 

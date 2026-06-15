@@ -15,6 +15,9 @@ import (
 	"jena/backend/internal/database"
 	"jena/backend/internal/eventbus"
 	"jena/backend/internal/httpserver"
+	"jena/backend/internal/identityservice"
+	"jena/backend/internal/triggerstore"
+	"jena/backend/internal/usertriggerstore"
 	"jena/backend/internal/websocketbridge"
 	"jena/backend/internal/worldwidepresenceservice"
 )
@@ -52,6 +55,23 @@ func run(args []string) error {
 
 	worldwidePresenceService := worldwidepresenceservice.New(bus)
 	app.Install(container, worldwidePresenceService)
+
+	identityService := identityservice.New()
+	app.Install(container, identityService)
+
+	triggerStore, err := triggerstore.New(context.Background(), bus, db)
+	if err != nil {
+		return err
+	}
+	defer triggerStore.Dispose()
+	app.Install(container, triggerStore)
+
+	userTriggerStore, err := usertriggerstore.New(context.Background(), bus, db, identityService, triggerStore)
+	if err != nil {
+		return err
+	}
+	defer userTriggerStore.Dispose()
+	app.Install(container, userTriggerStore)
 
 	server.RegisterFunc("GET /_jena/health", func(response http.ResponseWriter, _ *http.Request) {
 		response.WriteHeader(http.StatusNoContent)

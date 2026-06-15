@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import activeCharacterUrl from '../../assets/activity-indicator-active.webp'
 import inactiveCharacterUrl from '../../assets/activity-indicator-inactive.webp'
 import type {
@@ -18,6 +18,10 @@ export function CharacterPane({
 }: CharacterPaneProps) {
   const callWorker = useRpc('character-pane')
   const [characters, setCharacters] = useState<CharacterPresence[]>([])
+  const sortedCharacters = useMemo(
+    () => [...characters].sort(compareCharactersForDisplay),
+    [characters],
+  )
 
   useListen('character-presence.characters', (message) => {
     const nextCharacters = (message.payload as CharacterPresenceCharactersMessage)
@@ -44,18 +48,18 @@ export function CharacterPane({
   }, [callWorker])
 
   useEffect(() => {
-    if (selectedCharacter || characters.length === 0) {
+    if (selectedCharacter || sortedCharacters.length === 0) {
       return
     }
 
-    setCharacter(characters[0])
-  }, [characters, selectedCharacter, setCharacter])
+    setCharacter(sortedCharacters[0])
+  }, [selectedCharacter, setCharacter, sortedCharacters])
 
   return (
     <aside className="character-pane" aria-label="Characters">
       <div className="character-list" role="listbox">
-        {characters.length > 0 ? (
-          characters.map((character) => {
+        {sortedCharacters.length > 0 ? (
+          sortedCharacters.map((character) => {
             const isSelected = isSameCharacter(character, selectedCharacter)
             const activityLabel = character.active ? 'Active' : 'Inactive'
 
@@ -101,6 +105,28 @@ export function CharacterPane({
       </div>
     </aside>
   )
+}
+
+function compareCharactersForDisplay(
+  left: CharacterPresence,
+  right: CharacterPresence,
+) {
+  if (left.active !== right.active) {
+    return left.active ? -1 : 1
+  }
+
+  const characterComparison = left.characterName.localeCompare(
+    right.characterName,
+    undefined,
+    { sensitivity: 'base' },
+  )
+  if (characterComparison !== 0) {
+    return characterComparison
+  }
+
+  return left.serverName.localeCompare(right.serverName, undefined, {
+    sensitivity: 'base',
+  })
 }
 
 function isSameCharacter(

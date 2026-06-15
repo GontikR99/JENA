@@ -1,5 +1,6 @@
 import { Parser } from 'htmlparser2'
 import { Unzip, UnzipInflate } from 'fflate'
+import { withCanonicalTriggerId } from '../../shared/triggers'
 import type {
   JenaSpeechAction,
   JenaTextAction,
@@ -9,7 +10,6 @@ import type {
   JenaTriggerTimer,
   JenaTriggerTimerType,
 } from '../../shared/triggers'
-import { createContentHashUuid } from '../../shared/hashIds'
 
 const yieldByteInterval = 16 * 1024
 const progressByteInterval = 128 * 1024
@@ -23,7 +23,6 @@ export type GinaImportProgressCallback = (
 ) => void
 
 export interface ParseGinaPackageOptions {
-  author?: string
   onProgress?: GinaImportProgressCallback
 }
 
@@ -97,7 +96,7 @@ export async function parseGinaPackageFile(
   emitProgress()
 
   const xmlChunkQueue: Uint8Array[] = []
-  const xmlParser = new GinaXmlTriggerParser(options.author ?? '')
+  const xmlParser = new GinaXmlTriggerParser()
   const textDecoder = new TextDecoder('utf-8', { fatal: false })
   const unzip = new Unzip((entry) => {
     if (entry.name.endsWith('/')) {
@@ -193,7 +192,6 @@ async function drainXmlChunkQueue(
 }
 
 class GinaXmlTriggerParser {
-  private readonly author: string
   private readonly groupStack: RawGroup[] = []
   private readonly textStack: string[] = []
   private readonly tagStack: string[] = []
@@ -207,8 +205,7 @@ class GinaXmlTriggerParser {
   private seenShareData = false
   private parseError: Error | null = null
 
-  constructor(author: string) {
-    this.author = author
+  constructor() {
     this.parser = new Parser(
       {
         onclosetag: (name) => this.handleCloseTag(name),
@@ -259,8 +256,9 @@ class GinaXmlTriggerParser {
     const triggersById = new Map<string, JenaTrigger>()
 
     for (const rawTrigger of this.rawTriggers) {
-      const trigger = toJenaTrigger(rawTrigger, this.author)
-      trigger.id = await createTriggerId(trigger)
+      const trigger = withCanonicalTriggerId(
+        toJenaTrigger(rawTrigger),
+      )
 
       if (!triggersById.has(trigger.id)) {
         triggersById.set(trigger.id, trigger)
@@ -562,11 +560,10 @@ function assignEarlyEnderText(
   }
 }
 
-function toJenaTrigger(rawTrigger: RawTrigger, author: string): JenaTrigger {
+function toJenaTrigger(rawTrigger: RawTrigger): JenaTrigger {
   return {
     id: '',
     name: rawTrigger.name,
-    author,
     comments: rawTrigger.comments,
     category: rawTrigger.category,
     groupPath: rawTrigger.groupPath,
@@ -692,20 +689,6 @@ function toRegex(text: string, isRegex: boolean) {
 
 function escapeRegExp(text: string) {
   return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-}
-
-async function createTriggerId(trigger: JenaTrigger) {
-  const canonicalTrigger = {
-    name: trigger.name,
-    author: trigger.author,
-    comments: trigger.comments,
-    category: trigger.category,
-    groupPath: trigger.groupPath,
-    match: trigger.match,
-    actions: trigger.actions,
-    timer: trigger.timer,
-  }
-  return createContentHashUuid(canonicalTrigger)
 }
 
 function parseGinaBoolean(text: string) {

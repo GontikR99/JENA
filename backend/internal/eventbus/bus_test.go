@@ -39,8 +39,8 @@ func TestRegisterRPCPassesSenderToHandler(t *testing.T) {
 	defer unlistenResponse()
 
 	unregister := bus.RegisterRPC("service", map[string]RPCHandler{
-		"ping": func(_ context.Context, sender string, _ json.RawMessage) (any, error) {
-			handlerSender = sender
+		"ping": func(_ context.Context, metadata RPCMetadata, _ json.RawMessage) (any, error) {
+			handlerSender = metadata.Sender
 			return map[string]string{"pong": "ok"}, nil
 		},
 	})
@@ -61,5 +61,37 @@ func TestRegisterRPCPassesSenderToHandler(t *testing.T) {
 	}
 	if response.CorrelationID != "rpc-1" {
 		t.Fatalf("response correlation %q, want rpc-1", response.CorrelationID)
+	}
+}
+
+func TestRegisterRPCPassesAuthTokenToHandler(t *testing.T) {
+	bus := New()
+	source := "ws.127_0_0_1_1.test"
+	var handlerAuthToken string
+
+	unlistenResponse := bus.Listen(source, func(context.Context, Envelope) {})
+	defer unlistenResponse()
+
+	unregister := bus.RegisterRPC("service", map[string]RPCHandler{
+		"ping": func(_ context.Context, metadata RPCMetadata, _ json.RawMessage) (any, error) {
+			handlerAuthToken = metadata.AuthToken
+			return map[string]string{"pong": "ok"}, nil
+		},
+	})
+	defer unregister()
+
+	payload := json.RawMessage(`{"method":"ping","params":{}}`)
+	if err := bus.Send(context.Background(), Envelope{
+		AuthToken:     "token-1",
+		CorrelationID: "rpc-1",
+		Destination:   "service",
+		Payload:       payload,
+		Source:        &source,
+	}); err != nil {
+		t.Fatalf("Send returned error: %v", err)
+	}
+
+	if handlerAuthToken != "token-1" {
+		t.Fatalf("handler auth token %q, want token-1", handlerAuthToken)
 	}
 }

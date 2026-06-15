@@ -24,7 +24,6 @@ const (
 type Trigger struct {
 	ID        TriggerID      `json:"id"`
 	Name      string         `json:"name"`
-	Author    string         `json:"author"`
 	Comments  string         `json:"comments"`
 	Category  string         `json:"category"`
 	GroupPath []string       `json:"groupPath"`
@@ -69,4 +68,37 @@ type TriggerTimer struct {
 type TimerAction struct {
 	Display TextAction   `json:"display"`
 	Speech  SpeechAction `json:"speech"`
+}
+
+type CharacterServer struct {
+	CharacterName string `json:"characterName"`
+	ServerName    string `json:"serverName"`
+}
+
+type ExtendedTrigger struct {
+	TriggerID  TriggerID         `json:"triggerId"`
+	EnabledFor []CharacterServer `json:"enabledFor"`
+}
+
+type ResolvedTrigger struct {
+	Trigger    Trigger           `json:"trigger"`
+	EnabledFor []CharacterServer `json:"enabledFor"`
+}
+
+type TriggerEnablementChange struct {
+	TriggerID TriggerID       `json:"triggerId"`
+	Character CharacterServer `json:"character"`
+	Enabled   bool            `json:"enabled"`
+}
+
+type TriggerUpsert struct {
+	Trigger    Trigger           `json:"trigger"`
+	EnabledFor []CharacterServer `json:"enabledFor,omitempty"`
+}
+
+type UserTriggerUpdate struct {
+	DeletedTriggerIDs []TriggerID       `json:"deletedTriggerIds"`
+	Revision          string            `json:"revision"`
+	UpsertedRecords   []ExtendedTrigger `json:"upsertedRecords"`
+	UpsertedTriggers  []Trigger         `json:"upsertedTriggers"`
 }

@@ -9,6 +9,9 @@ import { getDependency, type Deps } from './di'
 import { MessageBroker } from './MessageBroker'
 
 const zoneEnteredRegularExpression = '^You have entered (?<zone>.*)[.]$'
+const ignoredZoneEnteredLines = new Set([
+  'You have entered an area where Bind Affinity is allowed.',
+])
 const whoZoneRegularExpression =
   '^\\[[^\\]]+\\]\\s+(?<characterName>\\S+)\\s+(?:\\([^)]*\\)\\s+)?(?:<[^>]*>\\s+)?ZONE:\\s+(?<zone>.+?)\\s+\\([^)]+\\)\\s*$'
 const serverPresenceIntervalMs = 30_000
@@ -104,6 +107,10 @@ export class CharacterPresenceService {
   }
 
   private handleZoneEnteredMatch(message: RegexMatchFoundMessage) {
+    if (ignoredZoneEnteredLines.has(message.text)) {
+      return
+    }
+
     const zone = message.captures.named.zone
     if (!zone) {
       return
@@ -151,8 +158,8 @@ export class CharacterPresenceService {
   }
 
   private async registerPresencePatterns() {
-    const zoneEnteredPattern = await createZoneEnteredPatternRegistration()
-    const whoZonePattern = await createWhoZonePatternRegistration()
+    const zoneEnteredPattern = createZoneEnteredPatternRegistration()
+    const whoZonePattern = createWhoZonePatternRegistration()
 
     this.zoneEnteredPatternId = zoneEnteredPattern.id
     this.whoZonePatternId = whoZonePattern.id
@@ -198,9 +205,9 @@ export class CharacterPresenceService {
   }
 }
 
-export async function createZoneEnteredPatternRegistration(): Promise<RegexPatternRegistration> {
+export function createZoneEnteredPatternRegistration(): RegexPatternRegistration {
   return {
-    id: await createContentHashUuid({
+    id: createContentHashUuid({
       regularExpression: zoneEnteredRegularExpression,
       source: 'character-presence',
       type: 'regex-pattern',
@@ -209,9 +216,9 @@ export async function createZoneEnteredPatternRegistration(): Promise<RegexPatte
   }
 }
 
-export async function createWhoZonePatternRegistration(): Promise<RegexPatternRegistration> {
+export function createWhoZonePatternRegistration(): RegexPatternRegistration {
   return {
-    id: await createContentHashUuid({
+    id: createContentHashUuid({
       regularExpression: whoZoneRegularExpression,
       source: 'character-presence',
       type: 'regex-pattern',

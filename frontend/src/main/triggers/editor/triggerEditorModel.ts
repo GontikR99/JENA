@@ -40,7 +40,6 @@ export interface TriggerEditorTimerState {
 export interface TriggerEditorDraft {
   id: string
   name: string
-  author: string
   comments: string
   category: string
   groupPath: string[]
@@ -65,7 +64,6 @@ export function createDraftFromTrigger(trigger: JenaTrigger): TriggerEditorDraft
   return {
     id: normalizedTrigger.id,
     name: normalizedTrigger.name,
-    author: normalizedTrigger.author,
     comments: normalizedTrigger.comments,
     category: normalizedTrigger.category || 'Default',
     groupPath: [...normalizedTrigger.groupPath],
@@ -85,7 +83,6 @@ export function createTriggerFromDraft(draft: TriggerEditorDraft): JenaTrigger {
   return {
     id: draft.id,
     name: draft.name,
-    author: draft.author,
     comments: draft.comments,
     category: draft.category,
     groupPath: [...draft.groupPath],
@@ -240,7 +237,6 @@ function normalizeTrigger(trigger: JenaTrigger): JenaTrigger {
         ...trigger.actions?.speech,
       },
     },
-    author: trigger.author ?? emptyTrigger.author,
     category: trigger.category ?? emptyTrigger.category,
     comments: trigger.comments ?? emptyTrigger.comments,
     groupPath: Array.isArray(trigger.groupPath) ? trigger.groupPath : [],

@@ -36,7 +36,12 @@ type RPCResponsePayload struct {
 }
 
 type Listener func(context.Context, Envelope)
-type RPCHandler func(ctx context.Context, sender string, params json.RawMessage) (any, error)
+type RPCMetadata struct {
+	AuthToken string
+	Envelope  Envelope
+	Sender    string
+}
+type RPCHandler func(ctx context.Context, metadata RPCMetadata, params json.RawMessage) (any, error)
 
 type Bus struct {
 	mu             sync.RWMutex
@@ -119,7 +124,11 @@ func (bus *Bus) RegisterRPC(endpoint string, handlers map[string]RPCHandler) fun
 			return
 		}
 
-		result, err := handler(ctx, *envelope.Source, request.Params)
+		result, err := handler(ctx, RPCMetadata{
+			AuthToken: envelope.AuthToken,
+			Envelope:  envelope,
+			Sender:    *envelope.Source,
+		}, request.Params)
 		if err != nil {
 			bus.sendRPCError(ctx, endpoint, *envelope.Source, envelope.CorrelationID, err)
 			return

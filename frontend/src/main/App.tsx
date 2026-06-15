@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { useState } from 'react'
 import { Toaster } from 'react-hot-toast'
 import { messageBroker } from '../shared/messageBroker'
 import { MessageBrokerProvider } from '../shared/MessageBrokerProvider'
@@ -10,24 +10,29 @@ import {
   type ServerBridgeStatus,
 } from './ServerBridge'
 import { NearbyCharactersProvider } from './NearbyCharactersProvider'
+import { AuthProvider } from './AuthContext'
+import { TriggerStoreProvider } from './triggers/TriggerStore'
+import { UserTriggerManagerProvider } from './triggers/UserTriggerManager'
 
 export function App() {
   const [serverBridgeStatus, setServerBridgeStatus] =
     useState<ServerBridgeStatus>('closed')
-  const getAuthToken = useCallback(() => null, [])
 
   return (
     <MessageBrokerProvider broker={messageBroker}>
-      <ServerBridge
-        getAuthToken={getAuthToken}
-        onStatusChange={setServerBridgeStatus}
-      />
-      <WorkerBridge />
-      <NearbyCharactersProvider>
-        <AppShell />
-      </NearbyCharactersProvider>
-      <ServerConnectionGlass status={serverBridgeStatus} />
-      <Toaster position="top-right" />
+      <AuthProvider>
+        <ServerBridge onStatusChange={setServerBridgeStatus} />
+        <WorkerBridge />
+        <TriggerStoreProvider>
+          <UserTriggerManagerProvider>
+            <NearbyCharactersProvider>
+              <AppShell />
+            </NearbyCharactersProvider>
+          </UserTriggerManagerProvider>
+        </TriggerStoreProvider>
+        <ServerConnectionGlass status={serverBridgeStatus} />
+        <Toaster position="top-right" />
+      </AuthProvider>
     </MessageBrokerProvider>
   )
 }

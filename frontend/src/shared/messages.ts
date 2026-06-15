@@ -1,4 +1,12 @@
 import type { FileSystemHandleLike } from './fileSystemAccess'
+import type {
+  JenaTrigger,
+  JenaTriggerEnablementChange,
+  JenaTriggerId,
+  JenaTriggerUpsert,
+  JenaUserTriggerFetchResponse,
+  JenaUserTriggerUpdate,
+} from './triggers'
 
 export type Endpoint = string
 
@@ -73,6 +81,7 @@ export interface EndpointMessages {
   'character-presence.characters': CharacterPresenceCharactersMessage
   'file-watcher.characters': FileWatcherCharactersMessage
   'matcher.match-found': RegexMatchFoundMessage
+  'user-trigger-store.updated': JenaUserTriggerUpdate
   'worldwide-presence.nearby-characters': NearbyCharacterPresenceMessage
 }
 
@@ -110,6 +119,64 @@ export interface RpcEndpoints {
       request: Record<string, never>
       response: {
         characters: CharacterPresence[]
+      }
+    }
+  }
+  'server.trigger-store': {
+    storeTriggers: {
+      request: {
+        triggers: JenaTrigger[]
+      }
+      response: {
+        triggers: JenaTrigger[]
+      }
+    }
+    fetchTriggers: {
+      request: {
+        ids: string[]
+      }
+      response: {
+        triggers: JenaTrigger[]
+      }
+    }
+  }
+  'server.user-trigger-store': {
+    upsertTriggers: {
+      request: {
+        deleteTriggerIds?: JenaTriggerId[]
+        knownRevision?: string
+        triggers: JenaTriggerUpsert[]
+      }
+      response: JenaUserTriggerUpdate
+    }
+    deleteTriggers: {
+      request: {
+        knownRevision?: string
+        triggerIds: JenaTriggerId[]
+      }
+      response: JenaUserTriggerUpdate
+    }
+    toggleTriggers: {
+      request: {
+        changes: JenaTriggerEnablementChange[]
+        knownRevision?: string
+      }
+      response: JenaUserTriggerUpdate
+    }
+    fetchTriggers: {
+      request: Record<string, never>
+      response: {
+        records: JenaUserTriggerFetchResponse['records']
+        revision: string
+        triggers: JenaTrigger[]
+      }
+    }
+    ping: {
+      request: {
+        knownRevision?: string
+      }
+      response: {
+        revision: string
       }
     }
   }

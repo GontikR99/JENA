@@ -1,0 +1,450 @@
+import {
+  createContext,
+  useContext,
+  useMemo,
+  type ReactNode,
+} from 'react'
+import { useRpc } from '../../shared/messageBrokerHooks'
+import {
+  withCanonicalTriggerId,
+  type JenaTrigger,
+  type JenaTriggerId,
+} from '../../shared/triggers'
+
+export interface TriggerStoreApi {
+  fetchTriggers: (ids: JenaTriggerId[]) => Promise<JenaTrigger[]>
+  storeTriggers: (triggers: JenaTrigger[]) => Promise<JenaTrigger[]>
+}
+
+interface ServerTriggerStoreApi {
+  fetchTriggers: (ids: JenaTriggerId[]) => Promise<JenaTrigger[]>
+  storeTriggers: (triggers: JenaTrigger[]) => Promise<JenaTrigger[]>
+}
+
+interface TriggerCache {
+  getTriggers: (
+    ids: JenaTriggerId[],
+  ) => Promise<Map<JenaTriggerId, JenaTrigger>>
+  putTriggers: (triggers: JenaTrigger[]) => Promise<void>
+}
+
+const databaseName = 'jena'
+const databaseVersion = 3
+const handlesStoreName = 'handles'
+const triggerCacheStoreName = 'trigger-cache'
+const userTriggerCacheStoreName = 'user-trigger-cache'
+
+const TriggerStoreContext = createContext<TriggerStoreApi | null>(null)
+
+export function TriggerStoreProvider({ children }: { children: ReactNode }) {
+  const call = useRpc('trigger-store')
+  const store = useMemo(() => {
+    return new WriteThroughTriggerStore(
+      {
+        fetchTriggers: async (ids) => {
+          const response = await call('server.trigger-store', 'fetchTriggers', {
+            ids,
+          })
+
+          return response.triggers
+        },
+        storeTriggers: async (triggers) => {
+          const response = await call('server.trigger-store', 'storeTriggers', {
+            triggers,
+          })
+
+          return response.triggers
+        },
+      },
+      new IndexedDBTriggerCache(),
+    )
+  }, [call])
+
+  return (
+    <TriggerStoreContext.Provider value={store}>
+      {children}
+    </TriggerStoreContext.Provider>
+  )
+}
+
+export function useTriggerStore() {
+  const store = useContext(TriggerStoreContext)
+  if (!store) {
+    throw new Error('useTriggerStore must be used within TriggerStoreProvider')
+  }
+
+  return store
+}
+
+export class WriteThroughTriggerStore implements TriggerStoreApi {
+  private readonly cachedTriggers = new Map<JenaTriggerId, JenaTrigger>()
+  private readonly cache: TriggerCache
+  private readonly pendingFetches = new Map<JenaTriggerId, Promise<JenaTrigger>>()
+  private readonly pendingStores = new Map<JenaTriggerId, Promise<JenaTrigger>>()
+  private readonly server: ServerTriggerStoreApi
+
+  constructor(server: ServerTriggerStoreApi, cache: TriggerCache) {
+    this.server = server
+    this.cache = cache
+  }
+
+  async storeTriggers(triggers: JenaTrigger[]) {
+    if (triggers.length === 0) {
+      return []
+    }
+
+    const canonicalTriggers = triggers.map(withCanonicalTriggerId)
+    const novelTriggers = new Map<JenaTriggerId, JenaTrigger>()
+    const pendingTriggers = new Map<JenaTriggerId, Promise<JenaTrigger>>()
+    const cachedTriggers = await this.getCachedTriggers(
+      canonicalTriggers.map((trigger) => trigger.id),
+    )
+
+    canonicalTriggers.forEach((trigger) => {
+      if (cachedTriggers.has(trigger.id)) {
+        return
+      }
+
+      const pendingStore = this.pendingStores.get(trigger.id)
+      if (pendingStore) {
+        pendingTriggers.set(trigger.id, pendingStore)
+        return
+      }
+
+      novelTriggers.set(trigger.id, trigger)
+    })
+
+    const novelStorePromise =
+      novelTriggers.size > 0
+        ? this.storeNovelTriggers([...novelTriggers.values()])
+        : Promise.resolve(new Map<JenaTriggerId, JenaTrigger>())
+
+    const storedNovelTriggers = await novelStorePromise
+    const pendingStoredTriggers = await resolvePendingTriggers(pendingTriggers)
+
+    return canonicalTriggers.map((trigger) => {
+      return (
+        storedNovelTriggers.get(trigger.id) ??
+        pendingStoredTriggers.get(trigger.id) ??
+        cachedTriggers.get(trigger.id) ??
+        this.cachedTriggers.get(trigger.id) ??
+        trigger
+      )
+    })
+  }
+
+  async fetchTriggers(ids: JenaTriggerId[]) {
+    if (ids.length === 0) {
+      return []
+    }
+
+    const cachedResults = new Map<JenaTriggerId, JenaTrigger>()
+    const pendingTriggers = new Map<JenaTriggerId, Promise<JenaTrigger>>()
+    const missingIds = new Set<JenaTriggerId>()
+    const persistedTriggers = await this.getCachedTriggers(ids)
+
+    ids.forEach((id) => {
+      const cachedTrigger = persistedTriggers.get(id)
+      if (cachedTrigger) {
+        cachedResults.set(id, cachedTrigger)
+        return
+      }
+
+      const pendingFetch = this.pendingFetches.get(id)
+      if (pendingFetch) {
+        pendingTriggers.set(id, pendingFetch)
+        return
+      }
+
+      missingIds.add(id)
+    })
+
+    const fetchedMissingTriggers =
+      missingIds.size > 0
+        ? await this.fetchMissingTriggers([...missingIds])
+        : new Map<JenaTriggerId, JenaTrigger>()
+    const pendingFetchedTriggers = await resolvePendingTriggers(pendingTriggers)
+
+    const allTriggers = new Map<JenaTriggerId, JenaTrigger>([
+      ...cachedResults,
+      ...fetchedMissingTriggers,
+      ...pendingFetchedTriggers,
+    ])
+    const unresolvedIds = ids.filter((id) => !allTriggers.has(id))
+
+    if (unresolvedIds.length > 0) {
+      throw new Error(`Missing triggers: ${unresolvedIds.join(', ')}`)
+    }
+
+    return ids.map((id) => allTriggers.get(id) as JenaTrigger)
+  }
+
+  private async storeNovelTriggers(triggers: JenaTrigger[]) {
+    const pendingStore = this.server
+      .storeTriggers(triggers)
+      .then((storedTriggers) => {
+        return this.cacheReturnedTriggers(triggers, storedTriggers)
+      })
+
+    triggers.forEach((trigger) => {
+      const pendingTrigger = pendingStore.then((storedTriggers) => {
+        return storedTriggers.get(trigger.id) as JenaTrigger
+      })
+
+      pendingTrigger.catch(() => undefined)
+      this.pendingStores.set(trigger.id, pendingTrigger)
+    })
+
+    try {
+      return await pendingStore
+    } finally {
+      triggers.forEach((trigger) => {
+        this.pendingStores.delete(trigger.id)
+      })
+    }
+  }
+
+  private async fetchMissingTriggers(ids: JenaTriggerId[]) {
+    const pendingFetch = this.server
+      .fetchTriggers(ids)
+      .then((fetchedTriggers) => {
+        return this.cacheReturnedTriggersByIDs(ids, fetchedTriggers)
+      })
+
+    ids.forEach((id) => {
+      const pendingTrigger = pendingFetch.then((fetchedTriggers) => {
+        return fetchedTriggers.get(id) as JenaTrigger
+      })
+
+      pendingTrigger.catch(() => undefined)
+      this.pendingFetches.set(id, pendingTrigger)
+    })
+
+    try {
+      return await pendingFetch
+    } finally {
+      ids.forEach((id) => {
+        this.pendingFetches.delete(id)
+      })
+    }
+  }
+
+  private cacheReturnedTriggers(
+    requestedTriggers: JenaTrigger[],
+    returnedTriggers: JenaTrigger[],
+  ) {
+    const returnedByID = new Map<JenaTriggerId, JenaTrigger>()
+
+    returnedTriggers.forEach((trigger) => {
+      const canonicalTrigger = withCanonicalTriggerId(trigger)
+      returnedByID.set(canonicalTrigger.id, canonicalTrigger)
+      this.cachedTriggers.set(canonicalTrigger.id, canonicalTrigger)
+    })
+
+    const missingIds = requestedTriggers
+      .map((trigger) => trigger.id)
+      .filter((id) => !returnedByID.has(id))
+
+    if (missingIds.length > 0) {
+      throw new Error(`Missing triggers: ${missingIds.join(', ')}`)
+    }
+
+    this.persistTriggers([...returnedByID.values()])
+
+    return returnedByID
+  }
+
+  private cacheReturnedTriggersByIDs(
+    requestedIDs: JenaTriggerId[],
+    returnedTriggers: JenaTrigger[],
+  ) {
+    const returnedByID = new Map<JenaTriggerId, JenaTrigger>()
+
+    returnedTriggers.forEach((trigger) => {
+      const canonicalTrigger = withCanonicalTriggerId(trigger)
+      returnedByID.set(canonicalTrigger.id, canonicalTrigger)
+      this.cachedTriggers.set(canonicalTrigger.id, canonicalTrigger)
+    })
+
+    const missingIds = requestedIDs.filter((id) => !returnedByID.has(id))
+    if (missingIds.length > 0) {
+      throw new Error(`Missing triggers: ${missingIds.join(', ')}`)
+    }
+
+    this.persistTriggers([...returnedByID.values()])
+
+    return returnedByID
+  }
+
+  private async getCachedTriggers(ids: JenaTriggerId[]) {
+    const cachedTriggers = new Map<JenaTriggerId, JenaTrigger>()
+    const missingMemoryIds: JenaTriggerId[] = []
+
+    ids.forEach((id) => {
+      const cachedTrigger = this.cachedTriggers.get(id)
+      if (cachedTrigger) {
+        cachedTriggers.set(id, cachedTrigger)
+        return
+      }
+
+      missingMemoryIds.push(id)
+    })
+
+    if (missingMemoryIds.length === 0) {
+      return cachedTriggers
+    }
+
+    const persistedTriggers = await this.cache
+      .getTriggers(missingMemoryIds)
+      .catch((error: unknown) => {
+        console.warn('[TriggerStore] unable to read trigger cache', error)
+
+        return new Map<JenaTriggerId, JenaTrigger>()
+      })
+    persistedTriggers.forEach((trigger, id) => {
+      cachedTriggers.set(id, trigger)
+      this.cachedTriggers.set(id, trigger)
+    })
+
+    return cachedTriggers
+  }
+
+  private persistTriggers(triggers: JenaTrigger[]) {
+    void this.cache.putTriggers(triggers).catch((error: unknown) => {
+      console.warn('[TriggerStore] unable to write trigger cache', error)
+    })
+  }
+}
+
+async function resolvePendingTriggers(
+  pendingTriggers: Map<JenaTriggerId, Promise<JenaTrigger>>,
+) {
+  const resolvedTriggers = new Map<JenaTriggerId, JenaTrigger>()
+
+  await Promise.all(
+    [...pendingTriggers].map(async ([id, pendingTrigger]) => {
+      resolvedTriggers.set(id, await pendingTrigger)
+    }),
+  )
+
+  return resolvedTriggers
+}
+
+export class InMemoryTriggerCache implements TriggerCache {
+  private readonly triggers = new Map<JenaTriggerId, JenaTrigger>()
+
+  async getTriggers(ids: JenaTriggerId[]) {
+    return new Map(
+      ids.flatMap((id) => {
+        const trigger = this.triggers.get(id)
+
+        return trigger ? [[id, trigger] as const] : []
+      }),
+    )
+  }
+
+  async putTriggers(triggers: JenaTrigger[]) {
+    triggers.forEach((trigger) => {
+      this.triggers.set(trigger.id, trigger)
+    })
+  }
+}
+
+class IndexedDBTriggerCache implements TriggerCache {
+  async getTriggers(ids: JenaTriggerId[]) {
+    const database = await openDatabase()
+
+    try {
+      return await getCachedTriggers(database, ids)
+    } finally {
+      database.close()
+    }
+  }
+
+  async putTriggers(triggers: JenaTrigger[]) {
+    if (triggers.length === 0) {
+      return
+    }
+
+    const database = await openDatabase()
+
+    try {
+      await putCachedTriggers(database, triggers)
+    } finally {
+      database.close()
+    }
+  }
+}
+
+function openDatabase() {
+  return new Promise<IDBDatabase>((resolve, reject) => {
+    const request = indexedDB.open(databaseName, databaseVersion)
+
+    request.onupgradeneeded = () => {
+      const database = request.result
+
+      if (!database.objectStoreNames.contains(handlesStoreName)) {
+        database.createObjectStore(handlesStoreName)
+      }
+      if (!database.objectStoreNames.contains(triggerCacheStoreName)) {
+        database.createObjectStore(triggerCacheStoreName)
+      }
+      if (!database.objectStoreNames.contains(userTriggerCacheStoreName)) {
+        database.createObjectStore(userTriggerCacheStoreName)
+      }
+    }
+
+    request.onsuccess = () => resolve(request.result)
+    request.onerror = () => reject(request.error ?? new Error('IndexedDB failed.'))
+  })
+}
+
+function getCachedTriggers(database: IDBDatabase, ids: JenaTriggerId[]) {
+  return new Promise<Map<JenaTriggerId, JenaTrigger>>((resolve, reject) => {
+    const transaction = database.transaction(triggerCacheStoreName, 'readonly')
+    const store = transaction.objectStore(triggerCacheStoreName)
+    const triggers = new Map<JenaTriggerId, JenaTrigger>()
+    let remaining = ids.length
+
+    if (remaining === 0) {
+      resolve(triggers)
+      return
+    }
+
+    ids.forEach((id) => {
+      const request = store.get(id)
+
+      request.onsuccess = () => {
+        if (request.result) {
+          triggers.set(id, request.result as JenaTrigger)
+        }
+
+        remaining -= 1
+        if (remaining === 0) {
+          resolve(triggers)
+        }
+      }
+      request.onerror = () => reject(request.error ?? new Error('Read failed.'))
+    })
+
+    transaction.onerror = () =>
+      reject(transaction.error ?? new Error('Transaction failed.'))
+  })
+}
+
+function putCachedTriggers(database: IDBDatabase, triggers: JenaTrigger[]) {
+  return new Promise<void>((resolve, reject) => {
+    const transaction = database.transaction(triggerCacheStoreName, 'readwrite')
+    const store = transaction.objectStore(triggerCacheStoreName)
+
+    triggers.forEach((trigger) => {
+      store.put(trigger, trigger.id)
+    })
+
+    transaction.oncomplete = () => resolve()
+    transaction.onerror = () =>
+      reject(transaction.error ?? new Error('Transaction failed.'))
+    transaction.onabort = () =>
+      reject(transaction.error ?? new Error('Transaction aborted.'))
+  })
+}

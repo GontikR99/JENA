@@ -88,6 +88,58 @@ describe('CharacterPresenceService', () => {
     characterPresenceService.dispose()
   })
 
+  it('ignores the Bind Affinity allowed line when tracking zones', async () => {
+    const { broker, characterPresenceService, fileWatcher } = createHarness()
+
+    broker.send('file-watcher', 'file-watcher.characters', {
+      characters: [
+        { active: true, characterName: 'Arias', serverName: 'bertox' },
+      ],
+    } satisfies FileWatcherCharactersMessage)
+
+    await waitFor(async () => {
+      fileWatcher.emit({
+        characterName: 'Arias',
+        serverName: 'bertox',
+        text: 'You have entered The Nexus.',
+        timestamp: 'Sun Jun 14 10:00:00 2026',
+      })
+
+      const result = await broker.call<{
+        characters: CharacterPresenceCharactersMessage['characters']
+      }>('test.character-presence', 'character-presence', 'getCharacters', {})
+
+      return result.characters.some((character) => {
+        return (
+          character.characterName === 'Arias' &&
+          character.serverName === 'bertox' &&
+          character.zone === 'The Nexus'
+        )
+      })
+    })
+
+    fileWatcher.emit({
+      characterName: 'Arias',
+      serverName: 'bertox',
+      text: 'You have entered an area where Bind Affinity is allowed.',
+      timestamp: 'Sun Jun 14 10:00:01 2026',
+    })
+    await flushAsyncWork()
+
+    const result = await broker.call<{
+      characters: CharacterPresenceCharactersMessage['characters']
+    }>('test.character-presence', 'character-presence', 'getCharacters', {})
+
+    expect(result.characters).toContainEqual({
+      active: true,
+      characterName: 'Arias',
+      serverName: 'bertox',
+      zone: 'The Nexus',
+    })
+
+    characterPresenceService.dispose()
+  })
+
   it('records zone names from own /who output using case-insensitive character names', async () => {
     const { broker, characterPresenceService, fileWatcher } = createHarness()
 

@@ -1,8 +1,10 @@
 import type { FileSystemDirectoryHandleLike } from './fileSystemAccess'
 
 const databaseName = 'jena'
-const databaseVersion = 1
+const databaseVersion = 3
 const storeName = 'handles'
+const triggerCacheStoreName = 'trigger-cache'
+const userTriggerCacheStoreName = 'user-trigger-cache'
 const everQuestDirectoryKey = 'everquest-directory'
 
 export async function getSavedEverQuestDirectoryHandle() {
@@ -49,6 +51,12 @@ function openDatabase() {
 
       if (!database.objectStoreNames.contains(storeName)) {
         database.createObjectStore(storeName)
+      }
+      if (!database.objectStoreNames.contains(triggerCacheStoreName)) {
+        database.createObjectStore(triggerCacheStoreName)
+      }
+      if (!database.objectStoreNames.contains(userTriggerCacheStoreName)) {
+        database.createObjectStore(userTriggerCacheStoreName)
       }
     }
 
