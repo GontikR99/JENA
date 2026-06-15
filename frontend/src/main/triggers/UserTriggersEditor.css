@@ -1,0 +1,132 @@
+.user-triggers-editor {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+}
+
+.user-triggers-toolbar {
+  align-items: center;
+  border-bottom: 1px solid var(--bs-border-color);
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.5rem;
+}
+
+.user-triggers-tree {
+  min-height: 0;
+  overflow: auto;
+  padding: 0.25rem 0;
+}
+
+.user-triggers-row {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  color: #111827;
+  display: grid;
+  gap: 0.25rem;
+  grid-template-columns: minmax(0, 1fr) auto;
+  min-height: 2rem;
+  padding: 0.125rem 0.5rem;
+  text-align: left;
+  width: 100%;
+}
+
+.user-triggers-row:hover {
+  background: #f1f5f9;
+}
+
+.user-triggers-row-selected {
+  background: #d1e7dd;
+}
+
+.user-triggers-row-main {
+  align-items: center;
+  display: flex;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.user-triggers-indent {
+  flex: 0 0 auto;
+}
+
+.user-triggers-caret {
+  color: #495057;
+  flex: 0 0 1rem;
+  font-size: 0.75rem;
+  text-align: center;
+}
+
+.user-triggers-group-name,
+.user-triggers-trigger-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.user-triggers-group-name {
+  font-weight: 600;
+}
+
+.user-triggers-trigger-name {
+  font-size: 0.875rem;
+}
+
+.user-triggers-checkbox {
+  flex: 0 0 auto;
+  margin: 0;
+}
+
+.user-triggers-row-actions {
+  display: flex;
+  gap: 0.25rem;
+  opacity: 0;
+}
+
+.user-triggers-row:hover .user-triggers-row-actions,
+.user-triggers-row:focus-within .user-triggers-row-actions {
+  opacity: 1;
+}
+
+.user-triggers-empty {
+  color: #6c757d;
+  padding: 1rem;
+}
+
+.user-triggers-status {
+  border-top: 1px solid var(--bs-border-color);
+  color: #6c757d;
+  font-size: 0.8125rem;
+  min-height: 2rem;
+  padding: 0.35rem 0.5rem;
+}
+
+.user-triggers-import-dialog {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.user-triggers-import-file {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.user-triggers-import-status {
+  color: #6c757d;
+  font-size: 0.875rem;
+}
+
+.user-triggers-import-metrics {
+  color: #6c757d;
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 0.8125rem;
+  gap: 0.5rem 1rem;
+  justify-content: space-between;
+}

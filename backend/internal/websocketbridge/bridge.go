@@ -28,6 +28,7 @@ const (
 	keepaliveInterval = 1 * time.Second
 	readTimeout       = 10 * time.Second
 	dedupWindow       = 10 * time.Minute
+	readLimitBytes    = 16 * 1024 * 1024
 )
 
 type Bridge struct {
@@ -67,6 +68,7 @@ func (bridge *Bridge) ServeHTTP(response http.ResponseWriter, request *http.Requ
 		slog.Warn("websocket accept failed", "error", err)
 		return
 	}
+	socket.SetReadLimit(readLimitBytes)
 
 	connectionID := atomic.AddUint64(&bridge.connection, 1)
 	connection := &connection{

@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@noble/hashes": "^2.2.0",
+    "@szhsin/react-menu": "^4.5.2",
     "@tanstack/react-virtual": "^3.14.2",
     "bootstrap": "^5.3.8",
     "fflate": "^0.8.3",

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { RE2JS } from 're2js'
 import Alert from 'react-bootstrap/Alert'
 import Button from 'react-bootstrap/Button'
 import Modal from 'react-bootstrap/Modal'
@@ -98,7 +99,10 @@ export function TriggerEditorDialog({
   }
 
   function handleSave() {
-    const nextValidationErrors = validateTriggerDraft(draft)
+    const nextValidationErrors = [
+      ...validateTriggerDraft(draft),
+      ...validateRegularExpressions(draft),
+    ]
 
     if (nextValidationErrors.length > 0) {
       setValidationErrors(nextValidationErrors)
@@ -197,4 +201,34 @@ export function TriggerEditorDialog({
       </Modal.Footer>
     </Modal>
   )
+}
+
+function validateRegularExpressions(draft: TriggerEditorDraft) {
+  const errors: string[] = []
+
+  try {
+    RE2JS.compile(RE2JS.translateRegExp(draft.match))
+  } catch (error) {
+    errors.push(`Search text must be a valid regular expression: ${getErrorMessage(error)}`)
+  }
+
+  draft.timer.earlyEnders.forEach((earlyEnder, index) => {
+    if (earlyEnder.trim().length === 0) {
+      return
+    }
+
+    try {
+      RE2JS.compile(RE2JS.translateRegExp(earlyEnder))
+    } catch (error) {
+      errors.push(
+        `Timer early-end text row ${index + 1} must be a valid regular expression: ${getErrorMessage(error)}`,
+      )
+    }
+  })
+
+  return errors
+}
+
+function getErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error)
 }

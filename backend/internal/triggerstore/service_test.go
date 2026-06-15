@@ -66,6 +66,43 @@ func TestServiceRejectsTriggerWithMismatchedID(t *testing.T) {
 	if response.Error == nil || !strings.Contains(response.Error.Message, "does not match canonical id") {
 		t.Fatalf("error %#v, want canonical id mismatch", response.Error)
 	}
+	if !strings.Contains(response.Error.Message, "failed trigger json:") {
+		t.Fatalf("error %q, want failed trigger json", response.Error.Message)
+	}
+}
+
+func TestServiceStoresImportedTriggerWithAngleBrackets(t *testing.T) {
+	ctx := context.Background()
+	bus := eventbus.New()
+	db := newTestDatabase(t)
+	service, err := New(ctx, bus, db)
+	if err != nil {
+		t.Fatalf("New returned error: %v", err)
+	}
+	defer service.Dispose()
+
+	const encodedTrigger = `{"actions":{"display":{"enabled":false,"text":"Feigned Death - Stand Up"},"speech":{"enabled":true,"text":"Stand Up","interrupt":false},"clipboard":{"enabled":false,"text":""}},"category":"Debuffs","comments":"","groupPath":["AD Triggers","Raids","House of Thule","Tier 3","Guardian of the House (HoT Upper)"],"match":"a groundshattering golem begins to cast a spell\\. <Earthshock>","name":"A groundshattering golem - Earthshock","timer":{"type":"repeating","name":"FD/DD AE","durationMs":30000,"startBehavior":"restart","warningSeconds":0,"warningAction":null,"endedAction":null,"earlyEnders":["end timer","you have been slain","a groundshattering golem has been slain","you have slain a ground","'s corpse falls to the ground"]},"id":"8a255247-6347-1511-f561-490dade718de"}`
+
+	var trigger model.Trigger
+	if err := json.Unmarshal([]byte(encodedTrigger), &trigger); err != nil {
+		t.Fatalf("Unmarshal failed trigger returned error: %v", err)
+	}
+
+	storeResponse := callRPC[StoreTriggersResponse](t, bus, "storeTriggers", StoreTriggersRequest{
+		Triggers: []model.Trigger{trigger},
+	})
+
+	if !reflect.DeepEqual(storeResponse.Triggers, []model.Trigger{trigger}) {
+		t.Fatalf("stored triggers %#v, want %#v", storeResponse.Triggers, []model.Trigger{trigger})
+	}
+
+	fetchResponse := callRPC[FetchTriggersResponse](t, bus, "fetchTriggers", FetchTriggersRequest{
+		IDs: []model.TriggerID{trigger.ID},
+	})
+
+	if !reflect.DeepEqual(fetchResponse.Triggers, []model.Trigger{trigger}) {
+		t.Fatalf("fetched triggers %#v, want %#v", fetchResponse.Triggers, []model.Trigger{trigger})
+	}
 }
 
 func TestServiceReturnsErrorForMissingTrigger(t *testing.T) {

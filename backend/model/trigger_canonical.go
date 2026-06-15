@@ -1,6 +1,7 @@
 package model
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -29,7 +30,7 @@ func CanonicalTriggerID(trigger Trigger) (TriggerID, error) {
 		Timer:     getTriggerTimerHashContent(trigger.Timer),
 	}
 
-	encoded, err := json.Marshal(content)
+	encoded, err := marshalCanonicalJSON(content)
 	if err != nil {
 		return "", fmt.Errorf("marshal canonical trigger content: %w", err)
 	}
@@ -44,6 +45,18 @@ func CanonicalTriggerID(trigger Trigger) (TriggerID, error) {
 			hexDigest[16:20] + "-" +
 			hexDigest[20:32],
 	), nil
+}
+
+func marshalCanonicalJSON(value any) ([]byte, error) {
+	var buffer bytes.Buffer
+	encoder := json.NewEncoder(&buffer)
+	encoder.SetEscapeHTML(false)
+
+	if err := encoder.Encode(value); err != nil {
+		return nil, err
+	}
+
+	return bytes.TrimSuffix(buffer.Bytes(), []byte("\n")), nil
 }
 
 type canonicalTriggerContent struct {

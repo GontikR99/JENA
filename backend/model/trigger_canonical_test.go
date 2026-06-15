@@ -1,6 +1,9 @@
 package model
 
-import "testing"
+import (
+	"encoding/json"
+	"testing"
+)
 
 func TestWithCanonicalTriggerIDReturnsCopyWithCanonicalID(t *testing.T) {
 	trigger := createTestTrigger()
@@ -57,6 +60,24 @@ func TestCanonicalTriggerIDChangesWhenContentChanges(t *testing.T) {
 
 	if secondID == firstID {
 		t.Fatal("expected different IDs for different trigger content")
+	}
+}
+
+func TestCanonicalTriggerIDMatchesBrowserForUnescapedAngleBrackets(t *testing.T) {
+	const encodedTrigger = `{"actions":{"display":{"enabled":false,"text":"Feigned Death - Stand Up"},"speech":{"enabled":true,"text":"Stand Up","interrupt":false},"clipboard":{"enabled":false,"text":""}},"category":"Debuffs","comments":"","groupPath":["AD Triggers","Raids","House of Thule","Tier 3","Guardian of the House (HoT Upper)"],"match":"a groundshattering golem begins to cast a spell\\. <Earthshock>","name":"A groundshattering golem - Earthshock","timer":{"type":"repeating","name":"FD/DD AE","durationMs":30000,"startBehavior":"restart","warningSeconds":0,"warningAction":null,"endedAction":null,"earlyEnders":["end timer","you have been slain","a groundshattering golem has been slain","you have slain a ground","'s corpse falls to the ground"]},"id":"8a255247-6347-1511-f561-490dade718de"}`
+
+	var trigger Trigger
+	if err := json.Unmarshal([]byte(encodedTrigger), &trigger); err != nil {
+		t.Fatalf("Unmarshal trigger returned error: %v", err)
+	}
+
+	id, err := CanonicalTriggerID(trigger)
+	if err != nil {
+		t.Fatalf("CanonicalTriggerID returned error: %v", err)
+	}
+
+	if id != "8a255247-6347-1511-f561-490dade718de" {
+		t.Fatalf("ID %q, want 8a255247-6347-1511-f561-490dade718de", id)
 	}
 }
 

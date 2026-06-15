@@ -80,7 +80,12 @@ func (service *Service) StoreTrigger(ctx context.Context, trigger model.Trigger)
 	}
 
 	if trigger.ID != canonicalTrigger.ID {
-		return model.Trigger{}, fmt.Errorf("trigger id %q does not match canonical id %q", trigger.ID, canonicalTrigger.ID)
+		encodedTrigger, err := json.Marshal(trigger)
+		if err != nil {
+			return model.Trigger{}, fmt.Errorf("trigger id %q does not match canonical id %q; failed trigger could not be marshaled: %w", trigger.ID, canonicalTrigger.ID, err)
+		}
+
+		return model.Trigger{}, fmt.Errorf("trigger id %q does not match canonical id %q; failed trigger json: %s", trigger.ID, canonicalTrigger.ID, string(encodedTrigger))
 	}
 
 	encodedTrigger, err := json.Marshal(canonicalTrigger)
