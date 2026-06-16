@@ -31,6 +31,7 @@
   min-height: 2rem;
   padding: 0.125rem 0.5rem;
   text-align: left;
+  user-select: none;
   width: 100%;
 }
 
@@ -54,10 +55,20 @@
 }
 
 .user-triggers-caret {
+  background: transparent;
+  border: 0;
   color: #495057;
   flex: 0 0 1rem;
   font-size: 0.75rem;
+  height: 1.5rem;
+  line-height: 1;
+  padding: 0;
   text-align: center;
+  width: 1rem;
+}
+
+.user-triggers-caret:disabled {
+  opacity: 1;
 }
 
 .user-triggers-group-name,

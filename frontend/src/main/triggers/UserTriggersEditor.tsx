@@ -50,7 +50,7 @@ interface TreeGroupItem {
 }
 
 interface TreeTriggerItem {
-  id: string
+  id: JenaTriggerId
   path: string[]
   resolved: JenaResolvedTrigger
   type: 'trigger'
@@ -99,6 +99,15 @@ interface TriggerReplacement {
   upsert: JenaTriggerUpsert
 }
 
+type TreeSelection =
+  | { type: 'none' }
+  | { type: 'group'; path: string[] }
+  | {
+      anchorId: JenaTriggerId | null
+      ids: Set<JenaTriggerId>
+      type: 'triggers'
+    }
+
 export function UserTriggersEditor({
   selectedCharacter,
 }: UserTriggersEditorProps) {
@@ -115,11 +124,7 @@ export function UserTriggersEditor({
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(
     () => new Set(),
   )
-  const [selectedTriggerIds, setSelectedTriggerIds] = useState<Set<string>>(
-    () => new Set(),
-  )
-  const [lastSelectedTriggerId, setLastSelectedTriggerId] =
-    useState<string | null>(null)
+  const [selection, setSelection] = useState<TreeSelection>({ type: 'none' })
   const [editorSession, setEditorSession] = useState<EditorSession | null>(null)
   const [importSession, setImportSession] = useState<ImportSession | null>(null)
   const [operationSession, setOperationSession] =
@@ -158,6 +163,12 @@ export function UserTriggersEditor({
     () => getGroupStatesById(triggers, selectedCharacterKey),
     [selectedCharacterKey, triggers],
   )
+  const selectedTriggerIds =
+    selection.type === 'triggers'
+      ? selection.ids
+      : new Set<JenaTriggerId>()
+  const selectedGroupPath =
+    selection.type === 'group' ? selection.path : null
 
   useEffect(() => {
     let cancelled = false
@@ -214,31 +225,59 @@ export function UserTriggersEditor({
     item: TreeItem | null,
   ) {
     event.preventDefault()
+    event.stopPropagation()
     setMenuTarget({ item })
     setAnchorPoint({ x: event.clientX, y: event.clientY })
 
-    if (
-      item?.type === 'trigger' &&
-      !selectedTriggerIds.has(item.id)
-    ) {
-      setSelectedTriggerIds(new Set([item.id]))
-      setLastSelectedTriggerId(item.id)
+    if (item?.type === 'trigger' && !selectedTriggerIds.has(item.id)) {
+      setSelection({
+        anchorId: item.id,
+        ids: new Set([item.id]),
+        type: 'triggers',
+      })
+    } else if (item?.type === 'group') {
+      setSelection((current) => {
+        if (current.type === 'triggers' && current.ids.size > 0) {
+          return current
+        }
+        if (
+          current.type === 'group' &&
+          !areStringArraysEqual(current.path, item.path)
+        ) {
+          return current
+        }
+        return { path: item.path, type: 'group' }
+      })
+    } else if (!item) {
+      setSelection({ type: 'none' })
     }
 
     setMenuOpen(true)
   }
 
+  function handleGroupClick(event: MouseEvent, item: TreeGroupItem) {
+    event.preventDefault()
+    setSelection({ path: item.path, type: 'group' })
+  }
+
   function handleTriggerClick(event: MouseEvent, item: TreeTriggerItem) {
-    if (event.shiftKey && lastSelectedTriggerId) {
-      setSelectedTriggerIds(
-        selectTriggerRange(triggerOrder, lastSelectedTriggerId, item.id),
-      )
+    event.preventDefault()
+    const anchorId = selection.type === 'triggers' ? selection.anchorId : null
+
+    if (event.shiftKey && anchorId) {
+      setSelection({
+        anchorId,
+        ids: selectTriggerRange(triggerOrder, anchorId, item.id),
+        type: 'triggers',
+      })
       return
     }
 
     if (event.ctrlKey || event.metaKey) {
-      setSelectedTriggerIds((previous) => {
-        const nextSelection = new Set(previous)
+      setSelection((previous) => {
+        const nextSelection = new Set(
+          previous.type === 'triggers' ? previous.ids : [],
+        )
 
         if (nextSelection.has(item.id)) {
           nextSelection.delete(item.id)
@@ -246,14 +285,22 @@ export function UserTriggersEditor({
           nextSelection.add(item.id)
         }
 
-        return nextSelection
+        return nextSelection.size > 0
+          ? {
+              anchorId: item.id,
+              ids: nextSelection,
+              type: 'triggers',
+            }
+          : { type: 'none' }
       })
-      setLastSelectedTriggerId(item.id)
       return
     }
 
-    setSelectedTriggerIds(new Set([item.id]))
-    setLastSelectedTriggerId(item.id)
+    setSelection({
+      anchorId: item.id,
+      ids: new Set([item.id]),
+      type: 'triggers',
+    })
   }
 
   function toggleGroup(item: TreeGroupItem) {
@@ -376,8 +423,11 @@ export function UserTriggersEditor({
       deleteTriggerIds: [resolved.trigger.id],
       enabledFor: resolved.enabledFor,
     })
-    setSelectedTriggerIds(new Set([renamedTrigger.id]))
-    setLastSelectedTriggerId(renamedTrigger.id)
+    setSelection({
+      anchorId: renamedTrigger.id,
+      ids: new Set([renamedTrigger.id]),
+      type: 'triggers',
+    })
   }
 
   async function handleSaveEditor(trigger: JenaTrigger) {
@@ -396,8 +446,11 @@ export function UserTriggersEditor({
       enabledFor,
     })
     setEditorSession(null)
-    setSelectedTriggerIds(new Set([canonicalTrigger.id]))
-    setLastSelectedTriggerId(canonicalTrigger.id)
+    setSelection({
+      anchorId: canonicalTrigger.id,
+      ids: new Set([canonicalTrigger.id]),
+      type: 'triggers',
+    })
   }
 
   async function handleDeleteTriggerIds(triggerIds: JenaTriggerId[]) {
@@ -414,10 +467,20 @@ export function UserTriggersEditor({
     }
 
     await deleteTriggers(triggerIds)
-    setSelectedTriggerIds((previous) => {
-      const next = new Set(previous)
+    setSelection((previous) => {
+      if (previous.type !== 'triggers') {
+        return previous
+      }
+
+      const next = new Set(previous.ids)
       triggerIds.forEach((triggerId) => next.delete(triggerId))
-      return next
+      return next.size > 0
+        ? {
+            anchorId: getSelectionAnchor(next, previous.anchorId),
+            ids: next,
+            type: 'triggers',
+          }
+        : { type: 'none' }
     })
   }
 
@@ -440,10 +503,27 @@ export function UserTriggersEditor({
     setEmptyGroups((previous) =>
       previous.filter((path) => !isSameOrChildPath(path, group.path)),
     )
-    setSelectedTriggerIds((previous) => {
-      const next = new Set(previous)
+    setSelection((previous) => {
+      if (
+        previous.type === 'group' &&
+        isSameOrChildPath(previous.path, group.path)
+      ) {
+        return { type: 'none' }
+      }
+
+      if (previous.type !== 'triggers') {
+        return previous
+      }
+
+      const next = new Set(previous.ids)
       affectedTriggerIds.forEach((triggerId) => next.delete(triggerId))
-      return next
+      return next.size > 0
+        ? {
+            anchorId: getSelectionAnchor(next, previous.anchorId),
+            ids: next,
+            type: 'triggers',
+          }
+        : { type: 'none' }
     })
   }
 
@@ -467,6 +547,7 @@ export function UserTriggersEditor({
           previous.map((path) => renamePathPrefix(path, group.path, renamedPath)),
         ),
       )
+      setSelection({ path: renamedPath, type: 'group' })
       return
     }
 
@@ -481,23 +562,24 @@ export function UserTriggersEditor({
       }),
     )
 
-    const completedReplacements = await performChunkedReplacements(
+    await performChunkedReplacements(
       `Rename ${group.name}`,
       replacements,
-    )
-    setSelectedTriggerIds(new Set(completedReplacements.map((replacement) => replacement.newTrigger.id)))
-    setLastSelectedTriggerId(
-      completedReplacements.at(-1)?.newTrigger.id ?? null,
     )
     setEmptyGroups((previous) =>
       mergeGroupPaths(
         previous.map((path) => renamePathPrefix(path, group.path, renamedPath)),
       ),
     )
+    setSelection({ path: renamedPath, type: 'group' })
   }
 
-  async function handleMoveSelected(targetPath: string[]) {
-    const triggerIds = [...selectedTriggerIds]
+  async function handleMoveSelectedTriggers(targetPath: string[]) {
+    if (selection.type !== 'triggers') {
+      return
+    }
+
+    const triggerIds = [...selection.ids]
     const movingTriggers = triggerIds.flatMap((triggerId) => {
       const resolved = triggersById.get(triggerId)
       return resolved ? [resolved] : []
@@ -518,10 +600,65 @@ export function UserTriggersEditor({
       'Move selected triggers',
       replacements,
     )
-    setSelectedTriggerIds(new Set(completedReplacements.map((replacement) => replacement.newTrigger.id)))
-    setLastSelectedTriggerId(
-      completedReplacements.at(-1)?.newTrigger.id ?? null,
+    const movedTriggerIds = new Set(
+      completedReplacements.map((replacement) => replacement.newTrigger.id),
     )
+    setSelection({
+      anchorId: getSelectionAnchor(movedTriggerIds, null),
+      ids: movedTriggerIds,
+      type: 'triggers',
+    })
+  }
+
+  async function handleMoveSelectedGroup(targetParentPath: string[]) {
+    if (selection.type !== 'group') {
+      return
+    }
+
+    const sourcePath = selection.path
+    const sourceName = sourcePath[sourcePath.length - 1]
+
+    if (!sourceName || !canMoveGroup(sourcePath, targetParentPath)) {
+      return
+    }
+
+    const movedPath = [
+      ...targetParentPath,
+      sourceName,
+    ]
+    const movingTriggers = getResolvedTriggersUnderPath(triggers, sourcePath)
+
+    if (movingTriggers.length > 0) {
+      const replacements = movingTriggers.map((resolved) =>
+        createTriggerReplacement(resolved, {
+          ...cloneTrigger(resolved.trigger),
+          groupPath: renamePathPrefix(
+            resolved.trigger.groupPath,
+            sourcePath,
+            movedPath,
+          ),
+        }),
+      )
+
+      await performChunkedReplacements(
+        `Move ${sourceName}`,
+        replacements,
+      )
+    }
+
+    setEmptyGroups((previous) =>
+      mergeGroupPaths(
+        previous.map((path) => renamePathPrefix(path, sourcePath, movedPath)),
+      ),
+    )
+    setCollapsedGroups((previous) => {
+      const next = new Set(previous)
+      next.delete(getGroupId(targetParentPath))
+      next.delete(getGroupId(movedPath))
+      return next
+    })
+    knownGroupIdsRef.current.add(getGroupId(movedPath))
+    setSelection({ path: movedPath, type: 'group' })
   }
 
   async function performChunkedReplacements(
@@ -707,12 +844,14 @@ export function UserTriggersEditor({
 
   const effectiveMenuSelection = getEffectiveMenuSelection(
     menuTarget.item,
-    selectedTriggerIds,
+    selection,
   )
   const menuGroup =
     menuTarget.item?.type === 'group' ? menuTarget.item : null
   const menuTrigger =
     menuTarget.item?.type === 'trigger' ? menuTarget.item : null
+  const canMoveSelectedGroupHere =
+    !!menuGroup && !!selectedGroupPath && canMoveGroup(selectedGroupPath, menuGroup.path)
 
   return (
     <section
@@ -756,10 +895,15 @@ export function UserTriggersEditor({
                 onAddGroup={handleAddGroup}
                 onAddTrigger={handleAddTrigger}
                 onContextMenu={openContextMenu}
+                onSelect={handleGroupClick}
                 onToggleChecked={(enabled) => {
                   void handleToggleGroup(item, enabled)
                 }}
                 onToggle={toggleGroup}
+                selected={
+                  !!selectedGroupPath &&
+                  areStringArraysEqual(selectedGroupPath, item.path)
+                }
               />
             ) : (
               <TriggerRow
@@ -835,12 +979,22 @@ export function UserTriggersEditor({
               add trigger
             </MenuItem>
             <MenuItem
-              disabled={selectedTriggerIds.size === 0}
+              disabled={
+                selectedGroupPath
+                  ? !canMoveSelectedGroupHere
+                  : selectedTriggerIds.size === 0
+              }
               onClick={() => {
-                void handleMoveSelected(menuGroup.path)
+                if (selectedGroupPath) {
+                  void handleMoveSelectedGroup(menuGroup.path)
+                } else {
+                  void handleMoveSelectedTriggers(menuGroup.path)
+                }
               }}
             >
-              move selected here
+              {selectedGroupPath
+                ? 'move selected group here'
+                : 'move selected triggers here'}
             </MenuItem>
           </>
         ) : null}
@@ -1045,8 +1199,10 @@ function GroupRow({
   onAddGroup,
   onAddTrigger,
   onContextMenu,
+  onSelect,
   onToggle,
   onToggleChecked,
+  selected,
 }: {
   checkboxDisabled: boolean
   checkboxState: TriStateCheckboxState
@@ -1054,19 +1210,27 @@ function GroupRow({
   item: TreeGroupItem
   onAddGroup: (path: string[]) => void
   onAddTrigger: (path: string[]) => void
-  onContextMenu: (event: React.MouseEvent, item: TreeItem) => void
+  onContextMenu: (event: MouseEvent, item: TreeItem) => void
+  onSelect: (event: MouseEvent, item: TreeGroupItem) => void
   onToggle: (item: TreeGroupItem) => void
   onToggleChecked: (enabled: boolean) => void
+  selected: boolean
 }) {
   return (
     <div
       aria-expanded={!collapsed}
-      className="user-triggers-row"
-      onClick={() => onToggle(item)}
+      aria-selected={selected}
+      className={
+        selected
+          ? 'user-triggers-row user-triggers-row-selected'
+          : 'user-triggers-row'
+      }
+      onClick={(event) => onSelect(event, item)}
       onContextMenu={(event) => {
         event.stopPropagation()
         onContextMenu(event, item)
       }}
+      onDoubleClick={() => onToggle(item)}
       role="treeitem"
       tabIndex={0}
     >
@@ -1075,9 +1239,18 @@ function GroupRow({
           className="user-triggers-indent"
           style={{ width: `${Math.max(0, item.path.length - 1) * 1.15}rem` }}
         />
-        <span className="user-triggers-caret">
+        <button
+          aria-label={collapsed ? `Expand ${item.name}` : `Collapse ${item.name}`}
+          className="user-triggers-caret"
+          disabled={item.childCount === 0}
+          onClick={(event) => {
+            event.stopPropagation()
+            onToggle(item)
+          }}
+          type="button"
+        >
           {item.childCount > 0 ? (collapsed ? '>' : 'v') : ''}
-        </span>
+        </button>
         <TriStateCheckbox
           ariaLabel={`Enable triggers in ${item.name}`}
           className="form-check-input user-triggers-checkbox"
@@ -1129,7 +1302,7 @@ function TriggerRow({
   checkboxDisabled: boolean
   checkboxState: TriStateCheckboxState
   item: TreeTriggerItem
-  onClick: (event: React.MouseEvent, item: TreeTriggerItem) => void
+  onClick: (event: MouseEvent, item: TreeTriggerItem) => void
   onContextMenu: (event: MouseEvent, item: TreeItem) => void
   onToggle: (enabled: boolean) => void
   selected: boolean
@@ -1387,9 +1560,9 @@ function getTriState(
 }
 
 function selectTriggerRange(
-  triggerOrder: string[],
-  anchorId: string,
-  targetId: string,
+  triggerOrder: JenaTriggerId[],
+  anchorId: JenaTriggerId,
+  targetId: JenaTriggerId,
 ) {
   const anchorIndex = triggerOrder.indexOf(anchorId)
   const targetIndex = triggerOrder.indexOf(targetId)
@@ -1406,13 +1579,27 @@ function selectTriggerRange(
 
 function getEffectiveMenuSelection(
   item: TreeItem | null,
-  selectedTriggerIds: Set<string>,
+  selection: TreeSelection,
 ) {
-  if (item?.type === 'trigger' && !selectedTriggerIds.has(item.id)) {
+  if (
+    item?.type === 'trigger' &&
+    (selection.type !== 'triggers' || !selection.ids.has(item.id))
+  ) {
     return [item.id]
   }
 
-  return [...selectedTriggerIds]
+  return selection.type === 'triggers' ? [...selection.ids] : []
+}
+
+function getSelectionAnchor(
+  ids: Set<JenaTriggerId>,
+  preferred: JenaTriggerId | null,
+) {
+  if (preferred && ids.has(preferred)) {
+    return preferred
+  }
+
+  return [...ids][0] ?? null
 }
 
 function mergeGroupPaths(paths: string[][]) {
@@ -1445,6 +1632,16 @@ function isSameOrChildPath(path: string[], parentPath: string[]) {
   )
 }
 
+function canMoveGroup(sourcePath: string[], targetParentPath: string[]) {
+  const sourceParentPath = sourcePath.slice(0, -1)
+
+  return (
+    sourcePath.length > 0 &&
+    !areStringArraysEqual(sourceParentPath, targetParentPath) &&
+    !isSameOrChildPath(targetParentPath, sourcePath)
+  )
+}
+
 function renamePathPrefix(
   path: string[],
   oldPrefix: string[],
@@ -1465,6 +1662,13 @@ function areSetsEqual<TValue>(left: Set<TValue>, right: Set<TValue>) {
   return (
     left.size === right.size &&
     [...left].every((value) => right.has(value))
+  )
+}
+
+function areStringArraysEqual(left: string[], right: string[]) {
+  return (
+    left.length === right.length &&
+    left.every((value, index) => value === right[index])
   )
 }
 

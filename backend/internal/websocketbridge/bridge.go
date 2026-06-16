@@ -28,7 +28,7 @@ const (
 	keepaliveInterval = 1 * time.Second
 	readTimeout       = 10 * time.Second
 	dedupWindow       = 10 * time.Minute
-	readLimitBytes    = 16 * 1024 * 1024
+	readLimitBytes    = 1024 * 1024
 )
 
 type Bridge struct {
