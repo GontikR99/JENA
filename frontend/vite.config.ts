@@ -31,8 +31,12 @@ export default defineConfig({
   },
   test: {
     include: [
-      'src/main/__tests__/**/*.test.ts',
-      'src/main/__tests__/**/*.test.tsx',
+      'src/bridges/**/__tests__/**/*.test.ts',
+      'src/bridges/**/__tests__/**/*.test.tsx',
+      'src/characters/__tests__/**/*.test.ts',
+      'src/characters/__tests__/**/*.test.tsx',
+      'src/triggers/__tests__/**/*.test.ts',
+      'src/triggers/__tests__/**/*.test.tsx',
       'src/pip/__tests__/**/*.test.ts',
       'src/pip/__tests__/**/*.test.tsx',
       'src/shared/__tests__/**/*.test.ts',
