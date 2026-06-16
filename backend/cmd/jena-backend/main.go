@@ -86,7 +86,6 @@ func run(args []string) error {
 		"backend configured",
 		"addr", config.Addr,
 		"databasePath", config.DatabasePath,
-		"staticDir", config.StaticDir,
 		"websocketPath", config.WebSocketPath,
 	)
 

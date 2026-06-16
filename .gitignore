@@ -8,6 +8,8 @@ dist/
 dist-ssr/
 **/dist-ssr/
 backend/static/
+backend/internal/staticfiles/app/*
+!backend/internal/staticfiles/app/.gitkeep
 
 # Logs and local env
 logs/

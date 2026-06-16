@@ -26,9 +26,6 @@ func TestParseDefaults(t *testing.T) {
 	if config.DatabaseRetryDelayMs != 25 {
 		t.Fatalf("unexpected DatabaseRetryDelayMs %d", config.DatabaseRetryDelayMs)
 	}
-	if config.StaticDir != "static" {
-		t.Fatalf("unexpected StaticDir %q", config.StaticDir)
-	}
 	if config.WebSocketPath != "/_jena/ws" {
 		t.Fatalf("unexpected WebSocketPath %q", config.WebSocketPath)
 	}

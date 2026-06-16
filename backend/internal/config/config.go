@@ -13,7 +13,6 @@ type Config struct {
 	DatabasePath         string
 	DatabaseRetryCount   int
 	DatabaseRetryDelayMs int
-	StaticDir            string
 	WebSocketPath        string
 }
 
@@ -36,7 +35,6 @@ func parse(args []string, output io.Writer) (Config, error) {
 	flags.StringVar(&config.DatabasePath, "database-path", "jena.db", "SQLite database file path")
 	flags.IntVar(&config.DatabaseRetryCount, "database-retry-count", 5, "SQLite busy/locked retry attempts")
 	flags.IntVar(&config.DatabaseRetryDelayMs, "database-retry-delay-ms", 25, "initial SQLite busy/locked retry delay in milliseconds")
-	flags.StringVar(&config.StaticDir, "static-dir", "static", "directory containing packaged frontend assets")
 	flags.StringVar(&config.WebSocketPath, "websocket-path", "/_jena/ws", "event bus websocket endpoint path")
 
 	if err := flags.Parse(args); err != nil {

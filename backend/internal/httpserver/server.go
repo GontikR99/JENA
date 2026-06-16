@@ -1,19 +1,21 @@
 package httpserver
 
 import (
+	"bytes"
 	"context"
 	"errors"
-	"fmt"
+	"io/fs"
 	"log/slog"
 	"net/http"
-	"os"
 	"path"
-	"path/filepath"
+	"strings"
 
 	"jena/backend/internal/config"
+	"jena/backend/internal/staticfiles"
 )
 
 type Server struct {
+	appFS  fs.FS
 	config config.Config
 	mux    *http.ServeMux
 	server *http.Server
@@ -23,6 +25,7 @@ func New(config config.Config) *Server {
 	mux := http.NewServeMux()
 
 	return &Server{
+		appFS:  staticfiles.App(),
 		config: config,
 		mux:    mux,
 		server: &http.Server{
@@ -41,7 +44,7 @@ func (server *Server) RegisterFunc(pattern string, handler http.HandlerFunc) {
 }
 
 func (server *Server) RegisterStaticApp() {
-	server.Register("/", StaticAppHandler(server.config.StaticDir))
+	server.Register("/", StaticAppHandler(server.appFS))
 }
 
 func (server *Server) Run(ctx context.Context) error {
@@ -71,37 +74,54 @@ func (server *Server) Run(ctx context.Context) error {
 	}
 }
 
-func StaticAppHandler(staticDir string) http.Handler {
+func StaticAppHandler(appFS fs.FS) http.Handler {
 	return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		if request.Method != http.MethodGet && request.Method != http.MethodHead {
 			http.Error(response, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 
-		indexPath := filepath.Join(staticDir, "index.html")
 		requestPath := path.Clean("/" + request.URL.Path)
-		relativePath := filepath.FromSlash(requestPath[1:])
-		filePath := filepath.Join(staticDir, relativePath)
+		relativePath := strings.TrimPrefix(requestPath, "/")
 
-		if relativePath == "" {
-			filePath = indexPath
-		}
-
-		fileInfo, err := os.Stat(filePath)
+		fileInfo, err := fs.Stat(appFS, relativePath)
 		if err == nil && !fileInfo.IsDir() {
-			http.ServeFile(response, request, filePath)
+			serveEmbeddedPath(appFS, response, request, relativePath, fileInfo)
 			return
 		}
 
-		if _, err := os.Stat(indexPath); err == nil {
-			http.ServeFile(response, request, indexPath)
+		indexInfo, err := fs.Stat(appFS, "index.html")
+		if err == nil {
+			serveEmbeddedPath(appFS, response, request, "index.html", indexInfo)
 			return
 		}
 
 		http.Error(
 			response,
-			fmt.Sprintf("frontend assets were not found in %q", staticDir),
+			"frontend assets were not embedded",
 			http.StatusNotFound,
 		)
 	})
+}
+
+func serveEmbeddedPath(
+	appFS fs.FS,
+	response http.ResponseWriter,
+	request *http.Request,
+	filePath string,
+	fileInfo fs.FileInfo,
+) {
+	data, err := fs.ReadFile(appFS, filePath)
+	if err != nil {
+		http.NotFound(response, request)
+		return
+	}
+
+	http.ServeContent(
+		response,
+		request,
+		path.Base(filePath),
+		fileInfo.ModTime(),
+		bytes.NewReader(data),
+	)
 }

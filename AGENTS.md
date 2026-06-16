@@ -193,7 +193,7 @@ The canonical typed frontend contract is `frontend/src/shared/messages.ts`. Work
 | --- | --- | --- |
 | `GET /_jena/health` | `backend/cmd/jena-backend/main.go` | Backend health check that returns `204 No Content`. |
 | `/_jena/ws` by default, configurable with `-websocket-path` | `backend/cmd/jena-backend/main.go`, `backend/internal/config/config.go`, `backend/internal/websocketbridge/bridge.go` | Browser/backend event bus websocket. |
-| `/` static app routes | `backend/internal/httpserver/server.go` | Serves packaged frontend assets from the configured static directory. |
+| `/` static app routes | `backend/internal/httpserver/server.go`, `backend/internal/staticfiles/static.go` | Serves frontend assets embedded into the Go binary. |
 
 ## Server Bridge
 
@@ -311,6 +311,7 @@ The backend uses:
 - `internal/app`: simple dependency container.
 - `internal/config`: command-line configuration.
 - `internal/httpserver`: HTTP server and route registration.
+- `internal/staticfiles`: embedded frontend assets served by the backend binary.
 - `internal/eventbus`: backend event bus with RPC semantics compatible with the frontend bus.
 - `internal/websocketbridge`: websocket bridge between frontend/server event buses.
 - `internal/database`: SQLite database setup using vendored `modernc.org/sqlite`, WAL mode, busy timeout, and retry handling for busy/locked database errors.
