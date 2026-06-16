@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ChangeEvent, MouseEvent } from 'react'
 import { ControlledMenu, MenuDivider, MenuItem, useMenuState } from '@szhsin/react-menu'
+import { FolderPlus, ListPlus } from 'lucide-react'
 import '@szhsin/react-menu/dist/index.css'
 import Alert from 'react-bootstrap/Alert'
 import Button from 'react-bootstrap/Button'
@@ -1535,7 +1536,7 @@ function GroupRow({
           title="Add subgroup"
           variant="outline-secondary"
         >
-          +
+          <FolderPlus aria-hidden="true" size={15} />
         </Button>
         <Button
           aria-label={`Add trigger to ${item.name}`}
@@ -1547,7 +1548,7 @@ function GroupRow({
           title="Add trigger"
           variant="outline-secondary"
         >
-          T+
+          <ListPlus aria-hidden="true" size={15} />
         </Button>
       </span>
     </div>
