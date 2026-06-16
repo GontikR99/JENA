@@ -1,0 +1,44 @@
+.icon-tri-state-toggle {
+  align-items: center;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 0.25rem;
+  color: #212529;
+  display: inline-flex;
+  height: 1.5rem;
+  justify-content: center;
+  opacity: 0.7;
+  padding: 0;
+  position: relative;
+  width: 1.5rem;
+}
+
+.icon-tri-state-toggle:hover:not(:disabled),
+.icon-tri-state-toggle:focus-visible {
+  background: #f8f9fa;
+  border-color: var(--bs-border-color);
+  opacity: 1;
+}
+
+.icon-tri-state-toggle[data-state='checked'],
+.icon-tri-state-toggle[data-state='mixed'] {
+  opacity: 1;
+}
+
+.icon-tri-state-toggle:disabled {
+  opacity: 0.35;
+}
+
+.icon-tri-state-toggle-badge {
+  align-items: center;
+  background: var(--bs-body-bg);
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  bottom: 0.05rem;
+  display: inline-flex;
+  height: 0.65rem;
+  justify-content: center;
+  position: absolute;
+  right: 0.05rem;
+  width: 0.65rem;
+}

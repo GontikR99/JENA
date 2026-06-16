@@ -17,6 +17,7 @@ import {
   type JenaResolvedTrigger,
   type JenaTrigger,
   type JenaTriggerEnablementChange,
+  type JenaTriggerFlagChange,
   type JenaTriggerId,
   type JenaTriggerUpsert,
   type JenaUserTriggerFetchResponse,
@@ -44,6 +45,9 @@ export interface UpsertTriggersOptions {
 export interface TriggerManagerApi {
   deleteTrigger: (triggerId: JenaTriggerId) => Promise<JenaUserTriggerUpdate>
   deleteTriggers: (triggerIds: JenaTriggerId[]) => Promise<JenaUserTriggerUpdate>
+  setTriggerFlags: (
+    changes: JenaTriggerFlagChange[],
+  ) => Promise<JenaUserTriggerUpdate>
   toggleTriggers: (
     changes: JenaTriggerEnablementChange[],
   ) => Promise<JenaUserTriggerUpdate>
@@ -314,6 +318,25 @@ export function UserTriggerManagerProvider({
     [applyUpdate, call, persistLocalState],
   )
 
+  const setTriggerFlags = useCallback(
+    async (changes: JenaTriggerFlagChange[]) => {
+      if (authTokenRef.current) {
+        const update = await call('server.user-trigger-store', 'setTriggerFlags', {
+          changes,
+          knownRevision: revisionRef.current ?? undefined,
+        })
+        await applyUpdate(update)
+        return update
+      }
+
+      const update = applyLocalFlagChanges(changes, false)
+      await applyUpdate(update)
+      await persistLocalState()
+      return update
+    },
+    [applyUpdate, call, persistLocalState],
+  )
+
   function applyLocalDelete(triggerIds: JenaTriggerId[]): JenaUserTriggerUpdate {
     const deletedTriggerIds = [...new Set(triggerIds)]
     const revision = createMessageId()
@@ -337,7 +360,9 @@ export function UserTriggerManagerProvider({
       const existingRecord =
         recordsRef.current.get(change.triggerId) ??
         ({
+          broadcast: false,
           enabledFor: [],
+          publish: false,
           triggerId: change.triggerId,
         } satisfies JenaExtendedTrigger)
       const enabledFor = mergeEnablementChanges(existingRecord.enabledFor, [
@@ -345,9 +370,58 @@ export function UserTriggerManagerProvider({
       ])
 
       recordsRef.current.set(change.triggerId, {
+        broadcast: existingRecord.broadcast,
         enabledFor,
+        publish: existingRecord.publish,
         triggerId: change.triggerId,
       })
+      updatedIds.add(change.triggerId)
+    })
+
+    const revision = createMessageId()
+    revisionRef.current = revision
+
+    return {
+      deletedTriggerIds: [],
+      revision,
+      upsertedRecords: [...updatedIds].flatMap((triggerId) => {
+        const record = recordsRef.current.get(triggerId)
+
+        return record ? [record] : []
+      }),
+      upsertedTriggers: [...updatedIds].flatMap((triggerId) => {
+        const trigger = triggersByIdRef.current.get(triggerId)
+
+        return trigger ? [trigger] : []
+      }),
+    }
+  }
+
+  function applyLocalFlagChanges(
+    changes: JenaTriggerFlagChange[],
+    allowPublish: boolean,
+  ): JenaUserTriggerUpdate {
+    const updatedIds = new Set<JenaTriggerId>()
+
+    changes.forEach((change) => {
+      const existingRecord =
+        recordsRef.current.get(change.triggerId) ??
+        ({
+          broadcast: false,
+          enabledFor: [],
+          publish: false,
+          triggerId: change.triggerId,
+        } satisfies JenaExtendedTrigger)
+      const nextRecord = {
+        ...existingRecord,
+        broadcast: change.broadcast ?? existingRecord.broadcast,
+        publish:
+          allowPublish && change.publish !== undefined
+            ? change.publish
+            : existingRecord.publish,
+      }
+
+      recordsRef.current.set(change.triggerId, nextRecord)
       updatedIds.add(change.triggerId)
     })
 
@@ -407,15 +481,27 @@ export function UserTriggerManagerProvider({
       const copiedEnabledFor = [...deletedIds].flatMap((triggerId) => {
         return recordsById.get(triggerId)?.enabledFor ?? []
       })
+      const copiedRecords = [...deletedIds].flatMap((triggerId) => {
+        const record = recordsById.get(triggerId)
+
+        return record ? [record] : []
+      })
       const existingEnabledFor =
         recordsById.get(upsert.trigger.id)?.enabledFor ?? []
+      const existingRecord = recordsById.get(upsert.trigger.id)
       const enabledFor = mergeEnabledFor([
         ...existingEnabledFor,
         ...copiedEnabledFor,
         ...upsert.enabledFor,
       ])
       const record = {
+        broadcast:
+          existingRecord?.broadcast ??
+          copiedRecords.some((copiedRecord) => copiedRecord.broadcast),
         enabledFor,
+        publish:
+          existingRecord?.publish ??
+          copiedRecords.some((copiedRecord) => copiedRecord.publish),
         triggerId: upsert.trigger.id,
       }
 
@@ -440,6 +526,7 @@ export function UserTriggerManagerProvider({
       value={{
         deleteTrigger,
         deleteTriggers,
+        setTriggerFlags,
         toggleTriggers,
         triggers,
         upsertTrigger,
@@ -485,7 +572,9 @@ function getResolvedSnapshot(
       return trigger
         ? [
             {
+              broadcast: record.broadcast,
               enabledFor: record.enabledFor,
+              publish: record.publish,
               trigger,
             },
           ]
@@ -496,7 +585,9 @@ function getResolvedSnapshot(
 
 function normalizeRecord(record: JenaExtendedTrigger): JenaExtendedTrigger {
   return {
+    broadcast: !!record.broadcast,
     enabledFor: mergeEnabledFor(record.enabledFor),
+    publish: !!record.publish,
     triggerId: record.triggerId,
   }
 }

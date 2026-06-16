@@ -55,6 +55,11 @@ type ToggleTriggersRequest struct {
 	KnownRevision string                          `json:"knownRevision,omitempty"`
 }
 
+type SetTriggerFlagsRequest struct {
+	Changes       []model.TriggerFlagChange `json:"changes"`
+	KnownRevision string                    `json:"knownRevision,omitempty"`
+}
+
 type PingRequest struct {
 	KnownRevision string `json:"knownRevision,omitempty"`
 }
@@ -85,11 +90,12 @@ func New(
 	}
 
 	service.unregister = bus.RegisterRPC(endpoint, map[string]eventbus.RPCHandler{
-		"deleteTriggers": service.deleteTriggers,
-		"fetchTriggers":  service.fetchTriggers,
-		"ping":           service.ping,
-		"toggleTriggers": service.toggleTriggers,
-		"upsertTriggers": service.upsertTriggers,
+		"deleteTriggers":  service.deleteTriggers,
+		"fetchTriggers":   service.fetchTriggers,
+		"ping":            service.ping,
+		"setTriggerFlags": service.setTriggerFlags,
+		"toggleTriggers":  service.toggleTriggers,
+		"upsertTriggers":  service.upsertTriggers,
 	})
 
 	return service, nil
@@ -108,6 +114,8 @@ func (service *Service) migrate(ctx context.Context) error {
 			user_id TEXT NOT NULL,
 			trigger_id TEXT NOT NULL,
 			deleted INTEGER NOT NULL,
+			publish INTEGER NOT NULL DEFAULT 0,
+			broadcast INTEGER NOT NULL DEFAULT 0,
 			updated_at_ms INTEGER NOT NULL,
 			PRIMARY KEY (user_id, trigger_id),
 			FOREIGN KEY (trigger_id) REFERENCES triggers(id)
@@ -204,6 +212,26 @@ func (service *Service) toggleTriggers(ctx context.Context, metadata eventbus.RP
 	}
 
 	update, err := service.applyToggle(ctx, userID, request.Changes)
+	if err != nil {
+		return nil, err
+	}
+
+	service.broadcastUpdate(ctx, userID, update)
+	return update, nil
+}
+
+func (service *Service) setTriggerFlags(ctx context.Context, metadata eventbus.RPCMetadata, params json.RawMessage) (any, error) {
+	userID, err := service.authenticate(ctx, metadata)
+	if err != nil {
+		return nil, err
+	}
+
+	var request SetTriggerFlagsRequest
+	if err := json.Unmarshal(params, &request); err != nil {
+		return nil, fmt.Errorf("decode set trigger flags request: %w", err)
+	}
+
+	update, err := service.applyFlagChanges(ctx, userID, request.Changes)
 	if err != nil {
 		return nil, err
 	}
@@ -376,6 +404,9 @@ func (service *Service) applyUpsert(ctx context.Context, userID string, request 
 				return model.UserTriggerUpdate{}, err
 			}
 		}
+		if err := copyTriggerFlags(ctx, tx, userID, copySourcesByTriggerID[upsert.Trigger.ID], upsert.Trigger.ID, updatedAtMs); err != nil {
+			return model.UserTriggerUpdate{}, err
+		}
 
 		for _, enabledFor := range upsert.EnabledFor {
 			if err := setEnabledFor(ctx, tx, userID, upsert.Trigger.ID, enabledFor, true, updatedAtMs); err != nil {
@@ -496,11 +527,65 @@ func (service *Service) applyToggle(ctx context.Context, userID string, changes 
 	}, nil
 }
 
+func (service *Service) applyFlagChanges(ctx context.Context, userID string, changes []model.TriggerFlagChange) (model.UserTriggerUpdate, error) {
+	updatedAtMs := time.Now().UnixMilli()
+	changedIDs := make(map[model.TriggerID]struct{}, len(changes))
+
+	tx, err := service.db.SQL().BeginTx(ctx, nil)
+	if err != nil {
+		return model.UserTriggerUpdate{}, fmt.Errorf("begin user trigger flag update: %w", err)
+	}
+	defer tx.Rollback()
+
+	for _, change := range changes {
+		if change.TriggerID == "" {
+			return model.UserTriggerUpdate{}, errors.New("trigger id is required")
+		}
+		if change.Publish == nil && change.Broadcast == nil {
+			continue
+		}
+		if err := upsertUserTrigger(ctx, tx, userID, change.TriggerID, updatedAtMs); err != nil {
+			return model.UserTriggerUpdate{}, err
+		}
+		if err := setTriggerFlags(ctx, tx, userID, change, updatedAtMs); err != nil {
+			return model.UserTriggerUpdate{}, err
+		}
+		changedIDs[change.TriggerID] = struct{}{}
+	}
+
+	revision, err := bumpRevision(ctx, tx, userID, updatedAtMs)
+	if err != nil {
+		return model.UserTriggerUpdate{}, err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return model.UserTriggerUpdate{}, fmt.Errorf("commit user trigger flag update: %w", err)
+	}
+
+	records, err := service.fetchRecordsForIDs(ctx, userID, mapKeys(changedIDs))
+	if err != nil {
+		return model.UserTriggerUpdate{}, err
+	}
+	triggers, err := service.fetchTriggersForIDs(ctx, mapKeys(changedIDs))
+	if err != nil {
+		return model.UserTriggerUpdate{}, err
+	}
+
+	return model.UserTriggerUpdate{
+		DeletedTriggerIDs: []model.TriggerID{},
+		Revision:          revision,
+		UpsertedRecords:   records,
+		UpsertedTriggers:  triggers,
+	}, nil
+}
+
 func (service *Service) fetchState(ctx context.Context, userID string) (FetchTriggersResponse, error) {
 	rows, err := service.db.QueryContext(ctx, `
 		SELECT
 			ut.trigger_id,
 			t.json,
+			ut.publish,
+			ut.broadcast,
 			ute.character_name,
 			ute.server_name
 		FROM user_triggers ut
@@ -525,10 +610,12 @@ func (service *Service) fetchState(ctx context.Context, userID string) (FetchTri
 	for rows.Next() {
 		var triggerID model.TriggerID
 		var encodedTrigger string
+		var publish int
+		var broadcast int
 		var characterName sql.NullString
 		var serverName sql.NullString
 
-		if err := rows.Scan(&triggerID, &encodedTrigger, &characterName, &serverName); err != nil {
+		if err := rows.Scan(&triggerID, &encodedTrigger, &publish, &broadcast, &characterName, &serverName); err != nil {
 			return FetchTriggersResponse{}, fmt.Errorf("scan user trigger: %w", err)
 		}
 
@@ -542,6 +629,8 @@ func (service *Service) fetchState(ctx context.Context, userID string) (FetchTri
 			recordsByID[triggerID] = &model.ExtendedTrigger{
 				TriggerID:  triggerID,
 				EnabledFor: []model.CharacterServer{},
+				Publish:    publish != 0,
+				Broadcast:  broadcast != 0,
 			}
 			record = recordsByID[triggerID]
 			triggersByID[triggerID] = trigger
@@ -730,6 +819,65 @@ func copyEnabledFor(ctx context.Context, tx *sql.Tx, userID string, fromTriggerI
 	return nil
 }
 
+func copyTriggerFlags(ctx context.Context, tx *sql.Tx, userID string, fromTriggerIDs []model.TriggerID, toTriggerID model.TriggerID, updatedAtMs int64) error {
+	if len(fromTriggerIDs) == 0 {
+		return nil
+	}
+
+	publish := 0
+	broadcast := 0
+	for _, fromTriggerID := range fromTriggerIDs {
+		var sourcePublish int
+		var sourceBroadcast int
+		err := tx.QueryRowContext(
+			ctx,
+			`
+				SELECT publish, broadcast
+				FROM user_triggers
+				WHERE user_id = ?
+					AND trigger_id = ?
+			`,
+			userID,
+			string(fromTriggerID),
+		).Scan(&sourcePublish, &sourceBroadcast)
+		if errors.Is(err, sql.ErrNoRows) {
+			continue
+		}
+		if err != nil {
+			return fmt.Errorf("lookup trigger flags: %w", err)
+		}
+
+		if sourcePublish != 0 {
+			publish = 1
+		}
+		if sourceBroadcast != 0 {
+			broadcast = 1
+		}
+	}
+
+	_, err := tx.ExecContext(
+		ctx,
+		`
+			UPDATE user_triggers
+			SET
+				publish = CASE WHEN ? = 1 THEN 1 ELSE publish END,
+				broadcast = CASE WHEN ? = 1 THEN 1 ELSE broadcast END,
+				updated_at_ms = ?
+			WHERE user_id = ?
+				AND trigger_id = ?
+		`,
+		publish,
+		broadcast,
+		updatedAtMs,
+		userID,
+		string(toTriggerID),
+	)
+	if err != nil {
+		return fmt.Errorf("copy trigger flags: %w", err)
+	}
+	return nil
+}
+
 func setEnabledFor(ctx context.Context, tx *sql.Tx, userID string, triggerID model.TriggerID, character model.CharacterServer, enabled bool, updatedAtMs int64) error {
 	if err := validateCharacterServer(character); err != nil {
 		return err
@@ -765,6 +913,54 @@ func setEnabledFor(ctx context.Context, tx *sql.Tx, userID string, triggerID mod
 	)
 	if err != nil {
 		return fmt.Errorf("set enabled-for row: %w", err)
+	}
+	return nil
+}
+
+func setTriggerFlags(ctx context.Context, tx *sql.Tx, userID string, change model.TriggerFlagChange, updatedAtMs int64) error {
+	publishSQL := "publish"
+	publishArg := any(nil)
+	if change.Publish != nil {
+		publishSQL = "?"
+		if *change.Publish {
+			publishArg = 1
+		} else {
+			publishArg = 0
+		}
+	}
+
+	broadcastSQL := "broadcast"
+	broadcastArg := any(nil)
+	if change.Broadcast != nil {
+		broadcastSQL = "?"
+		if *change.Broadcast {
+			broadcastArg = 1
+		} else {
+			broadcastArg = 0
+		}
+	}
+
+	query := fmt.Sprintf(`
+		UPDATE user_triggers
+		SET
+			publish = %s,
+			broadcast = %s,
+			updated_at_ms = ?
+		WHERE user_id = ?
+			AND trigger_id = ?
+	`, publishSQL, broadcastSQL)
+
+	args := []any{}
+	if change.Publish != nil {
+		args = append(args, publishArg)
+	}
+	if change.Broadcast != nil {
+		args = append(args, broadcastArg)
+	}
+	args = append(args, updatedAtMs, userID, string(change.TriggerID))
+
+	if _, err := tx.ExecContext(ctx, query, args...); err != nil {
+		return fmt.Errorf("set trigger flags: %w", err)
 	}
 	return nil
 }

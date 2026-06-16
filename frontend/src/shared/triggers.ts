@@ -77,17 +77,27 @@ export interface JenaCharacterServer {
 export interface JenaExtendedTrigger {
   triggerId: JenaTriggerId
   enabledFor: JenaCharacterServer[]
+  publish: boolean
+  broadcast: boolean
 }
 
 export interface JenaResolvedTrigger {
   trigger: JenaTrigger
   enabledFor: JenaCharacterServer[]
+  publish: boolean
+  broadcast: boolean
 }
 
 export interface JenaTriggerEnablementChange {
   triggerId: JenaTriggerId
   character: JenaCharacterServer
   enabled: boolean
+}
+
+export interface JenaTriggerFlagChange {
+  triggerId: JenaTriggerId
+  publish?: boolean
+  broadcast?: boolean
 }
 
 export interface JenaTriggerUpsert {

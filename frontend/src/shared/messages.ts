@@ -2,6 +2,7 @@ import type { FileSystemHandleLike } from './fileSystemAccess'
 import type {
   JenaTrigger,
   JenaTriggerEnablementChange,
+  JenaTriggerFlagChange,
   JenaTriggerId,
   JenaTriggerUpsert,
   JenaUserTriggerFetchResponse,
@@ -159,6 +160,13 @@ export interface RpcEndpoints {
     toggleTriggers: {
       request: {
         changes: JenaTriggerEnablementChange[]
+        knownRevision?: string
+      }
+      response: JenaUserTriggerUpdate
+    }
+    setTriggerFlags: {
+      request: {
+        changes: JenaTriggerFlagChange[]
         knownRevision?: string
       }
       response: JenaUserTriggerUpdate

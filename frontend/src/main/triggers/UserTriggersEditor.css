@@ -92,6 +92,18 @@
   margin: 0;
 }
 
+.user-triggers-row-side {
+  align-items: center;
+  display: flex;
+  gap: 0.35rem;
+}
+
+.user-triggers-row-flags {
+  align-items: center;
+  display: flex;
+  gap: 0.125rem;
+}
+
 .user-triggers-row-actions {
   display: flex;
   gap: 0.25rem;
@@ -99,7 +111,7 @@
 }
 
 .user-triggers-row:hover .user-triggers-row-actions,
-.user-triggers-row:focus-within .user-triggers-row-actions {
+.user-triggers-row-actions:focus-within {
   opacity: 1;
 }
 

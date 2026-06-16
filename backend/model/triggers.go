@@ -86,17 +86,27 @@ type CharacterServer struct {
 type ExtendedTrigger struct {
 	TriggerID  TriggerID         `json:"triggerId"`
 	EnabledFor []CharacterServer `json:"enabledFor"`
+	Publish    bool              `json:"publish"`
+	Broadcast  bool              `json:"broadcast"`
 }
 
 type ResolvedTrigger struct {
 	Trigger    Trigger           `json:"trigger"`
 	EnabledFor []CharacterServer `json:"enabledFor"`
+	Publish    bool              `json:"publish"`
+	Broadcast  bool              `json:"broadcast"`
 }
 
 type TriggerEnablementChange struct {
 	TriggerID TriggerID       `json:"triggerId"`
 	Character CharacterServer `json:"character"`
 	Enabled   bool            `json:"enabled"`
+}
+
+type TriggerFlagChange struct {
+	TriggerID TriggerID `json:"triggerId"`
+	Publish   *bool     `json:"publish,omitempty"`
+	Broadcast *bool     `json:"broadcast,omitempty"`
 }
 
 type TriggerUpsert struct {

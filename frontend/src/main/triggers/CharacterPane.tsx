@@ -9,7 +9,7 @@ import { useListen, useRpc } from '../../shared/messageBrokerHooks'
 
 interface CharacterPaneProps {
   selectedCharacter: CharacterPresence | null
-  setCharacter: (character: CharacterPresence) => void
+  setCharacter: (character: CharacterPresence | null) => void
 }
 
 export function CharacterPane({
@@ -48,11 +48,14 @@ export function CharacterPane({
   }, [callWorker])
 
   useEffect(() => {
-    if (selectedCharacter || sortedCharacters.length === 0) {
-      return
+    if (
+      selectedCharacter &&
+      !sortedCharacters.some((character) =>
+        isSameCharacter(character, selectedCharacter),
+      )
+    ) {
+      setCharacter(null)
     }
-
-    setCharacter(sortedCharacters[0])
   }, [selectedCharacter, setCharacter, sortedCharacters])
 
   return (
@@ -73,7 +76,17 @@ export function CharacterPane({
                     : 'character-option'
                 }
                 key={`${character.characterName}\0${character.serverName}`}
-                onClick={() => setCharacter(character)}
+                onClick={(event) => {
+                  if (
+                    (event.ctrlKey || event.metaKey) &&
+                    isSameCharacter(character, selectedCharacter)
+                  ) {
+                    setCharacter(null)
+                    return
+                  }
+
+                  setCharacter(character)
+                }}
                 role="option"
                 type="button"
               >

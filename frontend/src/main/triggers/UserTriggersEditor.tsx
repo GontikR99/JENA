@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ChangeEvent, MouseEvent } from 'react'
 import { ControlledMenu, MenuDivider, MenuItem, useMenuState } from '@szhsin/react-menu'
-import { FolderPlus, ListPlus } from 'lucide-react'
+import { FolderPlus, Globe, GlobeOff, ListPlus, Radio, RadioOff } from 'lucide-react'
 import '@szhsin/react-menu/dist/index.css'
 import Alert from 'react-bootstrap/Alert'
 import Button from 'react-bootstrap/Button'
 import Modal from 'react-bootstrap/Modal'
 import ProgressBar from 'react-bootstrap/ProgressBar'
 import toast from 'react-hot-toast'
+import { useAuthToken } from '../AuthContext'
 import type { CharacterPresence } from '../../shared/messages'
 import {
   createEmptyTrigger,
@@ -22,6 +23,7 @@ import {
   TriStateCheckbox,
   type TriStateCheckboxState,
 } from '../../shared/widgets/TriStateCheckbox'
+import { IconTriStateToggle } from '../../shared/widgets/IconTriStateToggle'
 import { TriggerEditorDialog } from './TriggerEditorDialog'
 import { exportGinaPackageFile } from './ginaPackageExporter'
 import { parseGinaPackageFile } from './ginaPackageParser'
@@ -128,11 +130,13 @@ export function UserTriggersEditor({
 }: UserTriggersEditorProps) {
   const {
     deleteTriggers,
+    setTriggerFlags,
     toggleTriggers,
     triggers,
     upsertTrigger,
     upsertTriggers,
   } = useTriggerManager()
+  const authToken = useAuthToken()
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const [emptyGroups, setEmptyGroups] = useState<string[][]>([])
   const [emptyGroupsLoaded, setEmptyGroupsLoaded] = useState(false)
@@ -185,6 +189,7 @@ export function UserTriggersEditor({
       : new Set<JenaTriggerId>()
   const selectedGroupPath =
     selection.type === 'group' ? selection.path : null
+  const showEnableColumn = !!selectedCharacterRecord
 
   useEffect(() => {
     let cancelled = false
@@ -363,6 +368,74 @@ export function UserTriggersEditor({
       triggerIds.map((triggerId) => ({
         character: selectedCharacterRecord,
         enabled,
+        triggerId,
+      })),
+    )
+  }
+
+  async function handleToggleTriggerPublish(
+    item: TreeTriggerItem,
+    publish: boolean,
+  ) {
+    if (!authToken) {
+      toast.error('Log in to publish triggers.')
+      return
+    }
+
+    await setTriggerFlags([
+      {
+        publish,
+        triggerId: item.id,
+      },
+    ])
+  }
+
+  async function handleToggleTriggerBroadcast(
+    item: TreeTriggerItem,
+    broadcast: boolean,
+  ) {
+    await setTriggerFlags([
+      {
+        broadcast,
+        triggerId: item.id,
+      },
+    ])
+  }
+
+  async function handleToggleGroupPublish(
+    group: TreeGroupItem,
+    publish: boolean,
+  ) {
+    if (!authToken) {
+      toast.error('Log in to publish triggers.')
+      return
+    }
+
+    const triggerIds = getTriggerIdsUnderPath(triggers, group.path)
+    if (triggerIds.length === 0) {
+      return
+    }
+
+    await setTriggerFlags(
+      triggerIds.map((triggerId) => ({
+        publish,
+        triggerId,
+      })),
+    )
+  }
+
+  async function handleToggleGroupBroadcast(
+    group: TreeGroupItem,
+    broadcast: boolean,
+  ) {
+    const triggerIds = getTriggerIdsUnderPath(triggers, group.path)
+    if (triggerIds.length === 0) {
+      return
+    }
+
+    await setTriggerFlags(
+      triggerIds.map((triggerId) => ({
+        broadcast,
         triggerId,
       })),
     )
@@ -1038,20 +1111,40 @@ export function UserTriggersEditor({
                   !selectedCharacterRecord ||
                   (groupStatesById.get(item.id)?.totalCount ?? 0) === 0
                 }
+                broadcastDisabled={
+                  (groupStatesById.get(item.id)?.totalCount ?? 0) === 0
+                }
+                broadcastState={
+                  groupStatesById.get(item.id)?.broadcastState ?? 'unchecked'
+                }
                 item={item}
                 key={item.id}
                 onAddGroup={handleAddGroup}
                 onAddTrigger={handleAddTrigger}
                 onContextMenu={openContextMenu}
                 onSelect={handleGroupClick}
+                onToggleBroadcast={(broadcast) => {
+                  void handleToggleGroupBroadcast(item, broadcast)
+                }}
                 onToggleChecked={(enabled) => {
                   void handleToggleGroup(item, enabled)
                 }}
+                onTogglePublish={(publish) => {
+                  void handleToggleGroupPublish(item, publish)
+                }}
                 onToggle={toggleGroup}
+                publishDisabled={
+                  !authToken ||
+                  (groupStatesById.get(item.id)?.totalCount ?? 0) === 0
+                }
+                publishState={
+                  groupStatesById.get(item.id)?.publishState ?? 'unchecked'
+                }
                 selected={
                   !!selectedGroupPath &&
                   areStringArraysEqual(selectedGroupPath, item.path)
                 }
+                showEnableColumn={showEnableColumn}
               />
             ) : (
               <TriggerRow
@@ -1062,12 +1155,20 @@ export function UserTriggersEditor({
                 )}
                 item={item}
                 key={item.id}
+                onBroadcastToggle={(broadcast) => {
+                  void handleToggleTriggerBroadcast(item, broadcast)
+                }}
                 onClick={handleTriggerClick}
                 onContextMenu={openContextMenu}
+                onPublishToggle={(publish) => {
+                  void handleToggleTriggerPublish(item, publish)
+                }}
                 onToggle={(enabled) => {
                   void handleToggleTrigger(item, enabled)
                 }}
+                publishDisabled={!authToken}
                 selected={selectedTriggerIds.has(item.id)}
+                showEnableColumn={showEnableColumn}
               />
             ),
           )
@@ -1457,6 +1558,8 @@ function OperationProgressDialog({
 }
 
 function GroupRow({
+  broadcastDisabled,
+  broadcastState,
   checkboxDisabled,
   checkboxState,
   collapsed,
@@ -1465,10 +1568,17 @@ function GroupRow({
   onAddTrigger,
   onContextMenu,
   onSelect,
+  onToggleBroadcast,
   onToggle,
   onToggleChecked,
+  onTogglePublish,
+  publishDisabled,
+  publishState,
   selected,
+  showEnableColumn,
 }: {
+  broadcastDisabled: boolean
+  broadcastState: TriStateCheckboxState
   checkboxDisabled: boolean
   checkboxState: TriStateCheckboxState
   collapsed: boolean
@@ -1477,9 +1587,14 @@ function GroupRow({
   onAddTrigger: (path: string[]) => void
   onContextMenu: (event: MouseEvent, item: TreeItem) => void
   onSelect: (event: MouseEvent, item: TreeGroupItem) => void
+  onToggleBroadcast: (broadcast: boolean) => void
   onToggle: (item: TreeGroupItem) => void
   onToggleChecked: (enabled: boolean) => void
+  onTogglePublish: (publish: boolean) => void
+  publishDisabled: boolean
+  publishState: TriStateCheckboxState
   selected: boolean
+  showEnableColumn: boolean
 }) {
   return (
     <div
@@ -1516,40 +1631,64 @@ function GroupRow({
         >
           {item.childCount > 0 ? (collapsed ? '>' : 'v') : ''}
         </button>
-        <TriStateCheckbox
-          ariaLabel={`Enable triggers in ${item.name}`}
-          className="form-check-input user-triggers-checkbox"
-          disabled={checkboxDisabled}
-          onChange={onToggleChecked}
-          state={checkboxState}
-        />
+        {showEnableColumn ? (
+          <TriStateCheckbox
+            ariaLabel={`Enable triggers in ${item.name}`}
+            className="form-check-input user-triggers-checkbox"
+            disabled={checkboxDisabled}
+            onChange={onToggleChecked}
+            state={checkboxState}
+          />
+        ) : null}
         <span className="user-triggers-group-name">{item.name}</span>
       </span>
-      <span className="user-triggers-row-actions">
-        <Button
-          aria-label={`Add subgroup to ${item.name}`}
-          onClick={(event) => {
-            event.stopPropagation()
-            onAddGroup(item.path)
-          }}
-          size="sm"
-          title="Add subgroup"
-          variant="outline-secondary"
-        >
-          <FolderPlus aria-hidden="true" size={15} />
-        </Button>
-        <Button
-          aria-label={`Add trigger to ${item.name}`}
-          onClick={(event) => {
-            event.stopPropagation()
-            onAddTrigger(item.path)
-          }}
-          size="sm"
-          title="Add trigger"
-          variant="outline-secondary"
-        >
-          <ListPlus aria-hidden="true" size={15} />
-        </Button>
+      <span className="user-triggers-row-side">
+        <span className="user-triggers-row-flags">
+          <IconTriStateToggle
+            checkedIcon={Globe}
+            disabled={publishDisabled}
+            label={publishDisabled ? 'Log in to publish' : 'Publish'}
+            mixedLabel="Publish"
+            onToggle={onTogglePublish}
+            state={publishState}
+            uncheckedIcon={GlobeOff}
+          />
+          <IconTriStateToggle
+            checkedIcon={Radio}
+            disabled={broadcastDisabled}
+            label="Broadcast"
+            mixedLabel="Broadcast"
+            onToggle={onToggleBroadcast}
+            state={broadcastState}
+            uncheckedIcon={RadioOff}
+          />
+        </span>
+        <span className="user-triggers-row-actions">
+          <Button
+            aria-label={`Add subgroup to ${item.name}`}
+            onClick={(event) => {
+              event.stopPropagation()
+              onAddGroup(item.path)
+            }}
+            size="sm"
+            title="Add subgroup"
+            variant="outline-secondary"
+          >
+            <FolderPlus aria-hidden="true" size={15} />
+          </Button>
+          <Button
+            aria-label={`Add trigger to ${item.name}`}
+            onClick={(event) => {
+              event.stopPropagation()
+              onAddTrigger(item.path)
+            }}
+            size="sm"
+            title="Add trigger"
+            variant="outline-secondary"
+          >
+            <ListPlus aria-hidden="true" size={15} />
+          </Button>
+        </span>
       </span>
     </div>
   )
@@ -1559,18 +1698,26 @@ function TriggerRow({
   checkboxDisabled,
   checkboxState,
   item,
+  onBroadcastToggle,
   onClick,
   onContextMenu,
+  onPublishToggle,
   onToggle,
+  publishDisabled,
   selected,
+  showEnableColumn,
 }: {
   checkboxDisabled: boolean
   checkboxState: TriStateCheckboxState
   item: TreeTriggerItem
+  onBroadcastToggle: (broadcast: boolean) => void
   onClick: (event: MouseEvent, item: TreeTriggerItem) => void
   onContextMenu: (event: MouseEvent, item: TreeItem) => void
+  onPublishToggle: (publish: boolean) => void
   onToggle: (enabled: boolean) => void
+  publishDisabled: boolean
   selected: boolean
+  showEnableColumn: boolean
 }) {
   return (
     <div
@@ -1593,15 +1740,36 @@ function TriggerRow({
           className="user-triggers-indent"
           style={{ width: `${item.path.length * 1.15}rem` }}
         />
-        <TriStateCheckbox
-          ariaLabel={`Enable ${item.resolved.trigger.name || 'unnamed trigger'}`}
-          className="form-check-input user-triggers-checkbox"
-          disabled={checkboxDisabled}
-          onChange={onToggle}
-          state={checkboxState}
-        />
+        {showEnableColumn ? (
+          <TriStateCheckbox
+            ariaLabel={`Enable ${item.resolved.trigger.name || 'unnamed trigger'}`}
+            className="form-check-input user-triggers-checkbox"
+            disabled={checkboxDisabled}
+            onChange={onToggle}
+            state={checkboxState}
+          />
+        ) : null}
         <span className="user-triggers-trigger-name">
           {item.resolved.trigger.name || '(unnamed trigger)'}
+        </span>
+      </span>
+      <span className="user-triggers-row-side">
+        <span className="user-triggers-row-flags">
+          <IconTriStateToggle
+            checkedIcon={Globe}
+            disabled={publishDisabled}
+            label={publishDisabled ? 'Log in to publish' : 'Publish'}
+            onToggle={onPublishToggle}
+            state={item.resolved.publish ? 'checked' : 'unchecked'}
+            uncheckedIcon={GlobeOff}
+          />
+          <IconTriStateToggle
+            checkedIcon={Radio}
+            label="Broadcast"
+            onToggle={onBroadcastToggle}
+            state={item.resolved.broadcast ? 'checked' : 'unchecked'}
+            uncheckedIcon={RadioOff}
+          />
         </span>
       </span>
     </div>
@@ -1817,7 +1985,11 @@ function getGroupStatesById(
   const groupStates = new Map<
     string,
     {
+      broadcastCount: number
+      broadcastState: TriStateCheckboxState
       enabledCount: number
+      publishCount: number
+      publishState: TriStateCheckboxState
       state: TriStateCheckboxState
       totalCount: number
     }
@@ -1843,9 +2015,17 @@ function getGroupStatesById(
           ),
         ).length
       : 0
+    const publishCount = descendantTriggers.filter((resolved) => resolved.publish).length
+    const broadcastCount = descendantTriggers.filter(
+      (resolved) => resolved.broadcast,
+    ).length
 
     groupStates.set(groupId, {
+      broadcastCount,
+      broadcastState: getTriState(broadcastCount, descendantTriggers.length),
       enabledCount,
+      publishCount,
+      publishState: getTriState(publishCount, descendantTriggers.length),
       state: getTriState(enabledCount, descendantTriggers.length),
       totalCount: descendantTriggers.length,
     })

@@ -40,5 +40,6 @@ export default defineConfig({
       'src/worker/__tests__/**/*.test.ts',
       'src/worker/__tests__/**/*.test.tsx',
     ],
+    setupFiles: ['src/test/setup.ts'],
   },
 })
