@@ -22,15 +22,14 @@ describe('MatcherService', () => {
     await broker.call('test.matcher-service', 'matcher-service', 'add-patterns', {
       patterns: [
         {
-          id: 'positional-say',
-          regularExpression: "(.+) says, '(.*)'",
+          pattern: "(.+) says, '(.*)'",
         },
         {
-          id: 'named-say',
-          regularExpression: "(?<speaker>.+) says, '(?<quote>.*)'",
+          pattern: "(?<speaker>.+) says, '(?<quote>.*)'",
         },
       ],
     })
+    await broker.call('test.matcher-service', 'matcher-service', 'flush', {})
 
     fileWatcher.emit({
       characterName: 'Testcharacter',
@@ -47,7 +46,7 @@ describe('MatcherService', () => {
           positional: ['Arias', 'Relax for a moment.'],
         },
         characterName: 'Testcharacter',
-        patternId: 'positional-say',
+        pattern: "(.+) says, '(.*)'",
         serverName: 'Testserver',
         text: "Arias says, 'Relax for a moment.'",
         timestamp: 'Fri Oct 24 13:33:11 2025',
@@ -61,7 +60,7 @@ describe('MatcherService', () => {
           positional: ['Arias', 'Relax for a moment.'],
         },
         characterName: 'Testcharacter',
-        patternId: 'named-say',
+        pattern: "(?<speaker>.+) says, '(?<quote>.*)'",
         serverName: 'Testserver',
         text: "Arias says, 'Relax for a moment.'",
         timestamp: 'Fri Oct 24 13:33:11 2025',
@@ -80,11 +79,11 @@ describe('MatcherService', () => {
     await broker.call('test.matcher-service', 'matcher-service', 'add-patterns', {
       patterns: [
         {
-          id: 'healing',
-          regularExpression: 'healed you for (\\d+) points',
+          pattern: 'healed you for (\\d+) points',
         },
       ],
     })
+    await broker.call('test.matcher-service', 'matcher-service', 'flush', {})
 
     fileWatcher.emit({
       characterName: 'Testcharacter',
@@ -108,18 +107,17 @@ describe('MatcherService', () => {
     await broker.call('test.matcher-service', 'matcher-service', 'add-patterns', {
       patterns: [
         {
-          id: 'arias',
-          regularExpression: 'Arias',
+          pattern: 'Arias',
         },
       ],
     })
+    await broker.call('test.matcher-service', 'matcher-service', 'flush', {})
 
     await expect(
       broker.call('test.matcher-service', 'matcher-service', 'add-patterns', {
         patterns: [
           {
-            id: 'bad',
-            regularExpression: '(',
+            pattern: '(',
           },
         ],
       }),
@@ -140,7 +138,58 @@ describe('MatcherService', () => {
           positional: [],
         },
         characterName: 'Testcharacter',
-        patternId: 'arias',
+        pattern: 'Arias',
+        serverName: 'Testserver',
+        text: "Arias says, 'Relax for a moment.'",
+        timestamp: 'Fri Oct 24 13:33:11 2025',
+      },
+    ])
+  })
+
+  it('ignores duplicate pattern registrations', async () => {
+    const { broker, fileWatcher } = createHarness()
+    const receivedMatches: RegexMatchFoundMessage[] = []
+
+    broker.listen('client.matcher.match-found', (message) => {
+      receivedMatches.push(message.payload as RegexMatchFoundMessage)
+    })
+
+    await broker.call('test.matcher-service', 'matcher-service', 'add-patterns', {
+      patterns: [
+        {
+          pattern: 'Arias',
+        },
+        {
+          pattern: 'Arias',
+        },
+      ],
+    })
+    await broker.call('test.matcher-service', 'matcher-service', 'flush', {})
+    await broker.call('test.matcher-service', 'matcher-service', 'add-patterns', {
+      patterns: [
+        {
+          pattern: 'Arias',
+        },
+      ],
+    })
+    await broker.call('test.matcher-service', 'matcher-service', 'flush', {})
+
+    fileWatcher.emit({
+      characterName: 'Testcharacter',
+      serverName: 'Testserver',
+      text: "Arias says, 'Relax for a moment.'",
+      timestamp: 'Fri Oct 24 13:33:11 2025',
+    })
+    await flushAsyncWork()
+
+    expect(receivedMatches).toEqual([
+      {
+        captures: {
+          named: {},
+          positional: [],
+        },
+        characterName: 'Testcharacter',
+        pattern: 'Arias',
         serverName: 'Testserver',
         text: "Arias says, 'Relax for a moment.'",
         timestamp: 'Fri Oct 24 13:33:11 2025',

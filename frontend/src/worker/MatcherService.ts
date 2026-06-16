@@ -10,22 +10,29 @@ import {
 } from './FileWatcher'
 import { MessageBroker } from './MessageBroker'
 
-interface CompiledPatternRegistration {
-  id: string
-  pattern: RE2JS
-  regularExpression: string
+const matcherCompileDelayMs = 25
+
+interface ValidatedPatternRegistration {
+  compiledPattern: RE2JS
+  originalPattern: string
   setIndex: number
+  translatedPattern: string
 }
 
 interface PatternSetState {
-  patternsBySetIndex: CompiledPatternRegistration[]
+  patternsBySetIndex: ValidatedPatternRegistration[]
   set: RE2Set | null
 }
 
 export class MatcherService {
   private readonly broker: MessageBroker
-  private readonly registrations: RegexPatternRegistration[] = []
+  private registrations: ValidatedPatternRegistration[] = []
+  private readonly compilingPatterns = new Set<string>()
+  private readonly pendingPatterns = new Map<string, ValidatedPatternRegistration>()
+  private readonly registeredPatterns = new Set<string>()
   private readonly unregister: Array<() => void>
+  private compilePromise: Promise<void> | null = null
+  private compileTimer: ReturnType<typeof globalThis.setTimeout> | null = null
   private patternSetState: PatternSetState = {
     patternsBySetIndex: [],
     set: null,
@@ -39,6 +46,7 @@ export class MatcherService {
     this.unregister = [
       this.broker.register('matcher-service', {
         'add-patterns': this.addPatterns,
+        flush: this.flush,
       }),
       fileWatcher.observe({
         onLogLine: this.handleLogLine,
@@ -47,6 +55,11 @@ export class MatcherService {
   }
 
   dispose() {
+    if (this.compileTimer) {
+      globalThis.clearTimeout(this.compileTimer)
+      this.compileTimer = null
+    }
+
     this.unregister.forEach((unregister) => {
       unregister()
     })
@@ -57,14 +70,31 @@ export class MatcherService {
       throw new Error('Invalid add-patterns request.')
     }
 
-    assertUniquePatternIds(this.registrations, params.patterns)
+    const novelRegistrations = getNovelRegistrations(
+      this.registeredPatterns,
+      this.pendingPatterns,
+      this.compilingPatterns,
+      params.patterns,
+    )
 
-    const nextRegistrations = [...this.registrations, ...params.patterns]
-    const nextPatternSetState = compilePatternSet(nextRegistrations)
+    if (novelRegistrations.length === 0) {
+      return {}
+    }
 
-    this.registrations.push(...params.patterns)
-    this.patternSetState = nextPatternSetState
+    const validatedRegistrations = novelRegistrations.map((registration) =>
+      validatePatternRegistration(registration),
+    )
 
+    validatedRegistrations.forEach((registration) => {
+      this.pendingPatterns.set(registration.originalPattern, registration)
+    })
+    this.scheduleCompile()
+
+    return {}
+  }
+
+  private readonly flush = async () => {
+    await this.flushPendingPatterns()
     return {}
   }
 
@@ -82,14 +112,14 @@ export class MatcherService {
         return
       }
 
-      for (const match of registration.pattern.matchAll(record.text)) {
+      for (const match of registration.compiledPattern.matchAll(record.text)) {
         this.broker.send(
           'matcher-service',
           'client.matcher.match-found',
           {
             captures: getCaptures(match),
             characterName: record.characterName,
-            patternId: registration.id,
+            pattern: registration.originalPattern,
             serverName: record.serverName,
             text: record.text,
             timestamp: record.timestamp,
@@ -98,10 +128,76 @@ export class MatcherService {
       }
     })
   }
+
+  private scheduleCompile() {
+    if (this.compileTimer) {
+      return
+    }
+
+    this.compileTimer = globalThis.setTimeout(() => {
+      this.compileTimer = null
+      void this.flushPendingPatterns().catch((error: unknown) => {
+        console.warn('[MatcherService] unable to compile patterns', error)
+      })
+    }, matcherCompileDelayMs)
+  }
+
+  private async flushPendingPatterns(): Promise<void> {
+    if (this.compileTimer) {
+      globalThis.clearTimeout(this.compileTimer)
+      this.compileTimer = null
+    }
+
+    if (this.compilePromise) {
+      await this.compilePromise
+      if (this.pendingPatterns.size > 0) {
+        await this.flushPendingPatterns()
+      }
+      return
+    }
+
+    if (this.pendingPatterns.size === 0) {
+      return
+    }
+
+    const pendingRegistrations = [...this.pendingPatterns.values()]
+    this.pendingPatterns.clear()
+    pendingRegistrations.forEach((registration) => {
+      this.compilingPatterns.add(registration.originalPattern)
+    })
+    const nextRegistrations = [...this.registrations, ...pendingRegistrations]
+
+    this.compilePromise = Promise.resolve()
+      .then(() => compilePatternSet(nextRegistrations))
+      .then((nextPatternSetState) => {
+        this.registrations = nextRegistrations
+        pendingRegistrations.forEach((registration) => {
+          this.registeredPatterns.add(registration.originalPattern)
+          this.compilingPatterns.delete(registration.originalPattern)
+        })
+        this.patternSetState = nextPatternSetState
+      })
+      .catch((error: unknown) => {
+        pendingRegistrations.forEach((registration) => {
+          this.compilingPatterns.delete(registration.originalPattern)
+          this.pendingPatterns.set(registration.originalPattern, registration)
+        })
+        throw error
+      })
+      .finally(() => {
+        this.compilePromise = null
+      })
+
+    await this.compilePromise
+
+    if (this.pendingPatterns.size > 0) {
+      this.scheduleCompile()
+    }
+  }
 }
 
 function compilePatternSet(
-  registrations: RegexPatternRegistration[],
+  registrations: ValidatedPatternRegistration[],
 ): PatternSetState {
   if (registrations.length === 0) {
     return {
@@ -111,18 +207,13 @@ function compilePatternSet(
   }
 
   const set = new RE2Set()
-  const patternsBySetIndex: CompiledPatternRegistration[] = []
+  const patternsBySetIndex: ValidatedPatternRegistration[] = []
 
   registrations.forEach((registration) => {
-    const regularExpression = RE2JS.translateRegExp(
-      registration.regularExpression,
-    )
-    const setIndex = set.add(regularExpression)
+    const setIndex = set.add(registration.translatedPattern)
 
     patternsBySetIndex[setIndex] = {
-      id: registration.id,
-      pattern: RE2JS.compile(regularExpression),
-      regularExpression,
+      ...registration,
       setIndex,
     }
   })
@@ -177,19 +268,43 @@ function getCaptureValue(value: unknown) {
   return String(value)
 }
 
-function assertUniquePatternIds(
-  existingPatterns: RegexPatternRegistration[],
-  newPatterns: RegexPatternRegistration[],
+function getNovelRegistrations(
+  registeredPatterns: Set<string>,
+  pendingPatterns: Map<string, ValidatedPatternRegistration>,
+  compilingPatterns: Set<string>,
+  registrations: RegexPatternRegistration[],
 ) {
-  const ids = new Set(existingPatterns.map((pattern) => pattern.id))
+  const seenInRequest = new Set<string>()
+  const novelRegistrations: RegexPatternRegistration[] = []
 
-  newPatterns.forEach((pattern) => {
-    if (ids.has(pattern.id)) {
-      throw new Error(`Pattern ID ${pattern.id} is already registered.`)
+  registrations.forEach((registration) => {
+    if (
+      registeredPatterns.has(registration.pattern) ||
+      pendingPatterns.has(registration.pattern) ||
+      compilingPatterns.has(registration.pattern) ||
+      seenInRequest.has(registration.pattern)
+    ) {
+      return
     }
 
-    ids.add(pattern.id)
+    seenInRequest.add(registration.pattern)
+    novelRegistrations.push(registration)
   })
+
+  return novelRegistrations
+}
+
+function validatePatternRegistration(
+  registration: RegexPatternRegistration,
+): ValidatedPatternRegistration {
+  const translatedPattern = RE2JS.translateRegExp(registration.pattern)
+
+  return {
+    compiledPattern: RE2JS.compile(translatedPattern),
+    originalPattern: registration.pattern,
+    setIndex: -1,
+    translatedPattern,
+  }
 }
 
 function isAddPatternsRequest(
@@ -219,8 +334,7 @@ function isRegexPatternRegistration(
   const candidate = value as Partial<RegexPatternRegistration>
 
   return (
-    typeof candidate.id === 'string' &&
-    candidate.id.length > 0 &&
-    typeof candidate.regularExpression === 'string'
+    typeof candidate.pattern === 'string' &&
+    candidate.pattern.length > 0
   )
 }

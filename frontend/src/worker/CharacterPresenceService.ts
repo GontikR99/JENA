@@ -4,7 +4,6 @@ import type {
   RegexMatchFoundMessage,
   RegexPatternRegistration,
 } from '../shared/messages'
-import { createContentHashUuid } from '../shared/hashIds'
 import { getDependency, type Deps } from './di'
 import { MessageBroker } from './MessageBroker'
 
@@ -29,8 +28,6 @@ export class CharacterPresenceService {
   private readonly serverPresenceIntervalId: ReturnType<
     typeof globalThis.setInterval
   >
-  private whoZonePatternId: string | null = null
-  private zoneEnteredPatternId: string | null = null
 
   constructor(deps: Deps) {
     this.broker = getDependency(deps, MessageBroker)
@@ -96,12 +93,12 @@ export class CharacterPresenceService {
   }
 
   private handleMatchFound(message: RegexMatchFoundMessage) {
-    if (message.patternId === this.zoneEnteredPatternId) {
+    if (message.pattern === zoneEnteredRegularExpression) {
       this.handleZoneEnteredMatch(message)
       return
     }
 
-    if (message.patternId === this.whoZonePatternId) {
+    if (message.pattern === whoZoneRegularExpression) {
       this.handleWhoZoneMatch(message)
     }
   }
@@ -161,9 +158,6 @@ export class CharacterPresenceService {
     const zoneEnteredPattern = createZoneEnteredPatternRegistration()
     const whoZonePattern = createWhoZonePatternRegistration()
 
-    this.zoneEnteredPatternId = zoneEnteredPattern.id
-    this.whoZonePatternId = whoZonePattern.id
-
     await this.broker.call(
       'character-presence',
       'matcher-service',
@@ -207,23 +201,13 @@ export class CharacterPresenceService {
 
 export function createZoneEnteredPatternRegistration(): RegexPatternRegistration {
   return {
-    id: createContentHashUuid({
-      regularExpression: zoneEnteredRegularExpression,
-      source: 'character-presence',
-      type: 'regex-pattern',
-    }),
-    regularExpression: zoneEnteredRegularExpression,
+    pattern: zoneEnteredRegularExpression,
   }
 }
 
 export function createWhoZonePatternRegistration(): RegexPatternRegistration {
   return {
-    id: createContentHashUuid({
-      regularExpression: whoZoneRegularExpression,
-      source: 'character-presence',
-      type: 'regex-pattern',
-    }),
-    regularExpression: whoZoneRegularExpression,
+    pattern: whoZoneRegularExpression,
   }
 }
 

@@ -35,8 +35,7 @@ export type CloneablePayload =
   | CloneablePayload[]
 
 export interface RegexPatternRegistration {
-  id: string
-  regularExpression: string
+  pattern: string
 }
 
 export interface RegexCaptures {
@@ -47,7 +46,7 @@ export interface RegexCaptures {
 export interface RegexMatchFoundMessage {
   captures: RegexCaptures
   characterName: string
-  patternId: string
+  pattern: string
   serverName: string
   text: string
   timestamp: string
@@ -112,6 +111,10 @@ export interface RpcEndpoints {
       request: {
         patterns: RegexPatternRegistration[]
       }
+      response: Record<string, never>
+    }
+    flush: {
+      request: Record<string, never>
       response: Record<string, never>
     }
   }
