@@ -1160,6 +1160,9 @@ export function UserTriggersEditor({
                 }}
                 onClick={handleTriggerClick}
                 onContextMenu={openContextMenu}
+                onDoubleClick={(triggerItem) => {
+                  handleEditTrigger(triggerItem.id)
+                }}
                 onPublishToggle={(publish) => {
                   void handleToggleTriggerPublish(item, publish)
                 }}
@@ -1701,6 +1704,7 @@ function TriggerRow({
   onBroadcastToggle,
   onClick,
   onContextMenu,
+  onDoubleClick,
   onPublishToggle,
   onToggle,
   publishDisabled,
@@ -1713,6 +1717,7 @@ function TriggerRow({
   onBroadcastToggle: (broadcast: boolean) => void
   onClick: (event: MouseEvent, item: TreeTriggerItem) => void
   onContextMenu: (event: MouseEvent, item: TreeItem) => void
+  onDoubleClick: (item: TreeTriggerItem) => void
   onPublishToggle: (publish: boolean) => void
   onToggle: (enabled: boolean) => void
   publishDisabled: boolean
@@ -1731,6 +1736,11 @@ function TriggerRow({
       onContextMenu={(event) => {
         event.stopPropagation()
         onContextMenu(event, item)
+      }}
+      onDoubleClick={(event) => {
+        event.preventDefault()
+        event.stopPropagation()
+        onDoubleClick(item)
       }}
       role="treeitem"
       tabIndex={0}

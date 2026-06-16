@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import toast from 'react-hot-toast'
 import Button from 'react-bootstrap/Button'
 import ButtonGroup from 'react-bootstrap/ButtonGroup'
@@ -9,11 +9,6 @@ import {
   saveEverQuestDirectoryHandle,
 } from '../shared/directoryHandleStore'
 import {
-  closePipWindow,
-  isDocumentPipSupported,
-  openPipWindow,
-} from '../shared/documentPip'
-import {
   isDirectoryPickerSupported,
   pickEverQuestDirectory,
   requestReadPermission,
@@ -21,22 +16,23 @@ import {
   type FileSystemDirectoryHandleLike,
 } from '../shared/fileSystemAccess'
 import { useRpc } from '../shared/messageBrokerHooks'
+import { useTriggerRuntime } from './TriggerRuntime'
 
 type LogStatus = 'idle' | 'reading' | 'ready'
-type TriggerStatus = 'idle' | 'starting' | 'started' | 'stopping'
-export type PipState = 'open' | 'closed'
 
-interface StartupButtonProps {
-  onPipChange: (state: PipState) => void
-}
-
-export function StartupButton({ onPipChange }: StartupButtonProps) {
+export function StartupButton() {
   const callWorker = useRpc('startup-button')
+  const {
+    areTriggersRunning,
+    canUseTriggerRuntime,
+    isStartingTriggers,
+    isStoppingTriggers,
+    startTriggers,
+    stopTriggers,
+  } = useTriggerRuntime()
   const [logStatus, setLogStatus] = useState<LogStatus>('idle')
-  const [triggerStatus, setTriggerStatus] = useState<TriggerStatus>('idle')
   const [isWorkerPending, setIsWorkerPending] = useState(false)
   const [isChoosingDirectory, setIsChoosingDirectory] = useState(false)
-  const isProgrammaticallyClosingPip = useRef(false)
   const [savedDirectoryHandle, setSavedDirectoryHandle] =
     useState<FileSystemDirectoryHandleLike | null>(null)
   const [isSavedDirectoryLoaded, setIsSavedDirectoryLoaded] = useState(false)
@@ -45,21 +41,18 @@ export function StartupButton({ onPipChange }: StartupButtonProps) {
 
   const hasActiveDirectoryHandle = directoryHandle !== null
   const isReadingLogs = logStatus === 'reading'
-  const areTriggersStarted = triggerStatus === 'started'
-  const areTriggersStarting = triggerStatus === 'starting'
-  const areTriggersStopping = triggerStatus === 'stopping'
   const primaryButtonLabel = getPrimaryButtonLabel({
-    areTriggersStarted,
-    areTriggersStopping,
+    areTriggersRunning,
+    isStoppingTriggers,
     hasActiveDirectoryHandle,
     hasSavedDirectoryHandle: savedDirectoryHandle !== null,
   })
   const canUseStoredDirectoryMenu =
     !isReadingLogs &&
     !isWorkerPending &&
-    !areTriggersStarting &&
-    !areTriggersStarted &&
-    !areTriggersStopping &&
+    !isStartingTriggers &&
+    !areTriggersRunning &&
+    !isStoppingTriggers &&
     !isChoosingDirectory &&
     isSavedDirectoryLoaded &&
     savedDirectoryHandle !== null
@@ -71,17 +64,18 @@ export function StartupButton({ onPipChange }: StartupButtonProps) {
     !isSavedDirectoryLoaded
   const isStartTriggersDisabled =
     isWorkerPending ||
-    areTriggersStarting ||
-    areTriggersStopping ||
-    (!areTriggersStarted && !hasActiveDirectoryHandle)
+    isStartingTriggers ||
+    isStoppingTriggers ||
+    !canUseTriggerRuntime ||
+    (!areTriggersRunning && !hasActiveDirectoryHandle)
   const isPrimaryButtonDisabled = hasActiveDirectoryHandle
     ? isStartTriggersDisabled
     : isReadLogsDisabled
   const shouldShowStoredDirectoryMenu =
     savedDirectoryHandle !== null &&
-    !areTriggersStarting &&
-    !areTriggersStarted &&
-    !areTriggersStopping
+    !isStartingTriggers &&
+    !areTriggersRunning &&
+    !isStoppingTriggers
 
   useEffect(() => {
     let isMounted = true
@@ -137,58 +131,20 @@ export function StartupButton({ onPipChange }: StartupButtonProps) {
   }
 
   async function handleStartTriggers() {
-    if (areTriggersStarted) {
-      void stopTriggers()
+    if (areTriggersRunning) {
+      stopTriggers()
       return
     }
 
-    setTriggerStatus('starting')
-
     try {
-      if (!isDocumentPipSupported()) {
+      if (!canUseTriggerRuntime) {
         throw new Error(
           'Document Picture-in-Picture is not supported in this browser.',
         )
       }
 
-      let isPipClosedByUser = false
-
-      await openPipWindow({
-        onClose: () => {
-          if (isProgrammaticallyClosingPip.current) {
-            return
-          }
-
-          isPipClosedByUser = true
-          setTriggerStatus('idle')
-          onPipChange('closed')
-        },
-      })
-
-      if (isPipClosedByUser) {
-        return
-      }
-
-      setTriggerStatus('started')
-      onPipChange('open')
+      await startTriggers()
     } catch (error) {
-      closePipProgrammatically()
-      setTriggerStatus('idle')
-      onPipChange('closed')
-      toast.error(getErrorMessage(error))
-    }
-  }
-
-  async function stopTriggers() {
-    setTriggerStatus('stopping')
-
-    try {
-      closePipProgrammatically()
-      setTriggerStatus('idle')
-      onPipChange('closed')
-    } catch (error) {
-      isProgrammaticallyClosingPip.current = false
-      setTriggerStatus('started')
       toast.error(getErrorMessage(error))
     }
   }
@@ -255,16 +211,6 @@ export function StartupButton({ onPipChange }: StartupButtonProps) {
     }
   }
 
-  function closePipProgrammatically() {
-    isProgrammaticallyClosingPip.current = true
-
-    try {
-      closePipWindow()
-    } finally {
-      isProgrammaticallyClosingPip.current = false
-    }
-  }
-
   return (
     <>
       {shouldShowStoredDirectoryMenu ? (
@@ -313,21 +259,21 @@ export function StartupButton({ onPipChange }: StartupButtonProps) {
 }
 
 function getPrimaryButtonLabel({
-  areTriggersStarted,
-  areTriggersStopping,
+  areTriggersRunning,
+  isStoppingTriggers,
   hasActiveDirectoryHandle,
   hasSavedDirectoryHandle,
 }: {
-  areTriggersStarted: boolean
-  areTriggersStopping: boolean
+  areTriggersRunning: boolean
+  isStoppingTriggers: boolean
   hasActiveDirectoryHandle: boolean
   hasSavedDirectoryHandle: boolean
 }) {
-  if (areTriggersStopping) {
+  if (isStoppingTriggers) {
     return 'Stopping Triggers'
   }
 
-  if (areTriggersStarted) {
+  if (areTriggersRunning) {
     return 'Stop Triggers'
   }
 

@@ -47,7 +47,7 @@ export function AppShell() {
         </nav>
 
         <div className="app-startup-slot">
-          <StartupButton onPipChange={() => undefined} />
+          <StartupButton />
         </div>
 
         <div className="app-account-slot">

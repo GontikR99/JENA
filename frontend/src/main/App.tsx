@@ -11,6 +11,10 @@ import {
 } from './ServerBridge'
 import { NearbyCharactersProvider } from './NearbyCharactersProvider'
 import { AuthProvider } from './AuthContext'
+import {
+  TriggerRuntimePortal,
+  TriggerRuntimeProvider,
+} from './TriggerRuntime'
 import { AlertCoordinationService } from './triggers/AlertCoordinationService'
 import { TriggerStoreProvider } from './triggers/TriggerStore'
 import { UserTriggerManagerProvider } from './triggers/UserTriggerManager'
@@ -28,7 +32,10 @@ export function App() {
           <AlertCoordinationService />
           <UserTriggerManagerProvider>
             <NearbyCharactersProvider>
-              <AppShell />
+              <TriggerRuntimeProvider>
+                <AppShell />
+                <TriggerRuntimePortal />
+              </TriggerRuntimeProvider>
             </NearbyCharactersProvider>
           </UserTriggerManagerProvider>
         </TriggerStoreProvider>

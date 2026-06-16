@@ -93,4 +93,15 @@ describe('UserTriggersEditor', () => {
     expect(await screen.findByLabelText('Enable Test Trigger')).toBeInTheDocument()
     expect(screen.getByLabelText('Enable triggers in Raid')).toBeInTheDocument()
   })
+
+  it('opens the trigger editor when a trigger is double-clicked', async () => {
+    const user = userEvent.setup()
+
+    render(<UserTriggersEditor selectedCharacter={selectedCharacter} />)
+
+    await user.click(await screen.findByRole('button', { name: 'Expand Raid' }))
+    await user.dblClick(await screen.findByText('Test Trigger'))
+
+    expect(await screen.findByText('Trigger Editor')).toBeInTheDocument()
+  })
 })
