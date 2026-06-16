@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react'
+import type { TriggerSpeechPreviewRequestedMessage } from '../../shared/messages'
+import { useListen } from '../../shared/messageBrokerHooks'
 import {
   createSpeechUtterance,
   getSpeechSynthesis,
@@ -8,6 +10,7 @@ import { useOnTriggerMatch } from './useTriggerAlerts'
 
 interface SpeechJob {
   interrupt: boolean
+  requireRunning: boolean
   text: string
 }
 
@@ -36,12 +39,16 @@ export function TriggerSpeechService() {
   }, [])
 
   const speakNext = useCallback(() => {
-    if (!areTriggersRunningRef.current || currentUtteranceRef.current) {
+    if (currentUtteranceRef.current) {
       return
     }
 
     const nextJob = queueRef.current.shift()
     if (!nextJob) {
+      return
+    }
+
+    if (nextJob.requireRunning && !areTriggersRunningRef.current) {
       return
     }
 
@@ -77,8 +84,13 @@ export function TriggerSpeechService() {
   }, [warnUnsupported])
 
   const enqueueSpeech = useCallback(
-    (job: SpeechJob) => {
-      if (!areTriggersRunningRef.current) {
+    (
+      job: Omit<SpeechJob, 'requireRunning'>,
+      options: {
+        requireRunning: boolean
+      },
+    ) => {
+      if (options.requireRunning && !areTriggersRunningRef.current) {
         return
       }
 
@@ -86,7 +98,13 @@ export function TriggerSpeechService() {
         cancelSpeech()
       }
 
-      queueRef.current = [...queueRef.current, job]
+      queueRef.current = [
+        ...queueRef.current,
+        {
+          ...job,
+          requireRunning: options.requireRunning,
+        },
+      ]
       speakNext()
     },
     [cancelSpeech, speakNext],
@@ -112,10 +130,34 @@ export function TriggerSpeechService() {
       return
     }
 
-    enqueueSpeech({
-      interrupt: event.trigger.actions.speech.interrupt,
-      text: speechText,
-    })
+    enqueueSpeech(
+      {
+        interrupt: event.trigger.actions.speech.interrupt,
+        text: speechText,
+      },
+      {
+        requireRunning: true,
+      },
+    )
+  })
+
+  useListen('speech.preview-requested', (message) => {
+    const payload = message.payload as TriggerSpeechPreviewRequestedMessage
+    const speechText = payload.text.trim()
+
+    if (!speechText) {
+      return
+    }
+
+    enqueueSpeech(
+      {
+        interrupt: payload.interrupt ?? true,
+        text: speechText,
+      },
+      {
+        requireRunning: false,
+      },
+    )
   })
 
   return null

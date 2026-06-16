@@ -76,6 +76,11 @@ export interface TriggerStoreTriggersSeenMessage {
   triggers: JenaTrigger[]
 }
 
+export interface TriggerSpeechPreviewRequestedMessage {
+  interrupt?: boolean
+  text: string
+}
+
 export interface EverQuestCharacter {
   active: boolean
   characterName: string
@@ -107,6 +112,7 @@ export interface EndpointMessages {
   'character-presence.characters': CharacterPresenceCharactersMessage
   'file-watcher.characters': FileWatcherCharactersMessage
   'matcher.match-found': RegexMatchFoundMessage
+  'speech.preview-requested': TriggerSpeechPreviewRequestedMessage
   'trigger-store.triggers-seen': TriggerStoreTriggersSeenMessage
   'user-trigger-store.updated': JenaUserTriggerUpdate
   'worldwide-presence.nearby-characters': NearbyCharacterPresenceMessage

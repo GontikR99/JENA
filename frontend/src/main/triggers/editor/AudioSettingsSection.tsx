@@ -1,3 +1,4 @@
+import { useEffect, useMemo, useState } from 'react'
 import Button from 'react-bootstrap/Button'
 import Form from 'react-bootstrap/Form'
 import type { JenaSpeechAction } from '../../../shared/triggers'
@@ -13,6 +14,7 @@ interface AudioSettingsSectionProps {
     mode: TriggerEditorAudioMode
     speech: JenaSpeechAction
   }) => void
+  onTestSpeech?: (character: CharacterPresence) => void
   state: {
     mode: TriggerEditorAudioMode
     speech: JenaSpeechAction
@@ -24,8 +26,30 @@ export function AudioSettingsSection({
   characters,
   disabled = false,
   onChange,
+  onTestSpeech,
   state,
 }: AudioSettingsSectionProps) {
+  const characterOptions = useMemo(() => {
+    return characters.map((character) => ({
+      character,
+      key: getCharacterKey(character),
+    }))
+  }, [characters])
+  const [selectedCharacterKey, setSelectedCharacterKey] = useState(
+    characterOptions[0]?.key ?? '',
+  )
+
+  useEffect(() => {
+    if (
+      selectedCharacterKey &&
+      characterOptions.some((option) => option.key === selectedCharacterKey)
+    ) {
+      return
+    }
+
+    setSelectedCharacterKey(characterOptions[0]?.key ?? '')
+  }, [characterOptions, selectedCharacterKey])
+
   function setMode(mode: TriggerEditorAudioMode) {
     onChange?.({
       ...state,
@@ -43,8 +67,18 @@ export function AudioSettingsSection({
     })
   }
 
+  function handleTestSpeech() {
+    const selectedCharacter = characterOptions.find(
+      (option) => option.key === selectedCharacterKey,
+    )?.character
+
+    if (selectedCharacter) {
+      onTestSpeech?.(selectedCharacter)
+    }
+  }
+
   const isTtsSelected = audioMode === 'tts'
-  const canTest = characters.length > 0
+  const canTest = characterOptions.length > 0 && isTtsSelected
 
   return (
     <Section title="Audio Settings">
@@ -99,12 +133,17 @@ export function AudioSettingsSection({
       <div className="trigger-editor-form-row trigger-editor-compact-row mt-2">
         <div className="trigger-editor-form-label">Test</div>
         <div className="trigger-editor-form-control trigger-editor-test-row">
-          <Form.Select disabled={!canTest} size="sm">
-            {characters.length > 0 ? (
-              characters.map((character) => (
+          <Form.Select
+            disabled={characterOptions.length === 0}
+            onChange={(event) => setSelectedCharacterKey(event.currentTarget.value)}
+            size="sm"
+            value={selectedCharacterKey}
+          >
+            {characterOptions.length > 0 ? (
+              characterOptions.map(({ character, key }) => (
                 <option
-                  key={`${character.characterName}\0${character.serverName}`}
-                  value={`${character.characterName} (${character.serverName})`}
+                  key={key}
+                  value={key}
                 >
                   {character.characterName} ({character.serverName})
                 </option>
@@ -113,11 +152,21 @@ export function AudioSettingsSection({
               <option>No characters available</option>
             )}
           </Form.Select>
-          <Button disabled={!canTest} size="sm" variant="success">
-            ▶
+          <Button
+            aria-label="Test speech"
+            disabled={disabled || !canTest}
+            onClick={handleTestSpeech}
+            size="sm"
+            variant="success"
+          >
+            {'\u25b6'}
           </Button>
         </div>
       </div>
     </Section>
   )
+}
+
+function getCharacterKey(character: CharacterPresence) {
+  return `${character.characterName}\0${character.serverName}`
 }

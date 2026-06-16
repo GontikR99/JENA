@@ -64,6 +64,7 @@ vi.mock('../../shared/messageBrokerHooks', () => ({
     vi.fn(async () => ({
       characters: [],
     })),
+  useSender: () => vi.fn(),
 }))
 
 describe('UserTriggersEditor', () => {

@@ -114,6 +114,39 @@ export function createAlertMatchContext(
   }
 }
 
+export function createPreviewAlertMatchContext({
+  characterName,
+  matcher,
+  timestamp = new Date().toISOString(),
+}: {
+  characterName: string
+  matcher: JenaTriggerMatcher
+  timestamp?: string
+}): AlertMatchContext {
+  const compiledPattern = compileAlertMatcher(
+    matcher,
+    createAlertPatternSessionId(),
+  )
+  const capturesByKey: Record<string, string> = {
+    C: characterName,
+  }
+
+  compiledPattern.captureBindings.forEach((binding) => {
+    capturesByKey[binding.key] ??= getPreviewCaptureValue(
+      binding.key,
+      characterName,
+    )
+  })
+
+  return {
+    capturesByKey,
+    lineText: matcher.text,
+    logTime: getLogTime(timestamp),
+    namedCaptures: {},
+    positionalCaptures: getPreviewPositionalCaptures(compiledPattern),
+  }
+}
+
 export function substituteAlertTemplate(
   template: string,
   context: AlertMatchContext,
@@ -499,6 +532,31 @@ function getReplacementValue(
   )
 
   return caseInsensitiveNamedCapture?.[1]
+}
+
+function getPreviewCaptureValue(key: string, characterName: string) {
+  if (key === 'C') {
+    return characterName
+  }
+
+  if (key === 'TS') {
+    return '00:00:01'
+  }
+
+  if (key.startsWith('N')) {
+    return '1'
+  }
+
+  return 'test'
+}
+
+function getPreviewPositionalCaptures(compiledPattern: AlertCompiledPattern) {
+  const captureCount = Math.max(
+    0,
+    ...compiledPattern.userPositionalCaptureIndexes,
+  )
+
+  return Array.from({ length: captureCount }, () => 'test')
 }
 
 function applyModifier(value: string, modifier?: string, arg?: string) {

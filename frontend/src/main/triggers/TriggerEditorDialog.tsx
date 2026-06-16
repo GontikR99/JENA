@@ -14,7 +14,7 @@ import type {
   CharacterPresence,
   CharacterPresenceCharactersMessage,
 } from '../../shared/messages'
-import { useListen, useRpc } from '../../shared/messageBrokerHooks'
+import { useListen, useRpc, useSender } from '../../shared/messageBrokerHooks'
 import { AudioSettingsSection } from './editor/AudioSettingsSection'
 import { CounterTab } from './editor/CounterTab'
 import { GeneralSettingsSection } from './editor/GeneralSettingsSection'
@@ -28,6 +28,10 @@ import {
   validateTriggerDraft,
   type TriggerEditorDraft,
 } from './editor/triggerEditorModel'
+import {
+  createPreviewAlertMatchContext,
+  substituteAlertTemplate,
+} from './alertPatternCompiler'
 import './TriggerEditorDialog.css'
 
 export interface TriggerEditorDialogProps {
@@ -44,6 +48,7 @@ export function TriggerEditorDialog({
   trigger,
 }: TriggerEditorDialogProps) {
   const callWorker = useRpc('trigger-editor')
+  const send = useSender('trigger-editor')
   const initialDraft = useMemo(() => createDraftFromTrigger(trigger), [trigger])
   const [characters, setCharacters] = useState<CharacterPresence[]>([])
   const [validationErrors, setValidationErrors] = useState<string[]>([])
@@ -114,6 +119,25 @@ export function TriggerEditorDialog({
     setShown(false)
   }
 
+  function handleTestSpeech(character: CharacterPresence) {
+    const speechText = draft.actions.audio.speech.text.trim()
+    if (speechText.length === 0) {
+      return
+    }
+
+    const context = createPreviewAlertMatchContext({
+      characterName: character.characterName,
+      matcher: draft.match,
+    })
+    const substitutedText =
+      substituteAlertTemplate(speechText, context) ?? speechText
+
+    send('speech.preview-requested', {
+      interrupt: true,
+      text: substitutedText,
+    })
+  }
+
   return (
     <Modal
       centered
@@ -163,6 +187,7 @@ export function TriggerEditorDialog({
                     },
                   })
                 }
+                onTestSpeech={handleTestSpeech}
                 state={draft.actions.audio}
               />
             </div>

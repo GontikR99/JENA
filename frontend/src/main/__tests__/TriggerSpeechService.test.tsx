@@ -15,7 +15,14 @@ import type { TriggerMatchEvent } from '../triggers/useTriggerAlerts'
 
 const hookState = vi.hoisted(() => ({
   areTriggersRunning: true,
+  listeners: new Map<string, (message: { payload: unknown }) => void>(),
   triggerMatchCallback: null as ((event: TriggerMatchEvent) => void) | null,
+}))
+
+vi.mock('../../shared/messageBrokerHooks', () => ({
+  useListen: (destination: string, callback: (message: { payload: unknown }) => void) => {
+    hookState.listeners.set(destination, callback)
+  },
 }))
 
 vi.mock('../TriggerRuntime', () => ({
@@ -51,6 +58,7 @@ const speechSynthesis = {
 describe('TriggerSpeechService', () => {
   beforeEach(() => {
     hookState.areTriggersRunning = true
+    hookState.listeners.clear()
     hookState.triggerMatchCallback = null
     spokenUtterances.length = 0
     speechSynthesis.cancel.mockClear()
@@ -126,6 +134,17 @@ describe('TriggerSpeechService', () => {
 
     expect(speechSynthesis.speak).not.toHaveBeenCalled()
   })
+
+  it('speaks preview requests even when triggers are stopped', () => {
+    hookState.areTriggersRunning = false
+
+    render(<TriggerSpeechService />)
+    fireSpeechPreview('preview text')
+
+    expect(spokenUtterances.map((utterance) => utterance.text)).toEqual([
+      'preview text',
+    ])
+  })
 })
 
 function fireTriggerMatch(
@@ -151,6 +170,20 @@ function fireTriggerMatch(
     },
     resolvedTrigger: createResolvedTrigger(trigger),
     trigger,
+  })
+}
+
+function fireSpeechPreview(text: string) {
+  const listener = hookState.listeners.get('speech.preview-requested')
+
+  if (!listener) {
+    throw new Error('Speech preview listener was not registered.')
+  }
+
+  listener({
+    payload: {
+      text,
+    },
   })
 }
 
