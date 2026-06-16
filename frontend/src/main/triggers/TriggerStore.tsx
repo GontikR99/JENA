@@ -1,7 +1,9 @@
 import {
   createContext,
+  useEffect,
   useContext,
   useMemo,
+  useRef,
   type ReactNode,
 } from 'react'
 import { useRpc } from '../../shared/messageBrokerHooks'
@@ -14,7 +16,12 @@ import {
 export interface TriggerStoreApi {
   fetchTriggers: (ids: JenaTriggerId[]) => Promise<JenaTrigger[]>
   storeTriggers: (triggers: JenaTrigger[]) => Promise<JenaTrigger[]>
+  subscribeNewTriggers: (
+    listener: NewTriggerListener,
+  ) => () => void
 }
+
+export type NewTriggerListener = (trigger: JenaTrigger) => void
 
 interface ServerTriggerStoreApi {
   fetchTriggers: (ids: JenaTriggerId[]) => Promise<JenaTrigger[]>
@@ -76,9 +83,26 @@ export function useTriggerStore() {
   return store
 }
 
+export function useOnNewTrigger(listener: NewTriggerListener) {
+  const store = useTriggerStore()
+  const listenerRef = useRef(listener)
+
+  useEffect(() => {
+    listenerRef.current = listener
+  }, [listener])
+
+  useEffect(() => {
+    return store.subscribeNewTriggers((trigger) => {
+      listenerRef.current(trigger)
+    })
+  }, [store])
+}
+
 export class WriteThroughTriggerStore implements TriggerStoreApi {
   private readonly cachedTriggers = new Map<JenaTriggerId, JenaTrigger>()
   private readonly cache: TriggerCache
+  private readonly handledTriggerIds = new Set<JenaTriggerId>()
+  private readonly newTriggerListeners = new Set<NewTriggerListener>()
   private readonly pendingFetches = new Map<JenaTriggerId, Promise<JenaTrigger>>()
   private readonly pendingStores = new Map<JenaTriggerId, Promise<JenaTrigger>>()
   private readonly server: ServerTriggerStoreApi
@@ -122,7 +146,7 @@ export class WriteThroughTriggerStore implements TriggerStoreApi {
     const storedNovelTriggers = await novelStorePromise
     const pendingStoredTriggers = await resolvePendingTriggers(pendingTriggers)
 
-    return canonicalTriggers.map((trigger) => {
+    const resolvedTriggers = canonicalTriggers.map((trigger) => {
       return (
         storedNovelTriggers.get(trigger.id) ??
         pendingStoredTriggers.get(trigger.id) ??
@@ -131,6 +155,9 @@ export class WriteThroughTriggerStore implements TriggerStoreApi {
         trigger
       )
     })
+
+    this.markHandledTriggers(resolvedTriggers)
+    return resolvedTriggers
   }
 
   async fetchTriggers(ids: JenaTriggerId[]) {
@@ -176,14 +203,26 @@ export class WriteThroughTriggerStore implements TriggerStoreApi {
       throw new Error(`Missing triggers: ${unresolvedIds.join(', ')}`)
     }
 
-    return ids.map((id) => allTriggers.get(id) as JenaTrigger)
+    const resolvedTriggers = ids.map((id) => allTriggers.get(id) as JenaTrigger)
+    this.markHandledTriggers(resolvedTriggers)
+    return resolvedTriggers
+  }
+
+  subscribeNewTriggers(listener: NewTriggerListener) {
+    this.newTriggerListeners.add(listener)
+
+    return () => {
+      this.newTriggerListeners.delete(listener)
+    }
   }
 
   private async storeNovelTriggers(triggers: JenaTrigger[]) {
     const pendingStore = this.server
       .storeTriggers(triggers)
       .then((storedTriggers) => {
-        return this.cacheReturnedTriggers(triggers, storedTriggers)
+        const cachedTriggers = this.cacheReturnedTriggers(triggers, storedTriggers)
+        this.markHandledTriggers(cachedTriggers.values())
+        return cachedTriggers
       })
 
     triggers.forEach((trigger) => {
@@ -208,7 +247,9 @@ export class WriteThroughTriggerStore implements TriggerStoreApi {
     const pendingFetch = this.server
       .fetchTriggers(ids)
       .then((fetchedTriggers) => {
-        return this.cacheReturnedTriggersByIDs(ids, fetchedTriggers)
+        const cachedTriggers = this.cacheReturnedTriggersByIDs(ids, fetchedTriggers)
+        this.markHandledTriggers(cachedTriggers.values())
+        return cachedTriggers
       })
 
     ids.forEach((id) => {
@@ -305,6 +346,7 @@ export class WriteThroughTriggerStore implements TriggerStoreApi {
       cachedTriggers.set(id, trigger)
       this.cachedTriggers.set(id, trigger)
     })
+    this.markHandledTriggers(persistedTriggers.values())
 
     return cachedTriggers
   }
@@ -313,6 +355,20 @@ export class WriteThroughTriggerStore implements TriggerStoreApi {
     void this.cache.putTriggers(triggers).catch((error: unknown) => {
       console.warn('[TriggerStore] unable to write trigger cache', error)
     })
+  }
+
+  private markHandledTriggers(triggers: Iterable<JenaTrigger>) {
+    for (const trigger of triggers) {
+      const canonicalTrigger = withCanonicalTriggerId(trigger)
+      if (this.handledTriggerIds.has(canonicalTrigger.id)) {
+        continue
+      }
+
+      this.handledTriggerIds.add(canonicalTrigger.id)
+      this.newTriggerListeners.forEach((listener) => {
+        listener(canonicalTrigger)
+      })
+    }
   }
 }
 

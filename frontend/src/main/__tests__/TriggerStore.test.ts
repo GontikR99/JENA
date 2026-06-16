@@ -103,6 +103,55 @@ describe('WriteThroughTriggerStore', () => {
     expect(secondServer.fetchTriggers).not.toHaveBeenCalled()
     expect(secondServer.storeTriggers).not.toHaveBeenCalled()
   })
+
+  it('notifies once for newly stored triggers', async () => {
+    const firstTrigger = createTestTrigger('First Trigger')
+    const secondTrigger = createTestTrigger('Second Trigger')
+    const server = createServer()
+    const store = new WriteThroughTriggerStore(server, new InMemoryTriggerCache())
+    const seenTriggers: JenaTrigger[] = []
+
+    store.subscribeNewTriggers((trigger) => {
+      seenTriggers.push(trigger)
+    })
+
+    await store.storeTriggers([firstTrigger, secondTrigger])
+    await store.storeTriggers([secondTrigger, firstTrigger])
+
+    expect(seenTriggers).toEqual([firstTrigger, secondTrigger])
+  })
+
+  it('notifies for fetched triggers from the server', async () => {
+    const trigger = createTestTrigger('Fetched Trigger')
+    const server = createServer({
+      triggers: [trigger],
+    })
+    const store = new WriteThroughTriggerStore(server, new InMemoryTriggerCache())
+    const seenTriggers: JenaTrigger[] = []
+
+    store.subscribeNewTriggers((seenTrigger) => {
+      seenTriggers.push(seenTrigger)
+    })
+
+    await store.fetchTriggers([trigger.id])
+
+    expect(seenTriggers).toEqual([trigger])
+  })
+
+  it('does not notify after unsubscribe', async () => {
+    const trigger = createTestTrigger('Unsubscribed Trigger')
+    const server = createServer()
+    const store = new WriteThroughTriggerStore(server, new InMemoryTriggerCache())
+    const seenTriggers: JenaTrigger[] = []
+    const unsubscribe = store.subscribeNewTriggers((seenTrigger) => {
+      seenTriggers.push(seenTrigger)
+    })
+
+    unsubscribe()
+    await store.storeTriggers([trigger])
+
+    expect(seenTriggers).toEqual([])
+  })
 })
 
 function createServer({ triggers = [] }: { triggers?: JenaTrigger[] } = {}) {
