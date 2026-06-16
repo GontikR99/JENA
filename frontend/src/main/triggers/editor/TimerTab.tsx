@@ -7,6 +7,7 @@ import {
   partsToDurationMs,
   type TriggerEditorTimerState,
 } from './triggerEditorModel'
+import type { JenaTimerEarlyEnder } from '../../../shared/triggers'
 
 interface TimerTabProps {
   onChange: (timer: TriggerEditorTimerState) => void
@@ -14,14 +15,29 @@ interface TimerTabProps {
 }
 
 export function TimerTab({ onChange, timer }: TimerTabProps) {
-  function updateEarlyEnder(index: number, value: string) {
+  function updateEarlyEnder(
+    index: number,
+    value: Partial<JenaTimerEarlyEnder>,
+  ) {
     const earlyEnders = [...timer.earlyEnders]
-    earlyEnders[index] = value
+    earlyEnders[index] = {
+      ...earlyEnders[index],
+      ...value,
+    }
     onChange({ ...timer, earlyEnders })
   }
 
   function addEarlyEnder() {
-    onChange({ ...timer, earlyEnders: [...timer.earlyEnders, ''] })
+    onChange({
+      ...timer,
+      earlyEnders: [
+        ...timer.earlyEnders,
+        {
+          text: '',
+          isRegex: false,
+        },
+      ],
+    })
   }
 
   return (
@@ -107,15 +123,26 @@ export function TimerTab({ onChange, timer }: TimerTabProps) {
                   <Form.Control
                     disabled={timer.type === 'none'}
                     onChange={(event) =>
-                      updateEarlyEnder(index, event.currentTarget.value)
+                      updateEarlyEnder(index, {
+                        text: event.currentTarget.value,
+                      })
                     }
                     size="sm"
                     type="text"
-                    value={earlyEnder}
+                    value={earlyEnder.text}
                   />
                 </td>
                 <td className="text-center">
-                  <Form.Check checked disabled type="checkbox" />
+                  <Form.Check
+                    checked={earlyEnder.isRegex}
+                    disabled={timer.type === 'none'}
+                    onChange={(event) =>
+                      updateEarlyEnder(index, {
+                        isRegex: event.currentTarget.checked,
+                      })
+                    }
+                    type="checkbox"
+                  />
                 </td>
               </tr>
             ))}

@@ -6,6 +6,7 @@ import Modal from 'react-bootstrap/Modal'
 import Tab from 'react-bootstrap/Tab'
 import Tabs from 'react-bootstrap/Tabs'
 import {
+  matcherToRegexSource,
   withCanonicalTriggerId,
   type JenaTrigger,
 } from '../../shared/triggers'
@@ -206,23 +207,31 @@ export function TriggerEditorDialog({
 function validateRegularExpressions(draft: TriggerEditorDraft) {
   const errors: string[] = []
 
-  try {
-    RE2JS.compile(RE2JS.translateRegExp(draft.match))
-  } catch (error) {
-    errors.push(`Search text must be a valid regular expression: ${getErrorMessage(error)}`)
+  if (draft.match.isRegex) {
+    try {
+      RE2JS.compile(RE2JS.translateRegExp(draft.match.text))
+    } catch (error) {
+      errors.push(`Search text must be a valid regular expression: ${getErrorMessage(error)}`)
+    }
+  } else {
+    RE2JS.compile(RE2JS.translateRegExp(matcherToRegexSource(draft.match)))
   }
 
   draft.timer.earlyEnders.forEach((earlyEnder, index) => {
-    if (earlyEnder.trim().length === 0) {
+    if (earlyEnder.text.trim().length === 0) {
       return
     }
 
-    try {
-      RE2JS.compile(RE2JS.translateRegExp(earlyEnder))
-    } catch (error) {
-      errors.push(
-        `Timer early-end text row ${index + 1} must be a valid regular expression: ${getErrorMessage(error)}`,
-      )
+    if (earlyEnder.isRegex) {
+      try {
+        RE2JS.compile(RE2JS.translateRegExp(earlyEnder.text))
+      } catch (error) {
+        errors.push(
+          `Timer early-end text row ${index + 1} must be a valid regular expression: ${getErrorMessage(error)}`,
+        )
+      }
+    } else {
+      RE2JS.compile(RE2JS.translateRegExp(matcherToRegexSource(earlyEnder)))
     }
   })
 

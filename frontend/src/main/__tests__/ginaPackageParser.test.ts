@@ -34,7 +34,10 @@ describe('parseGinaPackageFile', () => {
       comments: 'Literal comments',
       category: 'Warnings',
       groupPath: ['Root Group', 'Raid Group'],
-      match: "A boss says, 'Run away\\.' \\{C\\}",
+      match: {
+        text: "A boss says, 'Run away.' {C}",
+        isRegex: false,
+      },
       actions: {
         display: {
           enabled: true,
@@ -78,7 +81,10 @@ describe('parseGinaPackageFile', () => {
             text: '',
           },
         },
-        earlyEnders: ['Timer done', 'done (?<target>.+)'],
+        earlyEnders: [
+          { text: 'Timer done', isRegex: false },
+          { text: 'done (?<target>.+)', isRegex: true },
+        ],
       },
     })
     expect(triggers[0]?.id).toMatch(
@@ -88,7 +94,10 @@ describe('parseGinaPackageFile', () => {
       name: 'Regex Trigger',
       category: 'Default',
       groupPath: ['Root Group'],
-      match: 'The (.+) shouts',
+      match: {
+        text: 'The (.+) shouts',
+        isRegex: true,
+      },
       timer: null,
     })
     expect(progressCalls.length).toBeGreaterThanOrEqual(2)

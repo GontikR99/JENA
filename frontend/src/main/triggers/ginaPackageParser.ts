@@ -567,7 +567,10 @@ function toJenaTrigger(rawTrigger: RawTrigger): JenaTrigger {
     comments: rawTrigger.comments,
     category: rawTrigger.category,
     groupPath: rawTrigger.groupPath,
-    match: toRegex(rawTrigger.triggerText, rawTrigger.enableRegex),
+    match: {
+      text: rawTrigger.triggerText,
+      isRegex: rawTrigger.enableRegex,
+    },
     actions: {
       display: createTextAction(rawTrigger.useText, rawTrigger.displayText),
       speech: createSpeechAction(
@@ -604,9 +607,10 @@ function createTimer(rawTrigger: RawTrigger): JenaTriggerTimer | null {
       rawTrigger.useTimerEnded && rawTrigger.timerEndedTrigger
         ? toTimerAction(rawTrigger.timerEndedTrigger)
         : null,
-    earlyEnders: rawTrigger.timerEarlyEnders.map((earlyEnder) => {
-      return toRegex(earlyEnder.earlyEndText, earlyEnder.enableRegex)
-    }),
+    earlyEnders: rawTrigger.timerEarlyEnders.map((earlyEnder) => ({
+      text: earlyEnder.earlyEndText,
+      isRegex: earlyEnder.enableRegex,
+    })),
   }
 }
 
@@ -681,14 +685,6 @@ function getTimerDurationMs(
   }
 
   return timerType === 'stopwatch' ? 60_000 : 0
-}
-
-function toRegex(text: string, isRegex: boolean) {
-  return isRegex ? text : escapeRegExp(text)
-}
-
-function escapeRegExp(text: string) {
-  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
 function parseGinaBoolean(text: string) {

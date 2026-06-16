@@ -83,7 +83,7 @@ describe('withCanonicalTriggerId', () => {
         warningSeconds: 5,
         warningAction: null,
         endedAction: null,
-        earlyEnders: ['done'],
+        earlyEnders: [{ text: 'done', isRegex: true }],
       },
     })
 
@@ -91,11 +91,16 @@ describe('withCanonicalTriggerId', () => {
 
     canonicalTrigger.groupPath.push('Changed')
     canonicalTrigger.actions.display.text = 'Changed display'
-    canonicalTrigger.timer?.earlyEnders.push('changed')
+    canonicalTrigger.timer?.earlyEnders.push({
+      text: 'changed',
+      isRegex: false,
+    })
 
     expect(trigger.groupPath).toEqual(['Raid', 'Boss'])
     expect(trigger.actions.display.text).toBe('Display')
-    expect(trigger.timer?.earlyEnders).toEqual(['done'])
+    expect(trigger.timer?.earlyEnders).toEqual([
+      { text: 'done', isRegex: true },
+    ])
   })
 
   it('does not depend on nested object property insertion order', () => {
@@ -117,7 +122,7 @@ describe('withCanonicalTriggerId', () => {
           },
         },
         timer: {
-          earlyEnders: ['done'],
+          earlyEnders: [{ isRegex: true, text: 'done' }],
           endedAction: {
             speech: {
               interrupt: false,
@@ -193,19 +198,43 @@ describe('withCanonicalTriggerId', () => {
               interrupt: false,
             },
           },
-          earlyEnders: ['done'],
+          earlyEnders: [{ text: 'done', isRegex: true }],
         },
       }),
     )
 
     expect(second.id).toBe(first.id)
   })
+
+  it('changes the canonical id when regex flags change', () => {
+    const first = withCanonicalTriggerId(
+      createTestTrigger({
+        match: {
+          text: 'same text',
+          isRegex: false,
+        },
+      }),
+    )
+    const second = withCanonicalTriggerId(
+      createTestTrigger({
+        match: {
+          text: 'same text',
+          isRegex: true,
+        },
+      }),
+    )
+
+    expect(second.id).not.toBe(first.id)
+  })
 })
 
 function createTestTrigger(overrides: Partial<JenaTrigger> = {}): JenaTrigger {
   return {
     ...createEmptyTrigger(),
-    match: '^test$',
+    match: {
+      text: '^test$',
+      isRegex: true,
+    },
     ...overrides,
   }
 }

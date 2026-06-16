@@ -422,7 +422,10 @@ func createCanonicalTestTriggerWithMatch(t *testing.T, name string, groupPath []
 		Comments:  "Test comments",
 		Category:  "Default",
 		GroupPath: append([]string{}, groupPath...),
-		Match:     model.TriggerMatcher(match),
+		Match: model.TriggerMatcher{
+			Text:    match,
+			IsRegex: true,
+		},
 		Actions: model.TriggerActions{
 			Display: model.TextAction{
 				Enabled: true,

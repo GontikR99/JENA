@@ -3,6 +3,8 @@ import type {
   JenaSpeechAction,
   JenaTextAction,
   JenaTimerAction,
+  JenaTimerEarlyEnder,
+  JenaTriggerMatcher,
   JenaTimerStartBehavior,
   JenaTrigger,
   JenaTriggerTimer,
@@ -34,7 +36,7 @@ export interface TriggerEditorTimerState {
   warningSeconds: number
   warningAction: JenaTimerAction | null
   endedAction: JenaTimerAction | null
-  earlyEnders: string[]
+  earlyEnders: JenaTimerEarlyEnder[]
 }
 
 export interface TriggerEditorDraft {
@@ -43,7 +45,7 @@ export interface TriggerEditorDraft {
   comments: string
   category: string
   groupPath: string[]
-  match: string
+  match: JenaTriggerMatcher
   actions: {
     text: TriggerEditorTextState
     audio: TriggerEditorAudioState
@@ -67,7 +69,7 @@ export function createDraftFromTrigger(trigger: JenaTrigger): TriggerEditorDraft
     comments: normalizedTrigger.comments,
     category: normalizedTrigger.category || 'Default',
     groupPath: [...normalizedTrigger.groupPath],
-    match: normalizedTrigger.match,
+    match: cloneMatcher(normalizedTrigger.match),
     actions: {
       text: {
         clipboard: { ...normalizedTrigger.actions.clipboard },
@@ -86,7 +88,7 @@ export function createTriggerFromDraft(draft: TriggerEditorDraft): JenaTrigger {
     comments: draft.comments,
     category: draft.category,
     groupPath: [...draft.groupPath],
-    match: draft.match,
+    match: cloneMatcher(draft.match),
     actions: {
       clipboard: {
         ...draft.actions.text.clipboard,
@@ -119,7 +121,7 @@ export function validateTriggerDraft(draft: TriggerEditorDraft) {
     errors.push('Trigger name is required.')
   }
 
-  if (draft.match.trim().length === 0) {
+  if (draft.match.text.trim().length === 0) {
     errors.push('Search text is required.')
   }
 
@@ -241,7 +243,9 @@ function normalizeTrigger(trigger: JenaTrigger): JenaTrigger {
     comments: trigger.comments ?? emptyTrigger.comments,
     groupPath: Array.isArray(trigger.groupPath) ? trigger.groupPath : [],
     id: trigger.id || emptyTrigger.id,
-    match: trigger.match ?? emptyTrigger.match,
+    match: trigger.match
+      ? cloneMatcher(trigger.match)
+      : cloneMatcher(emptyTrigger.match),
     name: trigger.name ?? emptyTrigger.name,
     timer: trigger.timer ?? null,
   }
@@ -253,7 +257,7 @@ function createTimerState(
   if (!timer) {
     return {
       durationMs: 0,
-      earlyEnders: [''],
+      earlyEnders: [createEmptyEarlyEnder()],
       endedAction: null,
       name: '',
       startBehavior: 'startNew',
@@ -266,7 +270,9 @@ function createTimerState(
   return {
     durationMs: timer.durationMs,
     earlyEnders:
-      timer.earlyEnders.length > 0 ? [...timer.earlyEnders] : [''],
+      timer.earlyEnders.length > 0
+        ? timer.earlyEnders.map(cloneMatcher)
+        : [createEmptyEarlyEnder()],
     endedAction: timer.endedAction
       ? cloneTimerAction(timer.endedAction)
       : null,
@@ -289,7 +295,9 @@ function createTimerFromDraft(
 
   return {
     durationMs: timer.durationMs,
-    earlyEnders: timer.earlyEnders.filter((text) => text.trim().length > 0),
+    earlyEnders: timer.earlyEnders
+      .filter((earlyEnder) => earlyEnder.text.trim().length > 0)
+      .map(cloneMatcher),
     endedAction: timer.endedAction,
     name: timer.name,
     startBehavior: timer.startBehavior,
@@ -304,4 +312,18 @@ function cloneTimerAction(action: JenaTimerAction): JenaTimerAction {
     display: { ...action.display },
     speech: { ...action.speech },
   }
+}
+
+function createEmptyEarlyEnder(): JenaTimerEarlyEnder {
+  return {
+    text: '',
+    isRegex: false,
+  }
+}
+
+function cloneMatcher<TMatcher extends JenaTriggerMatcher>(matcher: TMatcher): TMatcher {
+  return {
+    text: matcher.text,
+    isRegex: matcher.isRegex,
+  } as TMatcher
 }

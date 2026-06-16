@@ -25,7 +25,7 @@ func CanonicalTriggerID(trigger Trigger) (TriggerID, error) {
 		Category:  trigger.Category,
 		Comments:  trigger.Comments,
 		GroupPath: cloneStringSlice(trigger.GroupPath),
-		Match:     trigger.Match,
+		Match:     getTriggerMatcherHashContent(trigger.Match),
 		Name:      trigger.Name,
 		Timer:     getTriggerTimerHashContent(trigger.Timer),
 	}
@@ -64,9 +64,14 @@ type canonicalTriggerContent struct {
 	Category  string                  `json:"category"`
 	Comments  string                  `json:"comments"`
 	GroupPath []string                `json:"groupPath"`
-	Match     TriggerMatcher          `json:"match"`
+	Match     canonicalTriggerMatcher `json:"match"`
 	Name      string                  `json:"name"`
 	Timer     *canonicalTriggerTimer  `json:"timer"`
+}
+
+type canonicalTriggerMatcher struct {
+	Text    string `json:"text"`
+	IsRegex bool   `json:"isRegex"`
 }
 
 type canonicalTriggerActions struct {
@@ -87,14 +92,14 @@ type canonicalSpeechAction struct {
 }
 
 type canonicalTriggerTimer struct {
-	Type           TriggerTimerType      `json:"type"`
-	Name           string                `json:"name"`
-	DurationMs     int64                 `json:"durationMs"`
-	StartBehavior  TimerStartBehavior    `json:"startBehavior"`
-	WarningSeconds int64                 `json:"warningSeconds"`
-	WarningAction  *canonicalTimerAction `json:"warningAction"`
-	EndedAction    *canonicalTimerAction `json:"endedAction"`
-	EarlyEnders    []TimerEarlyEnder     `json:"earlyEnders"`
+	Type           TriggerTimerType          `json:"type"`
+	Name           string                    `json:"name"`
+	DurationMs     int64                     `json:"durationMs"`
+	StartBehavior  TimerStartBehavior        `json:"startBehavior"`
+	WarningSeconds int64                     `json:"warningSeconds"`
+	WarningAction  *canonicalTimerAction     `json:"warningAction"`
+	EndedAction    *canonicalTimerAction     `json:"endedAction"`
+	EarlyEnders    []canonicalTriggerMatcher `json:"earlyEnders"`
 }
 
 type canonicalTimerAction struct {
@@ -107,6 +112,13 @@ func getTriggerActionsHashContent(actions TriggerActions) canonicalTriggerAction
 		Display:   getTextActionHashContent(actions.Display),
 		Speech:    getSpeechActionHashContent(actions.Speech),
 		Clipboard: getClipboardActionHashContent(actions.Clipboard),
+	}
+}
+
+func getTriggerMatcherHashContent(matcher TriggerMatcher) canonicalTriggerMatcher {
+	return canonicalTriggerMatcher{
+		Text:    matcher.Text,
+		IsRegex: matcher.IsRegex,
 	}
 }
 
@@ -123,7 +135,7 @@ func getTriggerTimerHashContent(timer *TriggerTimer) *canonicalTriggerTimer {
 		WarningSeconds: timer.WarningSeconds,
 		WarningAction:  getTimerActionHashContent(timer.WarningAction),
 		EndedAction:    getTimerActionHashContent(timer.EndedAction),
-		EarlyEnders:    cloneEarlyEnders(timer.EarlyEnders),
+		EarlyEnders:    getTimerEarlyEndersHashContent(timer.EarlyEnders),
 	}
 }
 
@@ -168,10 +180,18 @@ func cloneStringSlice(values []string) []string {
 	return append([]string{}, values...)
 }
 
-func cloneEarlyEnders(values []TimerEarlyEnder) []TimerEarlyEnder {
+func getTimerEarlyEndersHashContent(values []TimerEarlyEnder) []canonicalTriggerMatcher {
 	if values == nil {
 		return nil
 	}
 
-	return append([]TimerEarlyEnder{}, values...)
+	earlyEnders := make([]canonicalTriggerMatcher, 0, len(values))
+	for _, value := range values {
+		earlyEnders = append(earlyEnders, canonicalTriggerMatcher{
+			Text:    value.Text,
+			IsRegex: value.IsRegex,
+		})
+	}
+
+	return earlyEnders
 }

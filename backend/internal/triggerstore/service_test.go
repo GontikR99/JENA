@@ -81,7 +81,7 @@ func TestServiceStoresImportedTriggerWithAngleBrackets(t *testing.T) {
 	}
 	defer service.Dispose()
 
-	const encodedTrigger = `{"actions":{"display":{"enabled":false,"text":"Feigned Death - Stand Up"},"speech":{"enabled":true,"text":"Stand Up","interrupt":false},"clipboard":{"enabled":false,"text":""}},"category":"Debuffs","comments":"","groupPath":["AD Triggers","Raids","House of Thule","Tier 3","Guardian of the House (HoT Upper)"],"match":"a groundshattering golem begins to cast a spell\\. <Earthshock>","name":"A groundshattering golem - Earthshock","timer":{"type":"repeating","name":"FD/DD AE","durationMs":30000,"startBehavior":"restart","warningSeconds":0,"warningAction":null,"endedAction":null,"earlyEnders":["end timer","you have been slain","a groundshattering golem has been slain","you have slain a ground","'s corpse falls to the ground"]},"id":"8a255247-6347-1511-f561-490dade718de"}`
+	const encodedTrigger = `{"actions":{"display":{"enabled":false,"text":"Feigned Death - Stand Up"},"speech":{"enabled":true,"text":"Stand Up","interrupt":false},"clipboard":{"enabled":false,"text":""}},"category":"Debuffs","comments":"","groupPath":["AD Triggers","Raids","House of Thule","Tier 3","Guardian of the House (HoT Upper)"],"match":{"text":"a groundshattering golem begins to cast a spell\\. <Earthshock>","isRegex":true},"name":"A groundshattering golem - Earthshock","timer":{"type":"repeating","name":"FD/DD AE","durationMs":30000,"startBehavior":"restart","warningSeconds":0,"warningAction":null,"endedAction":null,"earlyEnders":[{"text":"end timer","isRegex":true},{"text":"you have been slain","isRegex":true},{"text":"a groundshattering golem has been slain","isRegex":true},{"text":"you have slain a ground","isRegex":true},{"text":"'s corpse falls to the ground","isRegex":true}]},"id":"69afb40d-fdfd-6419-4043-4ff2c1f885fc"}`
 
 	var trigger model.Trigger
 	if err := json.Unmarshal([]byte(encodedTrigger), &trigger); err != nil {
@@ -241,7 +241,10 @@ func createCanonicalTestTrigger(t *testing.T, name string) model.Trigger {
 			"Raid",
 			"Boss",
 		},
-		Match: "^test$",
+		Match: model.TriggerMatcher{
+			Text:    "^test$",
+			IsRegex: true,
+		},
 		Actions: model.TriggerActions{
 			Display: model.TextAction{
 				Enabled: true,
@@ -264,7 +267,10 @@ func createCanonicalTestTrigger(t *testing.T, name string) model.Trigger {
 			StartBehavior:  model.TimerStartBehaviorRestart,
 			WarningSeconds: 5,
 			EarlyEnders: []model.TimerEarlyEnder{
-				"done",
+				{
+					Text:    "done",
+					IsRegex: true,
+				},
 			},
 		},
 	}

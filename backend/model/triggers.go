@@ -1,8 +1,16 @@
 package model
 
 type TriggerID string
-type TriggerMatcher string
-type TimerEarlyEnder string
+
+type TriggerMatcher struct {
+	Text    string `json:"text"`
+	IsRegex bool   `json:"isRegex"`
+}
+
+type TimerEarlyEnder struct {
+	Text    string `json:"text"`
+	IsRegex bool   `json:"isRegex"`
+}
 
 type TriggerTimerType string
 

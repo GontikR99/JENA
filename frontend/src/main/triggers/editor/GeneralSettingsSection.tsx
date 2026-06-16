@@ -38,11 +38,17 @@ export function GeneralSettingsSection({
         <Col sm={9}>
           <Form.Control
             onChange={(event) =>
-              onChange({ ...draft, match: event.currentTarget.value })
+              onChange({
+                ...draft,
+                match: {
+                  ...draft.match,
+                  text: event.currentTarget.value,
+                },
+              })
             }
             size="sm"
             type="text"
-            value={draft.match}
+            value={draft.match.text}
           />
         </Col>
       </Form.Group>
@@ -51,10 +57,18 @@ export function GeneralSettingsSection({
         <Col sm={{ offset: 3, span: 9 }}>
           <div className="trigger-editor-inline-checks">
             <Form.Check
-              checked
-              disabled
+              checked={draft.match.isRegex}
               id="trigger-editor-use-regex"
               label="Use Regular Expressions"
+              onChange={(event) =>
+                onChange({
+                  ...draft,
+                  match: {
+                    ...draft.match,
+                    isRegex: event.currentTarget.checked,
+                  },
+                })
+              }
               type="checkbox"
             />
             <Form.Check

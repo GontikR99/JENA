@@ -22,6 +22,7 @@ import {
   type TriStateCheckboxState,
 } from '../../shared/widgets/TriStateCheckbox'
 import { TriggerEditorDialog } from './TriggerEditorDialog'
+import { exportGinaPackageFile } from './ginaPackageExporter'
 import { parseGinaPackageFile } from './ginaPackageParser'
 import { useTriggerManager } from './UserTriggerManager'
 import './UserTriggersEditor.css'
@@ -67,6 +68,7 @@ interface EditorSession {
 
 type ImportPhase = 'reading' | 'saving' | 'complete' | 'error'
 type OperationPhase = 'complete' | 'error' | 'running'
+type ExportPhase = 'complete' | 'error' | 'writing'
 
 interface ImportSession {
   elapsedMs: number
@@ -91,6 +93,18 @@ interface OperationSession {
   title: string
   totalBatches: number
   totalCount: number
+}
+
+interface ExportSession {
+  elapsedMs: number
+  error: string
+  estimatedMs: number
+  fileName: string
+  phase: ExportPhase
+  processedBytes: number
+  title: string
+  totalBytes: number
+  triggerCount: number
 }
 
 interface TriggerReplacement {
@@ -127,6 +141,7 @@ export function UserTriggersEditor({
   const [selection, setSelection] = useState<TreeSelection>({ type: 'none' })
   const [editorSession, setEditorSession] = useState<EditorSession | null>(null)
   const [importSession, setImportSession] = useState<ImportSession | null>(null)
+  const [exportSession, setExportSession] = useState<ExportSession | null>(null)
   const [operationSession, setOperationSession] =
     useState<OperationSession | null>(null)
   const [menuTarget, setMenuTarget] = useState<MenuTarget>({ item: null })
@@ -842,6 +857,132 @@ export function UserTriggersEditor({
     }
   }
 
+  async function handleExportSelectedTriggers(triggerIds: JenaTriggerId[]) {
+    const selectedTriggers = getTriggersByIdsInTreeOrder(
+      treeItems,
+      new Set(triggerIds),
+    )
+
+    if (selectedTriggers.length === 0) {
+      toast.error('No triggers selected for export.')
+      return
+    }
+
+    await exportTriggers(
+      selectedTriggers.length === 1 ? 'Export Trigger' : 'Export Selected Triggers',
+      selectedTriggers.length === 1
+        ? `${sanitizeExportFileName(selectedTriggers[0].name || 'trigger')}.gtp`
+        : 'jena-selected-triggers.gtp',
+      selectedTriggers,
+    )
+  }
+
+  async function handleExportGroup(group: TreeGroupItem) {
+    const groupTriggers = getTriggersUnderPath(triggers, group.path)
+
+    if (groupTriggers.length === 0) {
+      toast.error('No triggers in this group.')
+      return
+    }
+
+    await exportTriggers(
+      `Export ${group.name}`,
+      `${sanitizeExportFileName(group.name || 'group')}.gtp`,
+      groupTriggers,
+    )
+  }
+
+  async function handleExportSelectedGroup(path: string[]) {
+    const groupName = path[path.length - 1] ?? 'group'
+    const groupTriggers = getTriggersUnderPath(triggers, path)
+
+    if (groupTriggers.length === 0) {
+      toast.error('No triggers in the selected group.')
+      return
+    }
+
+    await exportTriggers(
+      `Export ${groupName}`,
+      `${sanitizeExportFileName(groupName || 'group')}.gtp`,
+      groupTriggers,
+    )
+  }
+
+  async function exportTriggers(
+    title: string,
+    fileName: string,
+    exportTriggers: JenaTrigger[],
+  ) {
+    if (exportTriggers.length === 0) {
+      toast.error('No triggers selected for export.')
+      return
+    }
+
+    try {
+      setExportSession({
+        elapsedMs: 0,
+        error: '',
+        estimatedMs: 0,
+        fileName,
+        phase: 'writing',
+        processedBytes: 0,
+        title,
+        totalBytes: 0,
+        triggerCount: exportTriggers.length,
+      })
+
+      const packageBytes = await exportGinaPackageFile(exportTriggers, {
+        onProgress: (processedBytes, totalBytes, elapsedMs, estimatedMs) => {
+          setExportSession((current) =>
+            current
+              ? {
+                  ...current,
+                  elapsedMs,
+                  estimatedMs,
+                  processedBytes,
+                  totalBytes,
+                }
+              : current,
+          )
+        },
+      })
+
+      downloadBytes(packageBytes, fileName)
+      setExportSession((current) =>
+        current
+          ? {
+              ...current,
+              phase: 'complete',
+              processedBytes: current.totalBytes,
+            }
+          : current,
+      )
+      setTimeout(() => setExportSession(null), 500)
+      toast.success(`Exported ${exportTriggers.length} triggers.`)
+    } catch (error) {
+      setExportSession((current) =>
+        current
+          ? {
+              ...current,
+              error: getErrorMessage(error),
+              phase: 'error',
+            }
+          : {
+              elapsedMs: 0,
+              error: getErrorMessage(error),
+              estimatedMs: 0,
+              fileName,
+              phase: 'error',
+              processedBytes: 0,
+              title,
+              totalBytes: 0,
+              triggerCount: exportTriggers.length,
+            },
+      )
+      toast.error(getErrorMessage(error))
+    }
+  }
+
   const effectiveMenuSelection = getEffectiveMenuSelection(
     menuTarget.item,
     selection,
@@ -852,6 +993,12 @@ export function UserTriggersEditor({
     menuTarget.item?.type === 'trigger' ? menuTarget.item : null
   const canMoveSelectedGroupHere =
     !!menuGroup && !!selectedGroupPath && canMoveGroup(selectedGroupPath, menuGroup.path)
+  const selectedGroupExportCount = selectedGroupPath
+    ? getTriggersUnderPath(triggers, selectedGroupPath).length
+    : 0
+  const menuGroupExportCount = menuGroup
+    ? getTriggersUnderPath(triggers, menuGroup.path).length
+    : 0
 
   return (
     <section
@@ -959,6 +1106,16 @@ export function UserTriggersEditor({
             >
               rename
             </MenuItem>
+            <MenuItem
+              disabled={effectiveMenuSelection.length === 0}
+              onClick={() => {
+                void handleExportSelectedTriggers(effectiveMenuSelection)
+              }}
+            >
+              {effectiveMenuSelection.length > 1
+                ? 'export selected triggers'
+                : 'export trigger'}
+            </MenuItem>
           </>
         ) : null}
         {menuGroup ? (
@@ -978,6 +1135,25 @@ export function UserTriggersEditor({
             <MenuItem onClick={() => handleAddTrigger(menuGroup.path)}>
               add trigger
             </MenuItem>
+            <MenuItem
+              disabled={menuGroupExportCount === 0}
+              onClick={() => {
+                void handleExportGroup(menuGroup)
+              }}
+            >
+              export this group
+            </MenuItem>
+            {selectedGroupPath &&
+            !areStringArraysEqual(selectedGroupPath, menuGroup.path) ? (
+              <MenuItem
+                disabled={selectedGroupExportCount === 0}
+                onClick={() => {
+                  void handleExportSelectedGroup(selectedGroupPath)
+                }}
+              >
+                export selected group
+              </MenuItem>
+            ) : null}
             <MenuItem
               disabled={
                 selectedGroupPath
@@ -1002,6 +1178,26 @@ export function UserTriggersEditor({
           <>
             <MenuItem onClick={handleAddRootGroup}>add group</MenuItem>
             <MenuItem onClick={handleImportClick}>import GINA</MenuItem>
+            {selection.type === 'triggers' ? (
+              <MenuItem
+                disabled={selection.ids.size === 0}
+                onClick={() => {
+                  void handleExportSelectedTriggers([...selection.ids])
+                }}
+              >
+                export selected triggers
+              </MenuItem>
+            ) : null}
+            {selectedGroupPath ? (
+              <MenuItem
+                disabled={selectedGroupExportCount === 0}
+                onClick={() => {
+                  void handleExportSelectedGroup(selectedGroupPath)
+                }}
+              >
+                export selected group
+              </MenuItem>
+            ) : null}
           </>
         ) : null}
         <MenuItem disabled>share</MenuItem>
@@ -1046,6 +1242,10 @@ export function UserTriggersEditor({
       <ImportProgressDialog
         session={importSession}
         setSession={setImportSession}
+      />
+      <ExportProgressDialog
+        session={exportSession}
+        setSession={setExportSession}
       />
       <OperationProgressDialog
         session={operationSession}
@@ -1114,6 +1314,70 @@ function ImportProgressDialog({
               )}
               <span>elapsed {formatDuration(session.elapsedMs)}</span>
               {session.phase === 'reading' ? (
+                <span>remaining {formatDuration(session.estimatedMs)}</span>
+              ) : null}
+            </div>
+            {session.phase === 'error' ? (
+              <Alert className="mb-0 py-2" variant="danger">
+                {session.error}
+              </Alert>
+            ) : null}
+          </div>
+        ) : null}
+      </Modal.Body>
+    </Modal>
+  )
+}
+
+function ExportProgressDialog({
+  session,
+  setSession,
+}: {
+  session: ExportSession | null
+  setSession: (session: ExportSession | null) => void
+}) {
+  const isBusy = session?.phase === 'writing'
+  const progressPercent = session
+    ? getExportProgressPercent(session)
+    : 0
+
+  return (
+    <Modal
+      backdrop={isBusy ? 'static' : true}
+      centered
+      keyboard={!isBusy}
+      onHide={() => {
+        if (!isBusy) {
+          setSession(null)
+        }
+      }}
+      show={!!session}
+    >
+      <Modal.Header closeButton={session?.phase === 'error'}>
+        <Modal.Title>{session?.title ?? 'Export GINA Package'}</Modal.Title>
+      </Modal.Header>
+      <Modal.Body>
+        {session ? (
+          <div className="user-triggers-import-dialog">
+            <div>
+              <div className="user-triggers-import-file">{session.fileName}</div>
+              <div className="user-triggers-import-status">
+                {getExportStatus(session)}
+              </div>
+            </div>
+            <ProgressBar
+              animated={isBusy}
+              now={progressPercent}
+              striped={isBusy}
+              variant={session.phase === 'error' ? 'danger' : 'success'}
+            />
+            <div className="user-triggers-import-metrics">
+              <span>
+                {formatBytes(session.processedBytes)} / {formatBytes(session.totalBytes)}
+              </span>
+              <span>{session.triggerCount} triggers</span>
+              <span>elapsed {formatDuration(session.elapsedMs)}</span>
+              {session.phase === 'writing' ? (
                 <span>remaining {formatDuration(session.estimatedMs)}</span>
               ) : null}
             </div>
@@ -1484,6 +1748,67 @@ function getResolvedTriggersUnderPath(
   )
 }
 
+function getTriggersByIdsInTreeOrder(
+  treeItems: TreeItem[],
+  triggerIds: Set<JenaTriggerId>,
+) {
+  const seenTriggerIds = new Set<JenaTriggerId>()
+  const selectedTriggers: JenaTrigger[] = []
+
+  treeItems.forEach((item) => {
+    if (
+      item.type === 'trigger' &&
+      triggerIds.has(item.id) &&
+      !seenTriggerIds.has(item.id)
+    ) {
+      seenTriggerIds.add(item.id)
+      selectedTriggers.push(item.resolved.trigger)
+    }
+  })
+
+  return selectedTriggers
+}
+
+function getTriggersUnderPath(
+  triggers: JenaResolvedTrigger[],
+  groupPath: string[],
+) {
+  const seenTriggerIds = new Set<JenaTriggerId>()
+  const selectedTriggers: JenaTrigger[] = []
+
+  getResolvedTriggersUnderPath(triggers, groupPath)
+    .sort(compareResolvedTriggersByPath)
+    .forEach((resolved) => {
+      if (seenTriggerIds.has(resolved.trigger.id)) {
+        return
+      }
+
+      seenTriggerIds.add(resolved.trigger.id)
+      selectedTriggers.push(resolved.trigger)
+    })
+
+  return selectedTriggers
+}
+
+function compareResolvedTriggersByPath(
+  left: JenaResolvedTrigger,
+  right: JenaResolvedTrigger,
+) {
+  const pathComparison = left.trigger.groupPath
+    .join('\0')
+    .localeCompare(right.trigger.groupPath.join('\0'), undefined, {
+      sensitivity: 'base',
+    })
+
+  if (pathComparison !== 0) {
+    return pathComparison
+  }
+
+  return left.trigger.name.localeCompare(right.trigger.name, undefined, {
+    sensitivity: 'base',
+  })
+}
+
 function getGroupStatesById(
   triggers: JenaResolvedTrigger[],
   selectedCharacterKey: string | null,
@@ -1731,6 +2056,17 @@ function getOperationStatus(session: OperationSession) {
   }
 }
 
+function getExportStatus(session: ExportSession) {
+  switch (session.phase) {
+    case 'writing':
+      return 'Writing package'
+    case 'complete':
+      return `Exported ${session.triggerCount} triggers`
+    case 'error':
+      return 'Export failed'
+  }
+}
+
 function getOperationProgressPercent(session: OperationSession) {
   if (session.totalCount <= 0) {
     return 100
@@ -1739,6 +2075,21 @@ function getOperationProgressPercent(session: OperationSession) {
   return Math.max(
     0,
     Math.min(100, Math.round((session.processedCount / session.totalCount) * 100)),
+  )
+}
+
+function getExportProgressPercent(session: ExportSession) {
+  if (session.phase === 'complete') {
+    return 100
+  }
+
+  if (session.totalBytes <= 0) {
+    return 0
+  }
+
+  return Math.max(
+    0,
+    Math.min(100, Math.round((session.processedBytes / session.totalBytes) * 100)),
   )
 }
 
@@ -1795,6 +2146,33 @@ function formatDuration(durationMs: number) {
   }
 
   return `${minutes}m ${seconds}s`
+}
+
+function sanitizeExportFileName(value: string) {
+  const sanitized = value
+    .trim()
+    .replace(/[<>:"/\\|?*\u0000-\u001f]/g, '-')
+    .replace(/\s+/g, ' ')
+    .replace(/[. ]+$/g, '')
+
+  return sanitized || 'jena-triggers'
+}
+
+function downloadBytes(bytes: Uint8Array, fileName: string) {
+  const data = new ArrayBuffer(bytes.byteLength)
+  new Uint8Array(data).set(bytes)
+
+  const blob = new Blob([data], { type: 'application/zip' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+
+  link.href = url
+  link.download = fileName
+  link.style.display = 'none'
+  document.body.append(link)
+  link.click()
+  link.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 0)
 }
 
 function chunkArray<TItem>(items: TItem[], chunkSize: number) {

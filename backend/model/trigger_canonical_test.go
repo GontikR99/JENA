@@ -14,8 +14,8 @@ func TestWithCanonicalTriggerIDReturnsCopyWithCanonicalID(t *testing.T) {
 		t.Fatalf("WithCanonicalTriggerID returned error: %v", err)
 	}
 
-	if canonicalTrigger.ID != "ec172b74-8ad6-7395-7e51-493680dd13fd" {
-		t.Fatalf("ID %q, want ec172b74-8ad6-7395-7e51-493680dd13fd", canonicalTrigger.ID)
+	if canonicalTrigger.ID != "6ed6237c-1da3-6cad-2875-f6513d1a8136" {
+		t.Fatalf("ID %q, want 6ed6237c-1da3-6cad-2875-f6513d1a8136", canonicalTrigger.ID)
 	}
 	if trigger.ID != "temporary-id" {
 		t.Fatalf("original trigger ID %q, want temporary-id", trigger.ID)
@@ -64,7 +64,7 @@ func TestCanonicalTriggerIDChangesWhenContentChanges(t *testing.T) {
 }
 
 func TestCanonicalTriggerIDMatchesBrowserForUnescapedAngleBrackets(t *testing.T) {
-	const encodedTrigger = `{"actions":{"display":{"enabled":false,"text":"Feigned Death - Stand Up"},"speech":{"enabled":true,"text":"Stand Up","interrupt":false},"clipboard":{"enabled":false,"text":""}},"category":"Debuffs","comments":"","groupPath":["AD Triggers","Raids","House of Thule","Tier 3","Guardian of the House (HoT Upper)"],"match":"a groundshattering golem begins to cast a spell\\. <Earthshock>","name":"A groundshattering golem - Earthshock","timer":{"type":"repeating","name":"FD/DD AE","durationMs":30000,"startBehavior":"restart","warningSeconds":0,"warningAction":null,"endedAction":null,"earlyEnders":["end timer","you have been slain","a groundshattering golem has been slain","you have slain a ground","'s corpse falls to the ground"]},"id":"8a255247-6347-1511-f561-490dade718de"}`
+	const encodedTrigger = `{"actions":{"display":{"enabled":false,"text":"Feigned Death - Stand Up"},"speech":{"enabled":true,"text":"Stand Up","interrupt":false},"clipboard":{"enabled":false,"text":""}},"category":"Debuffs","comments":"","groupPath":["AD Triggers","Raids","House of Thule","Tier 3","Guardian of the House (HoT Upper)"],"match":{"text":"a groundshattering golem begins to cast a spell\\. <Earthshock>","isRegex":true},"name":"A groundshattering golem - Earthshock","timer":{"type":"repeating","name":"FD/DD AE","durationMs":30000,"startBehavior":"restart","warningSeconds":0,"warningAction":null,"endedAction":null,"earlyEnders":[{"text":"end timer","isRegex":true},{"text":"you have been slain","isRegex":true},{"text":"a groundshattering golem has been slain","isRegex":true},{"text":"you have slain a ground","isRegex":true},{"text":"'s corpse falls to the ground","isRegex":true}]},"id":"69afb40d-fdfd-6419-4043-4ff2c1f885fc"}`
 
 	var trigger Trigger
 	if err := json.Unmarshal([]byte(encodedTrigger), &trigger); err != nil {
@@ -76,8 +76,8 @@ func TestCanonicalTriggerIDMatchesBrowserForUnescapedAngleBrackets(t *testing.T)
 		t.Fatalf("CanonicalTriggerID returned error: %v", err)
 	}
 
-	if id != "8a255247-6347-1511-f561-490dade718de" {
-		t.Fatalf("ID %q, want 8a255247-6347-1511-f561-490dade718de", id)
+	if id != "69afb40d-fdfd-6419-4043-4ff2c1f885fc" {
+		t.Fatalf("ID %q, want 69afb40d-fdfd-6419-4043-4ff2c1f885fc", id)
 	}
 }
 
@@ -88,7 +88,10 @@ func createTestTrigger() Trigger {
 		Comments:  "",
 		Category:  "Default",
 		GroupPath: []string{},
-		Match:     "^test$",
+		Match: TriggerMatcher{
+			Text:    "^test$",
+			IsRegex: true,
+		},
 		Actions: TriggerActions{
 			Display: TextAction{
 				Enabled: true,
@@ -132,7 +135,12 @@ func createTestTrigger() Trigger {
 					Interrupt: false,
 				},
 			},
-			EarlyEnders: []TimerEarlyEnder{"done"},
+			EarlyEnders: []TimerEarlyEnder{
+				{
+					Text:    "done",
+					IsRegex: true,
+				},
+			},
 		},
 	}
 }

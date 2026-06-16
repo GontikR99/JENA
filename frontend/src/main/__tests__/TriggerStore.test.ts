@@ -131,7 +131,10 @@ function createServer({ triggers = [] }: { triggers?: JenaTrigger[] } = {}) {
 function createTestTrigger(name: string) {
   return withCanonicalTriggerId({
     ...createEmptyTrigger(),
-    match: `^${name}$`,
+    match: {
+      text: `^${name}$`,
+      isRegex: true,
+    },
     name,
   })
 }

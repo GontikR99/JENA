@@ -1,8 +1,16 @@
 import { createContentHashUuid } from './hashIds'
 
 export type JenaTriggerId = string
-export type JenaTriggerMatcher = string
-export type JenaTimerEarlyEnder = string
+
+export interface JenaTriggerMatcher {
+  text: string
+  isRegex: boolean
+}
+
+export interface JenaTimerEarlyEnder {
+  text: string
+  isRegex: boolean
+}
 
 export type JenaTriggerTimerType = 'countdown' | 'repeating' | 'stopwatch'
 
@@ -111,7 +119,7 @@ export function createEmptyTrigger(): JenaTrigger {
     comments: '',
     groupPath: [],
     id: 'draft-trigger',
-    match: '',
+    match: createTriggerMatcher(),
     name: '',
     timer: null,
   }
@@ -152,15 +160,33 @@ export function createSpeechAction(): JenaSpeechAction {
   }
 }
 
+export function createTriggerMatcher(): JenaTriggerMatcher {
+  return {
+    text: '',
+    isRegex: false,
+  }
+}
+
+export function matcherToRegexSource(matcher: JenaTriggerMatcher) {
+  return matcher.isRegex ? matcher.text : escapeRegExp(matcher.text)
+}
+
 function getJenaTriggerHashContent(trigger: JenaTrigger) {
   return {
     actions: getTriggerActionsHashContent(trigger.actions),
     category: trigger.category,
     comments: trigger.comments,
     groupPath: [...trigger.groupPath],
-    match: trigger.match,
+    match: getTriggerMatcherHashContent(trigger.match),
     name: trigger.name,
     timer: trigger.timer ? getTriggerTimerHashContent(trigger.timer) : null,
+  }
+}
+
+function getTriggerMatcherHashContent(matcher: JenaTriggerMatcher) {
+  return {
+    text: matcher.text,
+    isRegex: matcher.isRegex,
   }
 }
 
@@ -185,7 +211,7 @@ function getTriggerTimerHashContent(timer: JenaTriggerTimer) {
     endedAction: timer.endedAction
       ? getTimerActionHashContent(timer.endedAction)
       : null,
-    earlyEnders: [...timer.earlyEnders],
+    earlyEnders: timer.earlyEnders.map(getTriggerMatcherHashContent),
   }
 }
 
@@ -209,4 +235,8 @@ function getSpeechActionHashContent(action: JenaSpeechAction) {
     text: action.text,
     interrupt: action.interrupt,
   }
+}
+
+function escapeRegExp(text: string) {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
