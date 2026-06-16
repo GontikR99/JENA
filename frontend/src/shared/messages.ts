@@ -60,7 +60,7 @@ export interface TriggerAlertMatchedMessage {
   text: string
   timerName?: string
   timestamp: string
-  triggerId: JenaTriggerId
+  trigger: JenaTrigger
 }
 
 export interface TriggerEarlyEnderMatchedMessage {
@@ -69,7 +69,11 @@ export interface TriggerEarlyEnderMatchedMessage {
   text: string
   timerName?: string
   timestamp: string
-  triggerId: JenaTriggerId
+  trigger: JenaTrigger
+}
+
+export interface TriggerStoreTriggersSeenMessage {
+  triggers: JenaTrigger[]
 }
 
 export interface EverQuestCharacter {
@@ -103,6 +107,7 @@ export interface EndpointMessages {
   'character-presence.characters': CharacterPresenceCharactersMessage
   'file-watcher.characters': FileWatcherCharactersMessage
   'matcher.match-found': RegexMatchFoundMessage
+  'trigger-store.triggers-seen': TriggerStoreTriggersSeenMessage
   'user-trigger-store.updated': JenaUserTriggerUpdate
   'worldwide-presence.nearby-characters': NearbyCharacterPresenceMessage
 }

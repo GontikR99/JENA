@@ -3,6 +3,7 @@ import type {
   RegexMatchFoundMessage,
   TriggerAlertMatchedMessage,
   TriggerEarlyEnderMatchedMessage,
+  TriggerStoreTriggersSeenMessage,
 } from '../../shared/messages'
 import { useListen, useRpc, useSender } from '../../shared/messageBrokerHooks'
 import type { JenaTrigger } from '../../shared/triggers'
@@ -14,7 +15,6 @@ import {
   type AlertCompiledPattern,
   type AlertMatchContext,
 } from './alertPatternCompiler'
-import { useOnNewTrigger } from './TriggerStore'
 
 interface AlertPatternBinding {
   compiledPattern: AlertCompiledPattern
@@ -114,7 +114,11 @@ export function AlertCoordinationService() {
     [send],
   )
 
-  useOnNewTrigger(registerTrigger)
+  useListen('trigger-store.triggers-seen', (message) => {
+    const payload = message.payload as TriggerStoreTriggersSeenMessage
+
+    payload.triggers.forEach(registerTrigger)
+  })
   useListen('matcher.match-found', (message) => {
     handleMatchFound(message.payload as RegexMatchFoundMessage)
   })
@@ -169,7 +173,7 @@ function createTriggerAlertPayload(
       ? substituteAlertTemplate(trigger.timer.name, context)
       : undefined,
     timestamp: match.timestamp,
-    triggerId: trigger.id,
+    trigger,
   })
 }
 
@@ -186,7 +190,7 @@ function createTimerEarlyEnderPayload(
       ? substituteAlertTemplate(trigger.timer.name, context)
       : undefined,
     timestamp: match.timestamp,
-    triggerId: trigger.id,
+    trigger,
   })
 }
 

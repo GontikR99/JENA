@@ -1,12 +1,10 @@
 import {
   createContext,
-  useEffect,
   useContext,
   useMemo,
-  useRef,
   type ReactNode,
 } from 'react'
-import { useRpc } from '../../shared/messageBrokerHooks'
+import { useRpc, useSender } from '../../shared/messageBrokerHooks'
 import {
   withCanonicalTriggerId,
   type JenaTrigger,
@@ -16,12 +14,9 @@ import {
 export interface TriggerStoreApi {
   fetchTriggers: (ids: JenaTriggerId[]) => Promise<JenaTrigger[]>
   storeTriggers: (triggers: JenaTrigger[]) => Promise<JenaTrigger[]>
-  subscribeNewTriggers: (
-    listener: NewTriggerListener,
-  ) => () => void
 }
 
-export type NewTriggerListener = (trigger: JenaTrigger) => void
+export type SeenTriggersPublisher = (triggers: JenaTrigger[]) => void
 
 interface ServerTriggerStoreApi {
   fetchTriggers: (ids: JenaTriggerId[]) => Promise<JenaTrigger[]>
@@ -45,6 +40,7 @@ const TriggerStoreContext = createContext<TriggerStoreApi | null>(null)
 
 export function TriggerStoreProvider({ children }: { children: ReactNode }) {
   const call = useRpc('trigger-store')
+  const send = useSender('trigger-store')
   const store = useMemo(() => {
     return new WriteThroughTriggerStore(
       {
@@ -64,8 +60,11 @@ export function TriggerStoreProvider({ children }: { children: ReactNode }) {
         },
       },
       new IndexedDBTriggerCache(),
+      (triggers) => {
+        send('trigger-store.triggers-seen', { triggers })
+      },
     )
-  }, [call])
+  }, [call, send])
 
   return (
     <TriggerStoreContext.Provider value={store}>
@@ -83,33 +82,23 @@ export function useTriggerStore() {
   return store
 }
 
-export function useOnNewTrigger(listener: NewTriggerListener) {
-  const store = useTriggerStore()
-  const listenerRef = useRef(listener)
-
-  useEffect(() => {
-    listenerRef.current = listener
-  }, [listener])
-
-  useEffect(() => {
-    return store.subscribeNewTriggers((trigger) => {
-      listenerRef.current(trigger)
-    })
-  }, [store])
-}
-
 export class WriteThroughTriggerStore implements TriggerStoreApi {
   private readonly cachedTriggers = new Map<JenaTriggerId, JenaTrigger>()
   private readonly cache: TriggerCache
   private readonly handledTriggerIds = new Set<JenaTriggerId>()
-  private readonly newTriggerListeners = new Set<NewTriggerListener>()
   private readonly pendingFetches = new Map<JenaTriggerId, Promise<JenaTrigger>>()
   private readonly pendingStores = new Map<JenaTriggerId, Promise<JenaTrigger>>()
+  private readonly publishSeenTriggers: SeenTriggersPublisher
   private readonly server: ServerTriggerStoreApi
 
-  constructor(server: ServerTriggerStoreApi, cache: TriggerCache) {
+  constructor(
+    server: ServerTriggerStoreApi,
+    cache: TriggerCache,
+    publishSeenTriggers: SeenTriggersPublisher = () => undefined,
+  ) {
     this.server = server
     this.cache = cache
+    this.publishSeenTriggers = publishSeenTriggers
   }
 
   async storeTriggers(triggers: JenaTrigger[]) {
@@ -206,14 +195,6 @@ export class WriteThroughTriggerStore implements TriggerStoreApi {
     const resolvedTriggers = ids.map((id) => allTriggers.get(id) as JenaTrigger)
     this.markHandledTriggers(resolvedTriggers)
     return resolvedTriggers
-  }
-
-  subscribeNewTriggers(listener: NewTriggerListener) {
-    this.newTriggerListeners.add(listener)
-
-    return () => {
-      this.newTriggerListeners.delete(listener)
-    }
   }
 
   private async storeNovelTriggers(triggers: JenaTrigger[]) {
@@ -358,6 +339,8 @@ export class WriteThroughTriggerStore implements TriggerStoreApi {
   }
 
   private markHandledTriggers(triggers: Iterable<JenaTrigger>) {
+    const newlySeenTriggers: JenaTrigger[] = []
+
     for (const trigger of triggers) {
       const canonicalTrigger = withCanonicalTriggerId(trigger)
       if (this.handledTriggerIds.has(canonicalTrigger.id)) {
@@ -365,9 +348,11 @@ export class WriteThroughTriggerStore implements TriggerStoreApi {
       }
 
       this.handledTriggerIds.add(canonicalTrigger.id)
-      this.newTriggerListeners.forEach((listener) => {
-        listener(canonicalTrigger)
-      })
+      newlySeenTriggers.push(canonicalTrigger)
+    }
+
+    if (newlySeenTriggers.length > 0) {
+      this.publishSeenTriggers(newlySeenTriggers)
     }
   }
 }

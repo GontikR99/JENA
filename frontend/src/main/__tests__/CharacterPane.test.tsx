@@ -21,12 +21,8 @@ const characters: CharacterPresence[] = [
   },
 ]
 
-vi.mock('../../shared/messageBrokerHooks', () => ({
-  useListen: vi.fn(),
-  useRpc: () =>
-    vi.fn(async () => ({
-      characters,
-    })),
+vi.mock('../LocalCharactersProvider', () => ({
+  useLocalCharacters: () => characters,
 }))
 
 describe('CharacterPane', () => {

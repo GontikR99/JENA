@@ -108,17 +108,21 @@ describe('WriteThroughTriggerStore', () => {
     const firstTrigger = createTestTrigger('First Trigger')
     const secondTrigger = createTestTrigger('Second Trigger')
     const server = createServer()
-    const store = new WriteThroughTriggerStore(server, new InMemoryTriggerCache())
-    const seenTriggers: JenaTrigger[] = []
-
-    store.subscribeNewTriggers((trigger) => {
-      seenTriggers.push(trigger)
-    })
+    const publishSeenTriggers = vi.fn()
+    const store = new WriteThroughTriggerStore(
+      server,
+      new InMemoryTriggerCache(),
+      publishSeenTriggers,
+    )
 
     await store.storeTriggers([firstTrigger, secondTrigger])
     await store.storeTriggers([secondTrigger, firstTrigger])
 
-    expect(seenTriggers).toEqual([firstTrigger, secondTrigger])
+    expect(publishSeenTriggers).toHaveBeenCalledTimes(1)
+    expect(publishSeenTriggers).toHaveBeenCalledWith([
+      firstTrigger,
+      secondTrigger,
+    ])
   })
 
   it('notifies for fetched triggers from the server', async () => {
@@ -126,31 +130,17 @@ describe('WriteThroughTriggerStore', () => {
     const server = createServer({
       triggers: [trigger],
     })
-    const store = new WriteThroughTriggerStore(server, new InMemoryTriggerCache())
-    const seenTriggers: JenaTrigger[] = []
-
-    store.subscribeNewTriggers((seenTrigger) => {
-      seenTriggers.push(seenTrigger)
-    })
+    const publishSeenTriggers = vi.fn()
+    const store = new WriteThroughTriggerStore(
+      server,
+      new InMemoryTriggerCache(),
+      publishSeenTriggers,
+    )
 
     await store.fetchTriggers([trigger.id])
 
-    expect(seenTriggers).toEqual([trigger])
-  })
-
-  it('does not notify after unsubscribe', async () => {
-    const trigger = createTestTrigger('Unsubscribed Trigger')
-    const server = createServer()
-    const store = new WriteThroughTriggerStore(server, new InMemoryTriggerCache())
-    const seenTriggers: JenaTrigger[] = []
-    const unsubscribe = store.subscribeNewTriggers((seenTrigger) => {
-      seenTriggers.push(seenTrigger)
-    })
-
-    unsubscribe()
-    await store.storeTriggers([trigger])
-
-    expect(seenTriggers).toEqual([])
+    expect(publishSeenTriggers).toHaveBeenCalledTimes(1)
+    expect(publishSeenTriggers).toHaveBeenCalledWith([trigger])
   })
 })
 

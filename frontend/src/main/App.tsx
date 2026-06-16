@@ -9,6 +9,7 @@ import {
   ServerConnectionGlass,
   type ServerBridgeStatus,
 } from './ServerBridge'
+import { LocalCharactersProvider } from './LocalCharactersProvider'
 import { NearbyCharactersProvider } from './NearbyCharactersProvider'
 import { AuthProvider } from './AuthContext'
 import {
@@ -32,10 +33,12 @@ export function App() {
           <AlertCoordinationService />
           <UserTriggerManagerProvider>
             <NearbyCharactersProvider>
-              <TriggerRuntimeProvider>
-                <AppShell />
-                <TriggerRuntimePortal />
-              </TriggerRuntimeProvider>
+              <LocalCharactersProvider>
+                <TriggerRuntimeProvider>
+                  <AppShell />
+                  <TriggerRuntimePortal />
+                </TriggerRuntimeProvider>
+              </LocalCharactersProvider>
             </NearbyCharactersProvider>
           </UserTriggerManagerProvider>
         </TriggerStoreProvider>

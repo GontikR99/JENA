@@ -1,11 +1,8 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect } from 'react'
 import activeCharacterUrl from '../../assets/activity-indicator-active.webp'
 import inactiveCharacterUrl from '../../assets/activity-indicator-inactive.webp'
-import type {
-  CharacterPresence,
-  CharacterPresenceCharactersMessage,
-} from '../../shared/messages'
-import { useListen, useRpc } from '../../shared/messageBrokerHooks'
+import type { CharacterPresence } from '../../shared/messages'
+import { useLocalCharacters } from '../LocalCharactersProvider'
 
 interface CharacterPaneProps {
   selectedCharacter: CharacterPresence | null
@@ -16,53 +13,24 @@ export function CharacterPane({
   selectedCharacter,
   setCharacter,
 }: CharacterPaneProps) {
-  const callWorker = useRpc('character-pane')
-  const [characters, setCharacters] = useState<CharacterPresence[]>([])
-  const sortedCharacters = useMemo(
-    () => [...characters].sort(compareCharactersForDisplay),
-    [characters],
-  )
-
-  useListen('character-presence.characters', (message) => {
-    const nextCharacters = (message.payload as CharacterPresenceCharactersMessage)
-      .characters
-    setCharacters(nextCharacters)
-  })
-
-  useEffect(() => {
-    let isCurrent = true
-
-    void callWorker('worker.character-presence', 'getCharacters', {})
-      .then(({ characters: nextCharacters }) => {
-        if (isCurrent) {
-          setCharacters(nextCharacters)
-        }
-      })
-      .catch((error: unknown) => {
-        console.warn('[CharacterPane] unable to load characters', error)
-      })
-
-    return () => {
-      isCurrent = false
-    }
-  }, [callWorker])
+  const characters = useLocalCharacters()
 
   useEffect(() => {
     if (
       selectedCharacter &&
-      !sortedCharacters.some((character) =>
+      !characters.some((character) =>
         isSameCharacter(character, selectedCharacter),
       )
     ) {
       setCharacter(null)
     }
-  }, [selectedCharacter, setCharacter, sortedCharacters])
+  }, [characters, selectedCharacter, setCharacter])
 
   return (
     <aside className="character-pane" aria-label="Characters">
       <div className="character-list" role="listbox">
-        {sortedCharacters.length > 0 ? (
-          sortedCharacters.map((character) => {
+        {characters.length > 0 ? (
+          characters.map((character) => {
             const isSelected = isSameCharacter(character, selectedCharacter)
             const activityLabel = character.active ? 'Active' : 'Inactive'
 
@@ -118,28 +86,6 @@ export function CharacterPane({
       </div>
     </aside>
   )
-}
-
-function compareCharactersForDisplay(
-  left: CharacterPresence,
-  right: CharacterPresence,
-) {
-  if (left.active !== right.active) {
-    return left.active ? -1 : 1
-  }
-
-  const characterComparison = left.characterName.localeCompare(
-    right.characterName,
-    undefined,
-    { sensitivity: 'base' },
-  )
-  if (characterComparison !== 0) {
-    return characterComparison
-  }
-
-  return left.serverName.localeCompare(right.serverName, undefined, {
-    sensitivity: 'base',
-  })
 }
 
 function isSameCharacter(

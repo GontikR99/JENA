@@ -11,6 +11,7 @@ import { useAuthToken } from '../AuthContext'
 import { useListen, useRpc } from '../../shared/messageBrokerHooks'
 import { createMessageId, type BusMessage } from '../../shared/messages'
 import {
+  getJenaCharacterServerKey,
   withCanonicalTriggerId,
   type JenaCharacterServer,
   type JenaExtendedTrigger,
@@ -597,11 +598,14 @@ function mergeEnablementChanges(
   changes: JenaTriggerEnablementChange[],
 ) {
   const byKey = new Map(
-    enabledFor.map((character) => [getCharacterServerKey(character), character]),
+    enabledFor.map((character) => [
+      getJenaCharacterServerKey(character),
+      character,
+    ]),
   )
 
   changes.forEach((change) => {
-    const key = getCharacterServerKey(change.character)
+    const key = getJenaCharacterServerKey(change.character)
     if (change.enabled) {
       byKey.set(key, change.character)
     } else {
@@ -616,7 +620,7 @@ function mergeEnabledFor(characters: JenaCharacterServer[]) {
   return sortCharacterServers([
     ...new Map(
       characters.map((character) => [
-        getCharacterServerKey(character),
+        getJenaCharacterServerKey(character),
         character,
       ]),
     ).values(),
@@ -681,9 +685,6 @@ function compareResolvedTriggers(
   })
 }
 
-function getCharacterServerKey(character: JenaCharacterServer) {
-  return `${character.serverName.trim().toLocaleLowerCase()}\0${character.characterName.trim().toLocaleLowerCase()}`
-}
 
 async function readLocalUserTriggerCache() {
   const database = await openDatabase()

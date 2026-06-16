@@ -12,6 +12,7 @@ import { useAuthToken } from '../AuthContext'
 import type { CharacterPresence } from '../../shared/messages'
 import {
   createEmptyTrigger,
+  getJenaCharacterServerKey,
   withCanonicalTriggerId,
   type JenaCharacterServer,
   type JenaResolvedTrigger,
@@ -154,7 +155,7 @@ export function UserTriggersEditor({
   const knownGroupIdsRef = useRef<Set<string>>(new Set())
   const [{ state: menuState, endTransition }, setMenuOpen] = useMenuState()
   const selectedCharacterKey = selectedCharacter
-    ? getCharacterServerKey(selectedCharacter)
+    ? getJenaCharacterServerKey(selectedCharacter)
     : null
   const selectedCharacterRecord = selectedCharacter
     ? toCharacterServer(selectedCharacter)
@@ -2021,7 +2022,7 @@ function getGroupStatesById(
       ? descendantTriggers.filter((resolved) =>
           resolved.enabledFor.some(
             (character) =>
-              getCharacterServerKey(character) === selectedCharacterKey,
+              getJenaCharacterServerKey(character) === selectedCharacterKey,
           ),
         ).length
       : 0
@@ -2051,7 +2052,7 @@ function getTriggerCheckboxState(
   if (
     selectedCharacterKey &&
     resolved.enabledFor.some(
-      (character) => getCharacterServerKey(character) === selectedCharacterKey,
+      (character) => getJenaCharacterServerKey(character) === selectedCharacterKey,
     )
   ) {
     return 'checked'
@@ -2193,10 +2194,6 @@ function toCharacterServer(character: CharacterPresence): JenaCharacterServer {
     characterName: character.characterName,
     serverName: character.serverName,
   }
-}
-
-function getCharacterServerKey(character: JenaCharacterServer) {
-  return `${character.serverName.trim().toLocaleLowerCase()}\0${character.characterName.trim().toLocaleLowerCase()}`
 }
 
 function cloneTrigger(trigger: JenaTrigger): JenaTrigger {

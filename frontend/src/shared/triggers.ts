@@ -181,6 +181,22 @@ export function matcherToRegexSource(matcher: JenaTriggerMatcher) {
   return matcher.isRegex ? matcher.text : escapeRegExp(matcher.text)
 }
 
+export function getJenaCharacterServerKey(character: JenaCharacterServer) {
+  return `${character.serverName.trim().toLocaleLowerCase()}\0${character.characterName.trim().toLocaleLowerCase()}`
+}
+
+export function isJenaTriggerEnabledForCharacter(
+  resolved: JenaResolvedTrigger,
+  character: JenaCharacterServer,
+) {
+  const characterKey = getJenaCharacterServerKey(character)
+
+  return resolved.enabledFor.some(
+    (enabledCharacter) =>
+      getJenaCharacterServerKey(enabledCharacter) === characterKey,
+  )
+}
+
 function getJenaTriggerHashContent(trigger: JenaTrigger) {
   return {
     actions: getTriggerActionsHashContent(trigger.actions),
