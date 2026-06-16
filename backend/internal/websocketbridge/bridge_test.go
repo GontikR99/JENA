@@ -3,9 +3,12 @@ package websocketbridge
 import (
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
+	"jena/backend/internal/config"
 	"jena/backend/internal/eventbus"
 	"jena/backend/internal/logging"
 )
@@ -77,5 +80,46 @@ func TestReceiveEnvelopeDeduplicatesBeforeSendingToBus(t *testing.T) {
 
 	if received != 1 {
 		t.Fatalf("received %d messages, want 1", received)
+	}
+}
+
+func TestLogActiveConnectionsUsesInfoLevel(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "jena.log")
+	logger, err := logging.New(config.Config{
+		LogFilePath: path,
+		LogLevel:    "info",
+		LogTarget:   "file",
+	})
+	if err != nil {
+		t.Fatalf("logging.New returned error: %v", err)
+	}
+
+	bridge := New(eventbus.New(), logger)
+	bridge.activeConnections.Store(3)
+
+	bridge.logActiveConnections(context.Background())
+
+	if err := logger.Close(); err != nil {
+		t.Fatalf("logger.Close returned error: %v", err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile returned error: %v", err)
+	}
+
+	var record map[string]any
+	if err := json.Unmarshal(data, &record); err != nil {
+		t.Fatalf("Unmarshal returned error: %v", err)
+	}
+
+	if record["level"] != "info" {
+		t.Fatalf("level %v, want info", record["level"])
+	}
+	if record["message"] != "websocket active connection count" {
+		t.Fatalf("message %v, want websocket active connection count", record["message"])
+	}
+	if record["activeConnections"] != float64(3) {
+		t.Fatalf("activeConnections %v, want 3", record["activeConnections"])
 	}
 }

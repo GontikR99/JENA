@@ -94,6 +94,7 @@ func run(args []string) error {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	defer bridge.StopActiveConnectionLogging()
 
 	installedLogger.Info(
 		ctx,
@@ -102,6 +103,8 @@ func run(args []string) error {
 		logging.String("databasePath", config.DatabasePath),
 		logging.String("websocketPath", config.WebSocketPath),
 	)
+
+	go bridge.StartActiveConnectionLogging(ctx)
 
 	return server.Run(ctx)
 }

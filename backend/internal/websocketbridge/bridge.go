@@ -29,12 +29,16 @@ const (
 	readTimeout       = 10 * time.Second
 	dedupWindow       = 10 * time.Minute
 	readLimitBytes    = 1024 * 1024
+	activeLogInterval = time.Minute
 )
 
 type Bridge struct {
-	bus        *eventbus.Bus
-	connection uint64
-	logger     logging.Logger
+	activeConnections atomic.Int64
+	bus               *eventbus.Bus
+	connection        uint64
+	logger            logging.Logger
+	stopActiveLog     chan struct{}
+	stopActiveLogOnce sync.Once
 }
 
 type frame struct {
@@ -49,6 +53,7 @@ type connection struct {
 	bridge      *Bridge
 	conn        *websocket.Conn
 	name        string
+	remoteAddr  string
 	outbound    chan eventbus.Envelope
 	ackOutbound chan uint64
 	ackReceived chan uint64
@@ -57,9 +62,32 @@ type connection struct {
 
 func New(bus *eventbus.Bus, logger logging.Logger) *Bridge {
 	return &Bridge{
-		bus:    bus,
-		logger: logger,
+		bus:           bus,
+		logger:        logger,
+		stopActiveLog: make(chan struct{}),
 	}
+}
+
+func (bridge *Bridge) StartActiveConnectionLogging(ctx context.Context) {
+	ticker := time.NewTicker(activeLogInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-bridge.stopActiveLog:
+			return
+		case <-ticker.C:
+			bridge.logActiveConnections(context.Background())
+		}
+	}
+}
+
+func (bridge *Bridge) StopActiveConnectionLogging() {
+	bridge.stopActiveLogOnce.Do(func() {
+		close(bridge.stopActiveLog)
+	})
 }
 
 func (bridge *Bridge) ServeHTTP(response http.ResponseWriter, request *http.Request) {
@@ -81,6 +109,7 @@ func (bridge *Bridge) ServeHTTP(response http.ResponseWriter, request *http.Requ
 		bridge:      bridge,
 		conn:        socket,
 		name:        makeConnectionName(request.RemoteAddr, connectionID),
+		remoteAddr:  request.RemoteAddr,
 		outbound:    make(chan eventbus.Envelope, outboundQueueSize),
 		ackOutbound: make(chan uint64, 16),
 		ackReceived: make(chan uint64, 16),
@@ -94,6 +123,25 @@ func (connection *connection) run(parentCtx context.Context) {
 	ctx, cancel := context.WithCancel(parentCtx)
 	defer cancel()
 	defer connection.conn.Close(websocket.StatusNormalClosure, "closed")
+
+	activeCount := connection.bridge.activeConnections.Add(1)
+	connection.bridge.logger.Info(
+		ctx,
+		"websocket connection opened",
+		logging.String("connection", connection.name),
+		logging.String("remoteAddr", connection.remoteAddr),
+		logging.Int64("activeConnections", activeCount),
+	)
+	defer func() {
+		activeCount := connection.bridge.activeConnections.Add(-1)
+		connection.bridge.logger.Info(
+			context.Background(),
+			"websocket connection closed",
+			logging.String("connection", connection.name),
+			logging.String("remoteAddr", connection.remoteAddr),
+			logging.Int64("activeConnections", activeCount),
+		)
+	}()
 
 	unlisten := connection.bridge.bus.Listen(connection.name+".*", func(_ context.Context, envelope eventbus.Envelope) {
 		envelope.Destination = strings.TrimPrefix(envelope.Destination, connection.name+".")
@@ -142,6 +190,14 @@ func (connection *connection) run(parentCtx context.Context) {
 	}()
 
 	waitGroup.Wait()
+}
+
+func (bridge *Bridge) logActiveConnections(ctx context.Context) {
+	bridge.logger.Info(
+		ctx,
+		"websocket active connection count",
+		logging.Int64("activeConnections", bridge.activeConnections.Load()),
+	)
 }
 
 func (connection *connection) readLoop(ctx context.Context) error {
