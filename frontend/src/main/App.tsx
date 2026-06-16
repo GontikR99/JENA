@@ -17,6 +17,7 @@ import {
   TriggerRuntimeProvider,
 } from './TriggerRuntime'
 import { AlertCoordinationService } from './triggers/AlertCoordinationService'
+import { TriggerSpeechService } from './triggers/TriggerSpeechService'
 import { TriggerStoreProvider } from './triggers/TriggerStore'
 import { UserTriggerManagerProvider } from './triggers/UserTriggerManager'
 
@@ -35,6 +36,7 @@ export function App() {
             <NearbyCharactersProvider>
               <LocalCharactersProvider>
                 <TriggerRuntimeProvider>
+                  <TriggerSpeechService />
                   <AppShell />
                   <TriggerRuntimePortal />
                 </TriggerRuntimeProvider>
