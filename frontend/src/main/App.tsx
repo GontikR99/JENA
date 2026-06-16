@@ -11,6 +11,7 @@ import {
 } from './ServerBridge'
 import { NearbyCharactersProvider } from './NearbyCharactersProvider'
 import { AuthProvider } from './AuthContext'
+import { AlertCoordinationService } from './triggers/AlertCoordinationService'
 import { TriggerStoreProvider } from './triggers/TriggerStore'
 import { UserTriggerManagerProvider } from './triggers/UserTriggerManager'
 
@@ -24,6 +25,7 @@ export function App() {
         <ServerBridge onStatusChange={setServerBridgeStatus} />
         <WorkerBridge />
         <TriggerStoreProvider>
+          <AlertCoordinationService />
           <UserTriggerManagerProvider>
             <NearbyCharactersProvider>
               <AppShell />

@@ -52,6 +52,26 @@ export interface RegexMatchFoundMessage {
   timestamp: string
 }
 
+export interface TriggerAlertMatchedMessage {
+  characterName: string
+  displayText?: string
+  serverName: string
+  speechText?: string
+  text: string
+  timerName?: string
+  timestamp: string
+  triggerId: JenaTriggerId
+}
+
+export interface TriggerEarlyEnderMatchedMessage {
+  characterName: string
+  serverName: string
+  text: string
+  timerName?: string
+  timestamp: string
+  triggerId: JenaTriggerId
+}
+
 export interface EverQuestCharacter {
   active: boolean
   characterName: string
@@ -78,6 +98,8 @@ export interface NearbyCharacterPresenceMessage {
 }
 
 export interface EndpointMessages {
+  'alert.timer-early-ended': TriggerEarlyEnderMatchedMessage
+  'alert.trigger-matched': TriggerAlertMatchedMessage
   'character-presence.characters': CharacterPresenceCharactersMessage
   'file-watcher.characters': FileWatcherCharactersMessage
   'matcher.match-found': RegexMatchFoundMessage
