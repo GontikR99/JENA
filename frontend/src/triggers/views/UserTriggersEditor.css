@@ -104,6 +104,37 @@
   gap: 0.125rem;
 }
 
+.user-triggers-broadcast-toggle[data-state='private'] {
+  opacity: 0.7;
+}
+
+.user-triggers-broadcast-toggle[data-state='boxes'],
+.user-triggers-broadcast-toggle[data-state='mixed'],
+.user-triggers-broadcast-toggle[data-state='subscribers'] {
+  opacity: 1;
+}
+
+.user-triggers-broadcast-mode-badge {
+  overflow: hidden;
+}
+
+.user-triggers-broadcast-mode-half-circle {
+  background: linear-gradient(to right, currentColor 50%, transparent 50%);
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  display: block;
+  height: 0.38rem;
+  width: 0.38rem;
+}
+
+.user-triggers-broadcast-mode-mixed-mark {
+  background: currentColor;
+  border-radius: 999px;
+  display: block;
+  height: 0.12rem;
+  width: 0.38rem;
+}
+
 .user-triggers-row-actions {
   display: flex;
   gap: 0.25rem;

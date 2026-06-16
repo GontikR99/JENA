@@ -13,6 +13,7 @@ import { createMessageId, type BusMessage } from '../../shared/messages'
 import {
   getJenaCharacterServerKey,
   withCanonicalTriggerId,
+  type JenaBroadcastMode,
   type JenaCharacterServer,
   type JenaExtendedTrigger,
   type JenaResolvedTrigger,
@@ -361,7 +362,7 @@ export function UserTriggerManagerProvider({
       const existingRecord =
         recordsRef.current.get(change.triggerId) ??
         ({
-          broadcast: false,
+          broadcastMode: 'private',
           enabledFor: [],
           publish: false,
           triggerId: change.triggerId,
@@ -371,7 +372,7 @@ export function UserTriggerManagerProvider({
       ])
 
       recordsRef.current.set(change.triggerId, {
-        broadcast: existingRecord.broadcast,
+        broadcastMode: existingRecord.broadcastMode,
         enabledFor,
         publish: existingRecord.publish,
         triggerId: change.triggerId,
@@ -408,14 +409,14 @@ export function UserTriggerManagerProvider({
       const existingRecord =
         recordsRef.current.get(change.triggerId) ??
         ({
-          broadcast: false,
+          broadcastMode: 'private',
           enabledFor: [],
           publish: false,
           triggerId: change.triggerId,
         } satisfies JenaExtendedTrigger)
       const nextRecord = {
         ...existingRecord,
-        broadcast: change.broadcast ?? existingRecord.broadcast,
+        broadcastMode: change.broadcastMode ?? existingRecord.broadcastMode,
         publish:
           allowPublish && change.publish !== undefined
             ? change.publish
@@ -496,9 +497,11 @@ export function UserTriggerManagerProvider({
         ...upsert.enabledFor,
       ])
       const record = {
-        broadcast:
-          existingRecord?.broadcast ??
-          copiedRecords.some((copiedRecord) => copiedRecord.broadcast),
+        broadcastMode:
+          existingRecord?.broadcastMode ??
+          getStrongestBroadcastMode(
+            copiedRecords.map((copiedRecord) => copiedRecord.broadcastMode),
+          ),
         enabledFor,
         publish:
           existingRecord?.publish ??
@@ -573,7 +576,7 @@ function getResolvedSnapshot(
       return trigger
         ? [
             {
-              broadcast: record.broadcast,
+              broadcastMode: record.broadcastMode,
               enabledFor: record.enabledFor,
               publish: record.publish,
               trigger,
@@ -585,12 +588,30 @@ function getResolvedSnapshot(
 }
 
 function normalizeRecord(record: JenaExtendedTrigger): JenaExtendedTrigger {
+  const legacyRecord = record as JenaExtendedTrigger & { broadcast?: boolean }
+
   return {
-    broadcast: !!record.broadcast,
+    broadcastMode:
+      record.broadcastMode ??
+      (legacyRecord.broadcast ? 'subscribers' : 'private'),
     enabledFor: mergeEnabledFor(record.enabledFor),
     publish: !!record.publish,
     triggerId: record.triggerId,
   }
+}
+
+function getStrongestBroadcastMode(
+  modes: JenaBroadcastMode[],
+): JenaBroadcastMode {
+  if (modes.includes('subscribers')) {
+    return 'subscribers'
+  }
+
+  if (modes.includes('boxes')) {
+    return 'boxes'
+  }
+
+  return 'private'
 }
 
 function mergeEnablementChanges(

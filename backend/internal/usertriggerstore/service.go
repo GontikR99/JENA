@@ -115,7 +115,7 @@ func (service *Service) migrate(ctx context.Context) error {
 			trigger_id TEXT NOT NULL,
 			deleted INTEGER NOT NULL,
 			publish INTEGER NOT NULL DEFAULT 0,
-			broadcast INTEGER NOT NULL DEFAULT 0,
+			broadcast_mode TEXT NOT NULL DEFAULT 'private',
 			updated_at_ms INTEGER NOT NULL,
 			PRIMARY KEY (user_id, trigger_id),
 			FOREIGN KEY (trigger_id) REFERENCES triggers(id)
@@ -541,8 +541,13 @@ func (service *Service) applyFlagChanges(ctx context.Context, userID string, cha
 		if change.TriggerID == "" {
 			return model.UserTriggerUpdate{}, errors.New("trigger id is required")
 		}
-		if change.Publish == nil && change.Broadcast == nil {
+		if change.Publish == nil && change.BroadcastMode == nil {
 			continue
+		}
+		if change.BroadcastMode != nil {
+			if err := validateBroadcastMode(*change.BroadcastMode); err != nil {
+				return model.UserTriggerUpdate{}, err
+			}
 		}
 		if err := upsertUserTrigger(ctx, tx, userID, change.TriggerID, updatedAtMs); err != nil {
 			return model.UserTriggerUpdate{}, err
@@ -585,7 +590,7 @@ func (service *Service) fetchState(ctx context.Context, userID string) (FetchTri
 			ut.trigger_id,
 			t.json,
 			ut.publish,
-			ut.broadcast,
+			ut.broadcast_mode,
 			ute.character_name,
 			ute.server_name
 		FROM user_triggers ut
@@ -611,11 +616,11 @@ func (service *Service) fetchState(ctx context.Context, userID string) (FetchTri
 		var triggerID model.TriggerID
 		var encodedTrigger string
 		var publish int
-		var broadcast int
+		var broadcastMode model.BroadcastMode
 		var characterName sql.NullString
 		var serverName sql.NullString
 
-		if err := rows.Scan(&triggerID, &encodedTrigger, &publish, &broadcast, &characterName, &serverName); err != nil {
+		if err := rows.Scan(&triggerID, &encodedTrigger, &publish, &broadcastMode, &characterName, &serverName); err != nil {
 			return FetchTriggersResponse{}, fmt.Errorf("scan user trigger: %w", err)
 		}
 
@@ -627,10 +632,10 @@ func (service *Service) fetchState(ctx context.Context, userID string) (FetchTri
 			}
 
 			recordsByID[triggerID] = &model.ExtendedTrigger{
-				TriggerID:  triggerID,
-				EnabledFor: []model.CharacterServer{},
-				Publish:    publish != 0,
-				Broadcast:  broadcast != 0,
+				TriggerID:     triggerID,
+				EnabledFor:    []model.CharacterServer{},
+				Publish:       publish != 0,
+				BroadcastMode: broadcastMode,
 			}
 			record = recordsByID[triggerID]
 			triggersByID[triggerID] = trigger
@@ -825,21 +830,21 @@ func copyTriggerFlags(ctx context.Context, tx *sql.Tx, userID string, fromTrigge
 	}
 
 	publish := 0
-	broadcast := 0
+	broadcastMode := model.BroadcastModePrivate
 	for _, fromTriggerID := range fromTriggerIDs {
 		var sourcePublish int
-		var sourceBroadcast int
+		var sourceBroadcastMode model.BroadcastMode
 		err := tx.QueryRowContext(
 			ctx,
 			`
-				SELECT publish, broadcast
+				SELECT publish, broadcast_mode
 				FROM user_triggers
 				WHERE user_id = ?
 					AND trigger_id = ?
 			`,
 			userID,
 			string(fromTriggerID),
-		).Scan(&sourcePublish, &sourceBroadcast)
+		).Scan(&sourcePublish, &sourceBroadcastMode)
 		if errors.Is(err, sql.ErrNoRows) {
 			continue
 		}
@@ -850,9 +855,7 @@ func copyTriggerFlags(ctx context.Context, tx *sql.Tx, userID string, fromTrigge
 		if sourcePublish != 0 {
 			publish = 1
 		}
-		if sourceBroadcast != 0 {
-			broadcast = 1
-		}
+		broadcastMode = strongestBroadcastMode(broadcastMode, sourceBroadcastMode)
 	}
 
 	_, err := tx.ExecContext(
@@ -861,13 +864,18 @@ func copyTriggerFlags(ctx context.Context, tx *sql.Tx, userID string, fromTrigge
 			UPDATE user_triggers
 			SET
 				publish = CASE WHEN ? = 1 THEN 1 ELSE publish END,
-				broadcast = CASE WHEN ? = 1 THEN 1 ELSE broadcast END,
+				broadcast_mode = CASE
+					WHEN ? = 'subscribers' THEN 'subscribers'
+					WHEN ? = 'boxes' AND broadcast_mode != 'subscribers' THEN 'boxes'
+					ELSE broadcast_mode
+				END,
 				updated_at_ms = ?
 			WHERE user_id = ?
 				AND trigger_id = ?
 		`,
 		publish,
-		broadcast,
+		string(broadcastMode),
+		string(broadcastMode),
 		updatedAtMs,
 		userID,
 		string(toTriggerID),
@@ -929,33 +937,29 @@ func setTriggerFlags(ctx context.Context, tx *sql.Tx, userID string, change mode
 		}
 	}
 
-	broadcastSQL := "broadcast"
-	broadcastArg := any(nil)
-	if change.Broadcast != nil {
-		broadcastSQL = "?"
-		if *change.Broadcast {
-			broadcastArg = 1
-		} else {
-			broadcastArg = 0
-		}
+	broadcastModeSQL := "broadcast_mode"
+	broadcastModeArg := any(nil)
+	if change.BroadcastMode != nil {
+		broadcastModeSQL = "?"
+		broadcastModeArg = string(*change.BroadcastMode)
 	}
 
 	query := fmt.Sprintf(`
 		UPDATE user_triggers
 		SET
 			publish = %s,
-			broadcast = %s,
+			broadcast_mode = %s,
 			updated_at_ms = ?
 		WHERE user_id = ?
 			AND trigger_id = ?
-	`, publishSQL, broadcastSQL)
+	`, publishSQL, broadcastModeSQL)
 
 	args := []any{}
 	if change.Publish != nil {
 		args = append(args, publishArg)
 	}
-	if change.Broadcast != nil {
-		args = append(args, broadcastArg)
+	if change.BroadcastMode != nil {
+		args = append(args, broadcastModeArg)
 	}
 	args = append(args, updatedAtMs, userID, string(change.TriggerID))
 
@@ -1012,6 +1016,29 @@ func validateCharacterServer(value model.CharacterServer) error {
 		return fmt.Errorf("enabledFor entries require characterName and serverName")
 	}
 	return nil
+}
+
+func validateBroadcastMode(value model.BroadcastMode) error {
+	switch value {
+	case model.BroadcastModePrivate,
+		model.BroadcastModeBoxes,
+		model.BroadcastModeSubscribers:
+		return nil
+	default:
+		return fmt.Errorf("broadcastMode must be one of private, boxes, subscribers")
+	}
+}
+
+func strongestBroadcastMode(left model.BroadcastMode, right model.BroadcastMode) model.BroadcastMode {
+	if left == model.BroadcastModeSubscribers || right == model.BroadcastModeSubscribers {
+		return model.BroadcastModeSubscribers
+	}
+
+	if left == model.BroadcastModeBoxes || right == model.BroadcastModeBoxes {
+		return model.BroadcastModeBoxes
+	}
+
+	return model.BroadcastModePrivate
 }
 
 func getCharacterServerKey(value model.CharacterServer) string {

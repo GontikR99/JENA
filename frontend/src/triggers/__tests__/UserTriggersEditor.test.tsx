@@ -23,7 +23,7 @@ const testTrigger = withCanonicalTriggerId({
 
 const resolvedTriggers: JenaResolvedTrigger[] = [
   {
-    broadcast: false,
+    broadcastMode: 'private',
     enabledFor: [
       {
         characterName: 'Mesozoic',
@@ -82,7 +82,7 @@ describe('UserTriggersEditor', () => {
     expect(screen.queryByLabelText('Enable Test Trigger')).not.toBeInTheDocument()
     expect(screen.queryByLabelText('Enable triggers in Raid')).not.toBeInTheDocument()
     expect(screen.getAllByLabelText('Publish')).toHaveLength(2)
-    expect(screen.getAllByLabelText('Broadcast')).toHaveLength(2)
+    expect(screen.getAllByLabelText('Private')).toHaveLength(2)
   })
 
   it('shows enable controls when a character is selected', async () => {

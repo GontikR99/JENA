@@ -14,6 +14,7 @@ import {
   createEmptyTrigger,
   getJenaCharacterServerKey,
   withCanonicalTriggerId,
+  type JenaBroadcastMode,
   type JenaCharacterServer,
   type JenaResolvedTrigger,
   type JenaTrigger,
@@ -73,6 +74,7 @@ interface EditorSession {
 type ImportPhase = 'reading' | 'saving' | 'complete' | 'error'
 type OperationPhase = 'complete' | 'error' | 'running'
 type ExportPhase = 'complete' | 'error' | 'writing'
+type BroadcastModeState = JenaBroadcastMode | 'mixed'
 
 interface ImportSession {
   elapsedMs: number
@@ -391,13 +393,13 @@ export function UserTriggersEditor({
     ])
   }
 
-  async function handleToggleTriggerBroadcast(
+  async function handleToggleTriggerBroadcastMode(
     item: TreeTriggerItem,
-    broadcast: boolean,
+    broadcastMode: JenaBroadcastMode,
   ) {
     await setTriggerFlags([
       {
-        broadcast,
+        broadcastMode,
         triggerId: item.id,
       },
     ])
@@ -425,9 +427,9 @@ export function UserTriggersEditor({
     )
   }
 
-  async function handleToggleGroupBroadcast(
+  async function handleToggleGroupBroadcastMode(
     group: TreeGroupItem,
-    broadcast: boolean,
+    broadcastMode: JenaBroadcastMode,
   ) {
     const triggerIds = getTriggerIdsUnderPath(triggers, group.path)
     if (triggerIds.length === 0) {
@@ -436,7 +438,7 @@ export function UserTriggersEditor({
 
     await setTriggerFlags(
       triggerIds.map((triggerId) => ({
-        broadcast,
+        broadcastMode,
         triggerId,
       })),
     )
@@ -1116,7 +1118,7 @@ export function UserTriggersEditor({
                   (groupStatesById.get(item.id)?.totalCount ?? 0) === 0
                 }
                 broadcastState={
-                  groupStatesById.get(item.id)?.broadcastState ?? 'unchecked'
+                  groupStatesById.get(item.id)?.broadcastState ?? 'private'
                 }
                 item={item}
                 key={item.id}
@@ -1124,8 +1126,8 @@ export function UserTriggersEditor({
                 onAddTrigger={handleAddTrigger}
                 onContextMenu={openContextMenu}
                 onSelect={handleGroupClick}
-                onToggleBroadcast={(broadcast) => {
-                  void handleToggleGroupBroadcast(item, broadcast)
+                onToggleBroadcastMode={(broadcastMode) => {
+                  void handleToggleGroupBroadcastMode(item, broadcastMode)
                 }}
                 onToggleChecked={(enabled) => {
                   void handleToggleGroup(item, enabled)
@@ -1156,8 +1158,8 @@ export function UserTriggersEditor({
                 )}
                 item={item}
                 key={item.id}
-                onBroadcastToggle={(broadcast) => {
-                  void handleToggleTriggerBroadcast(item, broadcast)
+                onBroadcastModeToggle={(broadcastMode) => {
+                  void handleToggleTriggerBroadcastMode(item, broadcastMode)
                 }}
                 onClick={handleTriggerClick}
                 onContextMenu={openContextMenu}
@@ -1572,7 +1574,7 @@ function GroupRow({
   onAddTrigger,
   onContextMenu,
   onSelect,
-  onToggleBroadcast,
+  onToggleBroadcastMode,
   onToggle,
   onToggleChecked,
   onTogglePublish,
@@ -1582,7 +1584,7 @@ function GroupRow({
   showEnableColumn,
 }: {
   broadcastDisabled: boolean
-  broadcastState: TriStateCheckboxState
+  broadcastState: BroadcastModeState
   checkboxDisabled: boolean
   checkboxState: TriStateCheckboxState
   collapsed: boolean
@@ -1591,7 +1593,7 @@ function GroupRow({
   onAddTrigger: (path: string[]) => void
   onContextMenu: (event: MouseEvent, item: TreeItem) => void
   onSelect: (event: MouseEvent, item: TreeGroupItem) => void
-  onToggleBroadcast: (broadcast: boolean) => void
+  onToggleBroadcastMode: (broadcastMode: JenaBroadcastMode) => void
   onToggle: (item: TreeGroupItem) => void
   onToggleChecked: (enabled: boolean) => void
   onTogglePublish: (publish: boolean) => void
@@ -1657,14 +1659,10 @@ function GroupRow({
             state={publishState}
             uncheckedIcon={GlobeOff}
           />
-          <IconTriStateToggle
-            checkedIcon={Radio}
+          <BroadcastModeToggle
             disabled={broadcastDisabled}
-            label="Broadcast"
-            mixedLabel="Broadcast"
-            onToggle={onToggleBroadcast}
-            state={broadcastState}
-            uncheckedIcon={RadioOff}
+            mode={broadcastState}
+            onToggle={onToggleBroadcastMode}
           />
         </span>
         <span className="user-triggers-row-actions">
@@ -1702,7 +1700,7 @@ function TriggerRow({
   checkboxDisabled,
   checkboxState,
   item,
-  onBroadcastToggle,
+  onBroadcastModeToggle,
   onClick,
   onContextMenu,
   onDoubleClick,
@@ -1715,7 +1713,7 @@ function TriggerRow({
   checkboxDisabled: boolean
   checkboxState: TriStateCheckboxState
   item: TreeTriggerItem
-  onBroadcastToggle: (broadcast: boolean) => void
+  onBroadcastModeToggle: (broadcastMode: JenaBroadcastMode) => void
   onClick: (event: MouseEvent, item: TreeTriggerItem) => void
   onContextMenu: (event: MouseEvent, item: TreeItem) => void
   onDoubleClick: (item: TreeTriggerItem) => void
@@ -1774,16 +1772,54 @@ function TriggerRow({
             state={item.resolved.publish ? 'checked' : 'unchecked'}
             uncheckedIcon={GlobeOff}
           />
-          <IconTriStateToggle
-            checkedIcon={Radio}
-            label="Broadcast"
-            onToggle={onBroadcastToggle}
-            state={item.resolved.broadcast ? 'checked' : 'unchecked'}
-            uncheckedIcon={RadioOff}
+          <BroadcastModeToggle
+            mode={item.resolved.broadcastMode}
+            onToggle={onBroadcastModeToggle}
           />
         </span>
       </span>
     </div>
+  )
+}
+
+function BroadcastModeToggle({
+  disabled = false,
+  mode,
+  onToggle,
+}: {
+  disabled?: boolean
+  mode: BroadcastModeState
+  onToggle: (broadcastMode: JenaBroadcastMode) => void
+}) {
+  const Icon = mode === 'private' ? RadioOff : Radio
+  const label =
+    mode === 'mixed' ? 'Mixed broadcast modes' : getBroadcastModeLabel(mode)
+
+  return (
+    <button
+      aria-label={label}
+      className="icon-tri-state-toggle user-triggers-broadcast-toggle"
+      data-state={mode}
+      disabled={disabled}
+      onClick={(event) => {
+        event.stopPropagation()
+        onToggle(getNextBroadcastMode(mode))
+      }}
+      title={label}
+      type="button"
+    >
+      <Icon aria-hidden="true" size={15} strokeWidth={2} />
+      {mode === 'boxes' ? (
+        <span className="icon-tri-state-toggle-badge user-triggers-broadcast-mode-badge">
+          <span className="user-triggers-broadcast-mode-half-circle" />
+        </span>
+      ) : null}
+      {mode === 'mixed' ? (
+        <span className="icon-tri-state-toggle-badge user-triggers-broadcast-mode-badge">
+          <span className="user-triggers-broadcast-mode-mixed-mark" />
+        </span>
+      ) : null}
+    </button>
   )
 }
 
@@ -1996,8 +2032,7 @@ function getGroupStatesById(
   const groupStates = new Map<
     string,
     {
-      broadcastCount: number
-      broadcastState: TriStateCheckboxState
+      broadcastState: BroadcastModeState
       enabledCount: number
       publishCount: number
       publishState: TriStateCheckboxState
@@ -2027,13 +2062,10 @@ function getGroupStatesById(
         ).length
       : 0
     const publishCount = descendantTriggers.filter((resolved) => resolved.publish).length
-    const broadcastCount = descendantTriggers.filter(
-      (resolved) => resolved.broadcast,
-    ).length
+    const broadcastState = getBroadcastModeState(descendantTriggers)
 
     groupStates.set(groupId, {
-      broadcastCount,
-      broadcastState: getTriState(broadcastCount, descendantTriggers.length),
+      broadcastState,
       enabledCount,
       publishCount,
       publishState: getTriState(publishCount, descendantTriggers.length),
@@ -2059,6 +2091,49 @@ function getTriggerCheckboxState(
   }
 
   return 'unchecked'
+}
+
+function getBroadcastModeState(
+  triggers: JenaResolvedTrigger[],
+): BroadcastModeState {
+  if (triggers.length === 0) {
+    return 'private'
+  }
+
+  const firstMode = triggers[0]?.broadcastMode ?? 'private'
+  if (
+    triggers.every(
+      (trigger) => trigger.broadcastMode === firstMode,
+    )
+  ) {
+    return firstMode
+  }
+
+  return 'mixed'
+}
+
+function getNextBroadcastMode(mode: BroadcastModeState): JenaBroadcastMode {
+  switch (mode) {
+    case 'mixed':
+      return 'private'
+    case 'private':
+      return 'boxes'
+    case 'boxes':
+      return 'subscribers'
+    case 'subscribers':
+      return 'private'
+  }
+}
+
+function getBroadcastModeLabel(mode: JenaBroadcastMode) {
+  switch (mode) {
+    case 'private':
+      return 'Private'
+    case 'boxes':
+      return 'My boxes'
+    case 'subscribers':
+      return 'My subscribers'
+  }
 }
 
 function getTriState(

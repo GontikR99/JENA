@@ -83,18 +83,26 @@ type CharacterServer struct {
 	ServerName    string `json:"serverName"`
 }
 
+type BroadcastMode string
+
+const (
+	BroadcastModePrivate     BroadcastMode = "private"
+	BroadcastModeBoxes       BroadcastMode = "boxes"
+	BroadcastModeSubscribers BroadcastMode = "subscribers"
+)
+
 type ExtendedTrigger struct {
-	TriggerID  TriggerID         `json:"triggerId"`
-	EnabledFor []CharacterServer `json:"enabledFor"`
-	Publish    bool              `json:"publish"`
-	Broadcast  bool              `json:"broadcast"`
+	TriggerID     TriggerID         `json:"triggerId"`
+	EnabledFor    []CharacterServer `json:"enabledFor"`
+	Publish       bool              `json:"publish"`
+	BroadcastMode BroadcastMode     `json:"broadcastMode"`
 }
 
 type ResolvedTrigger struct {
-	Trigger    Trigger           `json:"trigger"`
-	EnabledFor []CharacterServer `json:"enabledFor"`
-	Publish    bool              `json:"publish"`
-	Broadcast  bool              `json:"broadcast"`
+	Trigger       Trigger           `json:"trigger"`
+	EnabledFor    []CharacterServer `json:"enabledFor"`
+	Publish       bool              `json:"publish"`
+	BroadcastMode BroadcastMode     `json:"broadcastMode"`
 }
 
 type TriggerEnablementChange struct {
@@ -104,9 +112,9 @@ type TriggerEnablementChange struct {
 }
 
 type TriggerFlagChange struct {
-	TriggerID TriggerID `json:"triggerId"`
-	Publish   *bool     `json:"publish,omitempty"`
-	Broadcast *bool     `json:"broadcast,omitempty"`
+	TriggerID     TriggerID      `json:"triggerId"`
+	Publish       *bool          `json:"publish,omitempty"`
+	BroadcastMode *BroadcastMode `json:"broadcastMode,omitempty"`
 }
 
 type TriggerUpsert struct {

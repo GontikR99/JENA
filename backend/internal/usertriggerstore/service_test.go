@@ -35,8 +35,9 @@ func TestServiceUpsertsAndFetchesTriggersForUser(t *testing.T) {
 		},
 	})
 	expectedRecord := model.ExtendedTrigger{
-		TriggerID:  trigger.ID,
-		EnabledFor: []model.CharacterServer{character},
+		TriggerID:     trigger.ID,
+		EnabledFor:    []model.CharacterServer{character},
+		BroadcastMode: model.BroadcastModePrivate,
 	}
 
 	if !reflect.DeepEqual(update.UpsertedRecords, []model.ExtendedTrigger{expectedRecord}) {
@@ -177,9 +178,9 @@ func TestServiceSetsTriggerFlags(t *testing.T) {
 	update := callRPC[model.UserTriggerUpdate](t, bus, "setTriggerFlags", "token", SetTriggerFlagsRequest{
 		Changes: []model.TriggerFlagChange{
 			{
-				TriggerID: trigger.ID,
-				Publish:   boolPtr(true),
-				Broadcast: boolPtr(true),
+				TriggerID:     trigger.ID,
+				Publish:       boolPtr(true),
+				BroadcastMode: broadcastModePtr(model.BroadcastModeSubscribers),
 			},
 		},
 	})
@@ -187,20 +188,20 @@ func TestServiceSetsTriggerFlags(t *testing.T) {
 	if len(update.UpsertedRecords) != 1 {
 		t.Fatalf("updated %d records, want 1", len(update.UpsertedRecords))
 	}
-	if !update.UpsertedRecords[0].Publish || !update.UpsertedRecords[0].Broadcast {
-		t.Fatalf("record %#v, want publish and broadcast", update.UpsertedRecords[0])
+	if !update.UpsertedRecords[0].Publish || update.UpsertedRecords[0].BroadcastMode != model.BroadcastModeSubscribers {
+		t.Fatalf("record %#v, want publish and subscriber broadcast mode", update.UpsertedRecords[0])
 	}
 
 	update = callRPC[model.UserTriggerUpdate](t, bus, "setTriggerFlags", "token", SetTriggerFlagsRequest{
 		Changes: []model.TriggerFlagChange{
 			{
-				TriggerID: trigger.ID,
-				Broadcast: boolPtr(false),
+				TriggerID:     trigger.ID,
+				BroadcastMode: broadcastModePtr(model.BroadcastModePrivate),
 			},
 		},
 	})
-	if !update.UpsertedRecords[0].Publish || update.UpsertedRecords[0].Broadcast {
-		t.Fatalf("record %#v, want publish preserved and broadcast disabled", update.UpsertedRecords[0])
+	if !update.UpsertedRecords[0].Publish || update.UpsertedRecords[0].BroadcastMode != model.BroadcastModePrivate {
+		t.Fatalf("record %#v, want publish preserved and private broadcast mode", update.UpsertedRecords[0])
 	}
 }
 
@@ -227,9 +228,9 @@ func TestServiceImplicitlyDeletesSamePathAndNameOnUpsert(t *testing.T) {
 	callRPC[model.UserTriggerUpdate](t, bus, "setTriggerFlags", "token", SetTriggerFlagsRequest{
 		Changes: []model.TriggerFlagChange{
 			{
-				TriggerID: oldTrigger.ID,
-				Publish:   boolPtr(true),
-				Broadcast: boolPtr(true),
+				TriggerID:     oldTrigger.ID,
+				Publish:       boolPtr(true),
+				BroadcastMode: broadcastModePtr(model.BroadcastModeSubscribers),
 			},
 		},
 	})
@@ -250,7 +251,7 @@ func TestServiceImplicitlyDeletesSamePathAndNameOnUpsert(t *testing.T) {
 	if !reflect.DeepEqual(update.UpsertedRecords[0].EnabledFor, []model.CharacterServer{character}) {
 		t.Fatalf("enabledFor %#v, want copied enabled-for", update.UpsertedRecords[0].EnabledFor)
 	}
-	if !update.UpsertedRecords[0].Publish || !update.UpsertedRecords[0].Broadcast {
+	if !update.UpsertedRecords[0].Publish || update.UpsertedRecords[0].BroadcastMode != model.BroadcastModeSubscribers {
 		t.Fatalf("record %#v, want copied flags", update.UpsertedRecords[0])
 	}
 
@@ -505,5 +506,9 @@ func createCanonicalTestTriggerWithMatch(t *testing.T, name string, groupPath []
 }
 
 func boolPtr(value bool) *bool {
+	return &value
+}
+
+func broadcastModePtr(value model.BroadcastMode) *model.BroadcastMode {
 	return &value
 }

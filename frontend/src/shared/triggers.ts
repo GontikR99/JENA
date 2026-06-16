@@ -74,18 +74,20 @@ export interface JenaCharacterServer {
   serverName: string
 }
 
+export type JenaBroadcastMode = 'private' | 'boxes' | 'subscribers'
+
 export interface JenaExtendedTrigger {
   triggerId: JenaTriggerId
   enabledFor: JenaCharacterServer[]
   publish: boolean
-  broadcast: boolean
+  broadcastMode: JenaBroadcastMode
 }
 
 export interface JenaResolvedTrigger {
   trigger: JenaTrigger
   enabledFor: JenaCharacterServer[]
   publish: boolean
-  broadcast: boolean
+  broadcastMode: JenaBroadcastMode
 }
 
 export interface JenaTriggerEnablementChange {
@@ -97,7 +99,7 @@ export interface JenaTriggerEnablementChange {
 export interface JenaTriggerFlagChange {
   triggerId: JenaTriggerId
   publish?: boolean
-  broadcast?: boolean
+  broadcastMode?: JenaBroadcastMode
 }
 
 export interface JenaTriggerUpsert {

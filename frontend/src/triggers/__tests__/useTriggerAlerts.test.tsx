@@ -50,7 +50,7 @@ const testTrigger = withCanonicalTriggerId({
 })
 
 const resolvedTrigger: JenaResolvedTrigger = {
-  broadcast: false,
+  broadcastMode: 'private',
   enabledFor: [
     {
       characterName: 'Mesozoic',

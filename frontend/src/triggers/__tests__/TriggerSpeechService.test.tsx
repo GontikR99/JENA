@@ -208,7 +208,7 @@ function createTrigger({ interrupt }: { interrupt: boolean }) {
 
 function createResolvedTrigger(trigger: JenaTrigger): JenaResolvedTrigger {
   return {
-    broadcast: false,
+    broadcastMode: 'private',
     enabledFor: [],
     publish: false,
     trigger,
