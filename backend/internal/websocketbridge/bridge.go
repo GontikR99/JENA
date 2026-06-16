@@ -3,7 +3,6 @@ package websocketbridge
 import (
 	"context"
 	"encoding/json"
-	"log/slog"
 	"net"
 	"net/http"
 	"strings"
@@ -15,6 +14,7 @@ import (
 	"github.com/coder/websocket"
 
 	"jena/backend/internal/eventbus"
+	"jena/backend/internal/logging"
 )
 
 const (
@@ -34,6 +34,7 @@ const (
 type Bridge struct {
 	bus        *eventbus.Bus
 	connection uint64
+	logger     logging.Logger
 }
 
 type frame struct {
@@ -54,9 +55,10 @@ type connection struct {
 	deduper     *messageDeduper
 }
 
-func New(bus *eventbus.Bus) *Bridge {
+func New(bus *eventbus.Bus, logger logging.Logger) *Bridge {
 	return &Bridge{
-		bus: bus,
+		bus:    bus,
+		logger: logger,
 	}
 }
 
@@ -65,7 +67,11 @@ func (bridge *Bridge) ServeHTTP(response http.ResponseWriter, request *http.Requ
 		InsecureSkipVerify: true,
 	})
 	if err != nil {
-		slog.Warn("websocket accept failed", "error", err)
+		bridge.logger.Warn(
+			request.Context(),
+			"websocket accept failed",
+			logging.Error(err),
+		)
 		return
 	}
 	socket.SetReadLimit(readLimitBytes)
@@ -96,7 +102,11 @@ func (connection *connection) run(parentCtx context.Context) {
 		case connection.outbound <- envelope:
 		case <-ctx.Done():
 		default:
-			slog.Warn("websocket outbound queue is full", "connection", connection.name)
+			connection.bridge.logger.Warn(
+				ctx,
+				"websocket outbound queue is full",
+				logging.String("connection", connection.name),
+			)
 			cancel()
 		}
 	})
@@ -108,7 +118,12 @@ func (connection *connection) run(parentCtx context.Context) {
 	go func() {
 		defer waitGroup.Done()
 		if err := connection.readLoop(ctx); err != nil {
-			slog.Debug("websocket read loop ended", "connection", connection.name, "error", err)
+			connection.bridge.logger.Debug(
+				ctx,
+				"websocket read loop ended",
+				logging.String("connection", connection.name),
+				logging.Error(err),
+			)
 		}
 		cancel()
 	}()
@@ -116,7 +131,12 @@ func (connection *connection) run(parentCtx context.Context) {
 	go func() {
 		defer waitGroup.Done()
 		if err := connection.writeLoop(ctx); err != nil {
-			slog.Debug("websocket write loop ended", "connection", connection.name, "error", err)
+			connection.bridge.logger.Debug(
+				ctx,
+				"websocket write loop ended",
+				logging.String("connection", connection.name),
+				logging.Error(err),
+			)
 		}
 		cancel()
 	}()
@@ -136,7 +156,12 @@ func (connection *connection) readLoop(ctx context.Context) error {
 
 		var incoming frame
 		if err := json.Unmarshal(data, &incoming); err != nil {
-			slog.Warn("invalid websocket frame", "connection", connection.name, "error", err)
+			connection.bridge.logger.Warn(
+				ctx,
+				"invalid websocket frame",
+				logging.String("connection", connection.name),
+				logging.Error(err),
+			)
 			continue
 		}
 
@@ -166,7 +191,12 @@ func (connection *connection) readLoop(ctx context.Context) error {
 		case frameTypeAck, frameTypePong:
 			continue
 		default:
-			slog.Warn("unknown websocket frame type", "connection", connection.name, "type", incoming.Type)
+			connection.bridge.logger.Warn(
+				ctx,
+				"unknown websocket frame type",
+				logging.String("connection", connection.name),
+				logging.String("type", incoming.Type),
+			)
 		}
 	}
 }
@@ -187,7 +217,12 @@ func (connection *connection) receiveEnvelope(ctx context.Context, seq uint64, a
 
 	if connection.deduper.markSeen(envelope.ID, time.Now()) {
 		if err := connection.bridge.bus.Send(ctx, envelope); err != nil {
-			slog.Warn("failed to relay websocket envelope", "connection", connection.name, "error", err)
+			connection.bridge.logger.Warn(
+				ctx,
+				"failed to relay websocket envelope",
+				logging.String("connection", connection.name),
+				logging.Error(err),
+			)
 		}
 	}
 

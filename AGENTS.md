@@ -316,6 +316,7 @@ The backend uses:
 - `internal/websocketbridge`: websocket bridge between frontend/server event buses.
 - `internal/database`: SQLite database setup using vendored `modernc.org/sqlite`, WAL mode, busy timeout, and retry handling for busy/locked database errors.
 - `internal/identityservice`: dummy identity lookup; non-empty auth tokens currently map to `test-user`.
+- `internal/logging`: DI-installed structured logger with console, rotating JSONL file, and Elasticsearch targets.
 - `internal/triggerstore`: persistent canonical trigger JSON store.
 - `internal/usertriggerstore`: per-user trigger records, enablement, publish/broadcast flags, revision/update RPCs, and broadcasts.
 - `internal/worldwidepresenceservice`: aggregates character presence across websocket sources and broadcasts nearby characters.
@@ -323,6 +324,8 @@ The backend uses:
 Backend JSON models live in `backend/model`. Keep these aligned with `frontend/src/shared/triggers.ts` and `frontend/src/shared/messages.ts` when changing shared contracts.
 
 Backend dependencies are vendored. Use `make vendor-backend` after backend dependency changes.
+
+Backend logging is configured with `-log-level`, `-log-target`, `-log-file-path`, `-log-elasticsearch-url`, and `-log-elasticsearch-index-prefix`. The logger is installed immediately after config and should be retrieved or passed as a DI-provided service. Log messages must be fixed static strings; variable data belongs in structured fields.
 
 ## Styling
 

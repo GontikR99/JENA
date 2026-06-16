@@ -3,8 +3,7 @@ package main
 import (
 	"context"
 	"errors"
-	"log"
-	"log/slog"
+	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
@@ -16,6 +15,7 @@ import (
 	"jena/backend/internal/eventbus"
 	"jena/backend/internal/httpserver"
 	"jena/backend/internal/identityservice"
+	"jena/backend/internal/logging"
 	"jena/backend/internal/triggerstore"
 	"jena/backend/internal/usertriggerstore"
 	"jena/backend/internal/websocketbridge"
@@ -24,7 +24,8 @@ import (
 
 func main() {
 	if err := run(os.Args[1:]); err != nil && !errors.Is(err, context.Canceled) {
-		log.Fatal(err)
+		_, _ = fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
 	}
 }
 
@@ -37,6 +38,18 @@ func run(args []string) error {
 	container := app.NewContainer()
 	app.Install(container, config)
 
+	logger, err := logging.New(config)
+	if err != nil {
+		return err
+	}
+	defer logger.Close()
+	app.Install[logging.Logger](container, logger)
+
+	installedLogger, err := app.Get[logging.Logger](container)
+	if err != nil {
+		return err
+	}
+
 	db, err := database.New(config)
 	if err != nil {
 		return err
@@ -47,13 +60,13 @@ func run(args []string) error {
 	bus := eventbus.New()
 	app.Install(container, bus)
 
-	server := httpserver.New(config)
+	server := httpserver.New(config, installedLogger)
 	app.Install(container, server)
 
-	bridge := websocketbridge.New(bus)
+	bridge := websocketbridge.New(bus, installedLogger)
 	app.Install(container, bridge)
 
-	worldwidePresenceService := worldwidepresenceservice.New(bus)
+	worldwidePresenceService := worldwidepresenceservice.New(bus, installedLogger)
 	app.Install(container, worldwidePresenceService)
 
 	identityService := identityservice.New()
@@ -82,11 +95,12 @@ func run(args []string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	slog.Info(
+	installedLogger.Info(
+		ctx,
 		"backend configured",
-		"addr", config.Addr,
-		"databasePath", config.DatabasePath,
-		"websocketPath", config.WebSocketPath,
+		logging.String("addr", config.Addr),
+		logging.String("databasePath", config.DatabasePath),
+		logging.String("websocketPath", config.WebSocketPath),
 	)
 
 	return server.Run(ctx)

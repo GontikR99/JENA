@@ -5,28 +5,30 @@ import (
 	"context"
 	"errors"
 	"io/fs"
-	"log/slog"
 	"net/http"
 	"path"
 	"strings"
 
 	"jena/backend/internal/config"
+	"jena/backend/internal/logging"
 	"jena/backend/internal/staticfiles"
 )
 
 type Server struct {
 	appFS  fs.FS
 	config config.Config
+	logger logging.Logger
 	mux    *http.ServeMux
 	server *http.Server
 }
 
-func New(config config.Config) *Server {
+func New(config config.Config, logger logging.Logger) *Server {
 	mux := http.NewServeMux()
 
 	return &Server{
 		appFS:  staticfiles.App(),
 		config: config,
+		logger: logger,
 		mux:    mux,
 		server: &http.Server{
 			Addr:    config.Addr,
@@ -51,7 +53,11 @@ func (server *Server) Run(ctx context.Context) error {
 	errs := make(chan error, 1)
 
 	go func() {
-		slog.Info("starting backend HTTP server", "addr", server.config.Addr)
+		server.logger.Info(
+			ctx,
+			"starting backend HTTP server",
+			logging.String("addr", server.config.Addr),
+		)
 		errs <- server.server.ListenAndServe()
 	}()
 

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"jena/backend/internal/eventbus"
+	"jena/backend/internal/logging"
 )
 
 func TestMakeConnectionNameUsesIPv4WithUnderscores(t *testing.T) {
@@ -42,7 +43,7 @@ func TestMessageDeduperExpiresIDs(t *testing.T) {
 
 func TestReceiveEnvelopeDeduplicatesBeforeSendingToBus(t *testing.T) {
 	bus := eventbus.New()
-	bridge := New(bus)
+	bridge := New(bus, logging.NewNop())
 	connection := &connection{
 		ackOutbound: make(chan uint64, 2),
 		bridge:      bridge,

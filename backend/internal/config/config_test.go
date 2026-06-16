@@ -26,6 +26,21 @@ func TestParseDefaults(t *testing.T) {
 	if config.DatabaseRetryDelayMs != 25 {
 		t.Fatalf("unexpected DatabaseRetryDelayMs %d", config.DatabaseRetryDelayMs)
 	}
+	if config.LogElasticsearchIndexPrefix != "JENA-" {
+		t.Fatalf("unexpected LogElasticsearchIndexPrefix %q", config.LogElasticsearchIndexPrefix)
+	}
+	if config.LogElasticsearchURL != "" {
+		t.Fatalf("unexpected LogElasticsearchURL %q", config.LogElasticsearchURL)
+	}
+	if config.LogFilePath != "jena.log" {
+		t.Fatalf("unexpected LogFilePath %q", config.LogFilePath)
+	}
+	if config.LogLevel != "info" {
+		t.Fatalf("unexpected LogLevel %q", config.LogLevel)
+	}
+	if config.LogTarget != "console" {
+		t.Fatalf("unexpected LogTarget %q", config.LogTarget)
+	}
 	if config.WebSocketPath != "/_jena/ws" {
 		t.Fatalf("unexpected WebSocketPath %q", config.WebSocketPath)
 	}
@@ -42,6 +57,23 @@ func TestParseRejectsEmptyDatabasePath(t *testing.T) {
 	_, err := ParseForTest([]string{"-database-path", ""})
 	if err == nil {
 		t.Fatal("expected error")
+	}
+}
+
+func TestParseRejectsInvalidLoggingSettings(t *testing.T) {
+	cases := [][]string{
+		{"-log-level", "loud"},
+		{"-log-target", "printer"},
+		{"-log-target", "file", "-log-file-path", ""},
+		{"-log-target", "elasticsearch"},
+		{"-log-target", "elasticsearch", "-log-elasticsearch-url", "http://localhost:9200", "-log-elasticsearch-index-prefix", ""},
+	}
+
+	for _, args := range cases {
+		_, err := ParseForTest(args)
+		if err == nil {
+			t.Fatalf("ParseForTest(%v) expected error", args)
+		}
 	}
 }
 

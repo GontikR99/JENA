@@ -3,12 +3,12 @@ package worldwidepresenceservice
 import (
 	"context"
 	"encoding/json"
-	"log/slog"
 	"strings"
 	"sync"
 	"time"
 
 	"jena/backend/internal/eventbus"
+	"jena/backend/internal/logging"
 )
 
 const (
@@ -24,6 +24,7 @@ const (
 type Options struct {
 	CleanupInterval       time.Duration
 	FullBroadcastInterval time.Duration
+	Logger                logging.Logger
 	NotifyDebounce        time.Duration
 	Now                   func() time.Time
 	PresenceTTL           time.Duration
@@ -33,6 +34,7 @@ type Service struct {
 	bus                   *eventbus.Bus
 	cleanupInterval       time.Duration
 	fullBroadcastInterval time.Duration
+	logger                logging.Logger
 	mu                    sync.Mutex
 	notifyDebounce        time.Duration
 	now                   func() time.Time
@@ -76,8 +78,10 @@ type presenceRecord struct {
 	WebsocketSource string
 }
 
-func New(bus *eventbus.Bus) *Service {
-	return NewWithOptions(bus, Options{})
+func New(bus *eventbus.Bus, logger logging.Logger) *Service {
+	return NewWithOptions(bus, Options{
+		Logger: logger,
+	})
 }
 
 func NewWithOptions(bus *eventbus.Bus, options Options) *Service {
@@ -85,12 +89,17 @@ func NewWithOptions(bus *eventbus.Bus, options Options) *Service {
 	if now == nil {
 		now = time.Now
 	}
+	logger := options.Logger
+	if logger == nil {
+		logger = logging.NewNop()
+	}
 
 	service := &Service{
 		bus:                   bus,
 		cleanupInterval:       defaultDuration(options.CleanupInterval, defaultCleanupInterval),
 		changedZones:          make(map[zoneKey]struct{}),
 		fullBroadcastInterval: defaultDuration(options.FullBroadcastInterval, defaultFullBroadcastInterval),
+		logger:                logger,
 		notifyDebounce:        defaultDuration(options.NotifyDebounce, defaultNotifyDebounce),
 		now:                   now,
 		presenceTTL:           defaultDuration(options.PresenceTTL, defaultPresenceTTL),
@@ -133,7 +142,11 @@ func (service *Service) handlePresenceMessage(ctx context.Context, envelope even
 
 	var message CharacterPresenceMessage
 	if err := json.Unmarshal(envelope.Payload, &message); err != nil {
-		slog.Warn("invalid character presence message", "error", err)
+		service.logger.Warn(
+			ctx,
+			"invalid character presence message",
+			logging.Error(err),
+		)
 		return
 	}
 
@@ -290,7 +303,11 @@ func (service *Service) sendNearbyMessages(ctx context.Context, messages map[str
 	for websocketSource, message := range messages {
 		payload, err := json.Marshal(message)
 		if err != nil {
-			slog.Warn("failed to marshal nearby presence message", "error", err)
+			service.logger.Warn(
+				ctx,
+				"failed to marshal nearby presence message",
+				logging.Error(err),
+			)
 			continue
 		}
 
@@ -299,7 +316,11 @@ func (service *Service) sendNearbyMessages(ctx context.Context, messages map[str
 			Payload:     payload,
 			Source:      &source,
 		}); err != nil {
-			slog.Warn("failed to send nearby presence message", "error", err)
+			service.logger.Warn(
+				ctx,
+				"failed to send nearby presence message",
+				logging.Error(err),
+			)
 		}
 	}
 }
