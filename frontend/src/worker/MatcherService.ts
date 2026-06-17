@@ -1,8 +1,9 @@
-import { RE2JS, RE2Set } from 're2js'
+import { RE2Set, type RE2JS } from 're2js'
 import type {
   RegexCaptures,
   RegexPatternRegistration,
 } from '../shared/messages'
+import { validateRegexPattern } from '../shared/regexValidation'
 import { getDependency, type Deps } from './di'
 import {
   FileWatcher,
@@ -12,23 +13,35 @@ import { MessageBroker } from './MessageBroker'
 
 const matcherCompileDelayMs = 25
 
-interface ValidatedPatternRegistration {
+interface Re2PatternRegistration {
   compiledPattern: RE2JS
+  engine: 're2'
   originalPattern: string
   setIndex: number
   translatedPattern: string
 }
 
+interface JavaScriptPatternRegistration {
+  compiledPattern: RegExp
+  engine: 'javascript'
+  originalPattern: string
+}
+
+type ValidatedPatternRegistration =
+  | JavaScriptPatternRegistration
+  | Re2PatternRegistration
+
 interface PatternSetState {
-  patternsBySetIndex: ValidatedPatternRegistration[]
+  patternsBySetIndex: Re2PatternRegistration[]
   set: RE2Set | null
 }
 
 export class MatcherService {
   private readonly broker: MessageBroker
-  private registrations: ValidatedPatternRegistration[] = []
+  private fallbackRegistrations: JavaScriptPatternRegistration[] = []
   private readonly compilingPatterns = new Set<string>()
   private readonly pendingPatterns = new Map<string, ValidatedPatternRegistration>()
+  private re2Registrations: Re2PatternRegistration[] = []
   private readonly registeredPatterns = new Set<string>()
   private readonly unregister: Array<() => void>
   private compilePromise: Promise<void> | null = null
@@ -99,6 +112,11 @@ export class MatcherService {
   }
 
   private readonly handleLogLine = (record: EverQuestLogLineRecord) => {
+    this.matchRe2Patterns(record)
+    this.matchJavaScriptPatterns(record)
+  }
+
+  private matchRe2Patterns(record: EverQuestLogLineRecord) {
     const { set, patternsBySetIndex } = this.patternSetState
 
     if (!set) {
@@ -113,20 +131,50 @@ export class MatcherService {
       }
 
       for (const match of registration.compiledPattern.matchAll(record.text)) {
-        this.broker.send(
-          'matcher-service',
-          'client.matcher.match-found',
-          {
-            captures: getCaptures(match),
-            characterName: record.characterName,
-            pattern: registration.originalPattern,
-            serverName: record.serverName,
-            text: record.text,
-            timestamp: record.timestamp,
-          },
-        )
+        this.sendMatch(record, registration.originalPattern, match)
       }
     })
+  }
+
+  private matchJavaScriptPatterns(record: EverQuestLogLineRecord) {
+    this.fallbackRegistrations.forEach((registration) => {
+      const regex = registration.compiledPattern
+
+      regex.lastIndex = 0
+
+      for (;;) {
+        const match = regex.exec(record.text)
+
+        if (!match) {
+          return
+        }
+
+        this.sendMatch(record, registration.originalPattern, match)
+
+        if (match[0] === '') {
+          regex.lastIndex += 1
+        }
+      }
+    })
+  }
+
+  private sendMatch(
+    record: EverQuestLogLineRecord,
+    pattern: string,
+    match: unknown[],
+  ) {
+    this.broker.send(
+      'matcher-service',
+      'client.matcher.match-found',
+      {
+        captures: getCaptures(match),
+        characterName: record.characterName,
+        pattern,
+        serverName: record.serverName,
+        text: record.text,
+        timestamp: record.timestamp,
+      },
+    )
   }
 
   private scheduleCompile() {
@@ -165,12 +213,20 @@ export class MatcherService {
     pendingRegistrations.forEach((registration) => {
       this.compilingPatterns.add(registration.originalPattern)
     })
-    const nextRegistrations = [...this.registrations, ...pendingRegistrations]
+    const nextRe2Registrations = [
+      ...this.re2Registrations,
+      ...pendingRegistrations.filter(isRe2PatternRegistration),
+    ]
+    const nextFallbackRegistrations = [
+      ...this.fallbackRegistrations,
+      ...pendingRegistrations.filter(isJavaScriptPatternRegistration),
+    ]
 
     this.compilePromise = Promise.resolve()
-      .then(() => compilePatternSet(nextRegistrations))
+      .then(() => compilePatternSet(nextRe2Registrations))
       .then((nextPatternSetState) => {
-        this.registrations = nextRegistrations
+        this.fallbackRegistrations = nextFallbackRegistrations
+        this.re2Registrations = nextRe2Registrations
         pendingRegistrations.forEach((registration) => {
           this.registeredPatterns.add(registration.originalPattern)
           this.compilingPatterns.delete(registration.originalPattern)
@@ -197,7 +253,7 @@ export class MatcherService {
 }
 
 function compilePatternSet(
-  registrations: ValidatedPatternRegistration[],
+  registrations: Re2PatternRegistration[],
 ): PatternSetState {
   if (registrations.length === 0) {
     return {
@@ -207,7 +263,7 @@ function compilePatternSet(
   }
 
   const set = new RE2Set()
-  const patternsBySetIndex: ValidatedPatternRegistration[] = []
+  const patternsBySetIndex: Re2PatternRegistration[] = []
 
   registrations.forEach((registration) => {
     const setIndex = set.add(registration.translatedPattern)
@@ -297,14 +353,39 @@ function getNovelRegistrations(
 function validatePatternRegistration(
   registration: RegexPatternRegistration,
 ): ValidatedPatternRegistration {
-  const translatedPattern = RE2JS.translateRegExp(registration.pattern)
+  const validation = validateRegexPattern(registration.pattern)
+
+  if (!validation.ok) {
+    throw new Error(`Invalid regular expression: ${validation.error}`)
+  }
+
+  if (validation.engine === 'javascript') {
+    return {
+      compiledPattern: validation.compiledPattern,
+      engine: 'javascript',
+      originalPattern: registration.pattern,
+    }
+  }
 
   return {
-    compiledPattern: RE2JS.compile(translatedPattern),
+    compiledPattern: validation.compiledPattern,
+    engine: 're2',
     originalPattern: registration.pattern,
     setIndex: -1,
-    translatedPattern,
+    translatedPattern: validation.translatedPattern,
   }
+}
+
+function isRe2PatternRegistration(
+  registration: ValidatedPatternRegistration,
+): registration is Re2PatternRegistration {
+  return registration.engine === 're2'
+}
+
+function isJavaScriptPatternRegistration(
+  registration: ValidatedPatternRegistration,
+): registration is JavaScriptPatternRegistration {
+  return registration.engine === 'javascript'
 }
 
 function isAddPatternsRequest(

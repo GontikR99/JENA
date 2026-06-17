@@ -96,6 +96,54 @@ describe('MatcherService', () => {
     expect(receivedMatches).toEqual([])
   })
 
+  it('falls back to JavaScript regexes for patterns RE2JS cannot compile', async () => {
+    const { broker, fileWatcher } = createHarness()
+    const receivedMatches: RegexMatchFoundMessage[] = []
+
+    broker.listen('client.matcher.match-found', (message) => {
+      receivedMatches.push(message.payload as RegexMatchFoundMessage)
+    })
+
+    await broker.call('test.matcher-service', 'matcher-service', 'add-patterns', {
+      patterns: [
+        {
+          pattern: "^(?:(?! say, '| says, ').)*(?<phrase>Touched tenderly\\.)",
+        },
+      ],
+    })
+    await broker.call('test.matcher-service', 'matcher-service', 'flush', {})
+
+    fileWatcher.emit({
+      characterName: 'Testcharacter',
+      serverName: 'Testserver',
+      text: 'Touched tenderly.',
+      timestamp: 'Fri Oct 24 13:33:11 2025',
+    })
+    fileWatcher.emit({
+      characterName: 'Testcharacter',
+      serverName: 'Testserver',
+      text: "Arias says, 'Touched tenderly.'",
+      timestamp: 'Fri Oct 24 13:33:12 2025',
+    })
+    await flushAsyncWork()
+
+    expect(receivedMatches).toEqual([
+      {
+        captures: {
+          named: {
+            phrase: 'Touched tenderly.',
+          },
+          positional: ['Touched tenderly.'],
+        },
+        characterName: 'Testcharacter',
+        pattern: "^(?:(?! say, '| says, ').)*(?<phrase>Touched tenderly\\.)",
+        serverName: 'Testserver',
+        text: 'Touched tenderly.',
+        timestamp: 'Fri Oct 24 13:33:11 2025',
+      },
+    ])
+  })
+
   it('rejects bad regular expressions without replacing existing patterns', async () => {
     const { broker, fileWatcher } = createHarness()
     const receivedMatches: RegexMatchFoundMessage[] = []

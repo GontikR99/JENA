@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from 'react'
-import { RE2JS } from 're2js'
 import Alert from 'react-bootstrap/Alert'
 import Button from 'react-bootstrap/Button'
 import Modal from 'react-bootstrap/Modal'
@@ -15,6 +14,7 @@ import type {
   CharacterPresenceCharactersMessage,
 } from '../../shared/messages'
 import { useListen, useRpc, useSender } from '../../shared/messageBrokerHooks'
+import { validateRegexPattern } from '../../shared/regexValidation'
 import { AudioSettingsSection } from './AudioSettingsSection'
 import { CounterTab } from './CounterTab'
 import { GeneralSettingsSection } from './GeneralSettingsSection'
@@ -232,14 +232,12 @@ export function TriggerEditorDialog({
 function validateRegularExpressions(draft: TriggerEditorDraft) {
   const errors: string[] = []
 
-  if (draft.match.isRegex) {
-    try {
-      RE2JS.compile(RE2JS.translateRegExp(draft.match.text))
-    } catch (error) {
-      errors.push(`Search text must be a valid regular expression: ${getErrorMessage(error)}`)
-    }
-  } else {
-    RE2JS.compile(RE2JS.translateRegExp(matcherToRegexSource(draft.match)))
+  const searchTextError = getRegexValidationError(
+    draft.match.isRegex ? draft.match.text : matcherToRegexSource(draft.match),
+  )
+
+  if (searchTextError) {
+    errors.push(`Search text must be a valid regular expression: ${searchTextError}`)
   }
 
   draft.timer.earlyEnders.forEach((earlyEnder, index) => {
@@ -247,22 +245,22 @@ function validateRegularExpressions(draft: TriggerEditorDraft) {
       return
     }
 
-    if (earlyEnder.isRegex) {
-      try {
-        RE2JS.compile(RE2JS.translateRegExp(earlyEnder.text))
-      } catch (error) {
-        errors.push(
-          `Timer early-end text row ${index + 1} must be a valid regular expression: ${getErrorMessage(error)}`,
-        )
-      }
-    } else {
-      RE2JS.compile(RE2JS.translateRegExp(matcherToRegexSource(earlyEnder)))
+    const earlyEnderError = getRegexValidationError(
+      earlyEnder.isRegex ? earlyEnder.text : matcherToRegexSource(earlyEnder),
+    )
+
+    if (earlyEnderError) {
+      errors.push(
+        `Timer early-end text row ${index + 1} must be a valid regular expression: ${earlyEnderError}`,
+      )
     }
   })
 
   return errors
 }
 
-function getErrorMessage(error: unknown) {
-  return error instanceof Error ? error.message : String(error)
+function getRegexValidationError(pattern: string) {
+  const validation = validateRegexPattern(pattern)
+
+  return validation.ok ? null : validation.error
 }

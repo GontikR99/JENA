@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
@@ -65,6 +65,46 @@ describe('TriggerEditorDialog', () => {
     expect(hookState.send).toHaveBeenCalledWith('speech.preview-requested', {
       interrupt: true,
       text: 'Hello Mesozoic test',
+    })
+  })
+
+  it('allows saving JavaScript-compatible lookahead regexes', async () => {
+    const user = userEvent.setup()
+    const setShown = vi.fn()
+    const setTrigger = vi.fn()
+
+    render(
+      <TriggerEditorDialog
+        setShown={setShown}
+        setTrigger={setTrigger}
+        shown
+        trigger={withCanonicalTriggerId({
+          ...createEmptyTrigger(),
+          match: {
+            isRegex: true,
+            text: 'Touched tenderly\\.',
+          },
+          name: 'Lookahead Trigger',
+        })}
+      />,
+    )
+
+    await user.clear(screen.getByLabelText('Search Text'))
+    await user.type(
+      screen.getByLabelText('Search Text'),
+      "^(?:(?! say, '| says, ').)*Touched tenderly\\.",
+    )
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => {
+      expect(setTrigger).toHaveBeenCalled()
+    })
+    expect(setShown).toHaveBeenCalledWith(false)
+    expect(setTrigger.mock.calls[0]?.[0]).toMatchObject({
+      match: {
+        isRegex: true,
+        text: "^(?:(?! say, '| says, ').)*Touched tenderly\\.",
+      },
     })
   })
 })
