@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import Button from 'react-bootstrap/Button'
 import jenaBrandLockupUrl from './assets/jena-brand-lockup.png'
-import { useAuth } from './auth/AuthContext'
+import { useAuth } from './auth/authContext'
 import { StartupButton } from './runtime/StartupButton'
 import { TriggersView } from './triggers/views/TriggersView'
 import './AppShell.css'
@@ -10,8 +10,7 @@ type AppSection = 'triggers' | 'rolls' | 'search'
 
 export function AppShell() {
   const [activeSection, setActiveSection] = useState<AppSection>('triggers')
-  const { authToken, logIn, logOut } = useAuth()
-  const loggedIn = authToken !== null
+  const { logOut, user } = useAuth()
 
   return (
     <div className="app-shell">
@@ -52,12 +51,17 @@ export function AppShell() {
 
         <div className="app-account-slot">
           <Button
-            className="app-login-button"
-            onClick={loggedIn ? logOut : logIn}
+            className="app-account-button"
+            onClick={() => {
+              void logOut()
+            }}
             size="sm"
-            variant={loggedIn ? 'outline-light' : 'success'}
+            variant="outline-light"
           >
-            {loggedIn ? 'log out' : 'log in'}
+            <span className="app-account-username">
+              {user?.username ?? 'Discord'}
+            </span>
+            <span>log out</span>
           </Button>
         </div>
       </header>

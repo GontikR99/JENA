@@ -12,7 +12,6 @@ import type {
 export type Endpoint = string
 
 export interface BusMessage<TPayload = unknown> {
-  authToken?: string
   id: string
   source: Endpoint | null
   destination: Endpoint
@@ -111,6 +110,23 @@ export interface CharacterPresenceCharactersMessage {
   characters: CharacterPresence[]
 }
 
+export interface AuthenticatedUser {
+  avatarUrl?: string
+  discordId: string
+  globalName?: string
+  id: string
+  username: string
+}
+
+export type AuthSessionResponse =
+  | {
+      status: 'anonymous'
+    }
+  | {
+      status: 'authenticated'
+      user: AuthenticatedUser
+    }
+
 export interface NearbyCharacterPresenceMessage {
   characters: CharacterPresence[]
 }
@@ -135,6 +151,12 @@ export interface EverQuestLogFile {
 }
 
 export interface RpcEndpoints {
+  'server.auth': {
+    getSession: {
+      request: Record<string, never>
+      response: AuthSessionResponse
+    }
+  }
   'worker.file-watcher': {
     setFileHandle: {
       request: {

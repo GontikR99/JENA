@@ -9,11 +9,16 @@ import (
 
 type Config struct {
 	Addr                        string
+	AuthCookieName              string
+	AuthPublicBaseURL           string
+	AuthSessionDays             int
 	DatabaseMaxIdleConns        int
 	DatabaseMaxOpenConns        int
 	DatabasePath                string
 	DatabaseRetryCount          int
 	DatabaseRetryDelayMs        int
+	DiscordClientID             string
+	DiscordClientSecret         string
 	LogElasticsearchIndexPrefix string
 	LogElasticsearchURL         string
 	LogFilePath                 string
@@ -36,11 +41,16 @@ func parse(args []string, output io.Writer) (Config, error) {
 	flags.SetOutput(output)
 
 	flags.StringVar(&config.Addr, "addr", "127.0.0.1:8080", "HTTP listen address")
+	flags.StringVar(&config.AuthCookieName, "auth-cookie-name", "jena_session", "authentication session cookie name")
+	flags.StringVar(&config.AuthPublicBaseURL, "auth-public-base-url", "", "public base URL for OAuth redirects; defaults to the incoming request scheme and host")
+	flags.IntVar(&config.AuthSessionDays, "auth-session-days", 365, "authentication session duration in days")
 	flags.IntVar(&config.DatabaseMaxIdleConns, "database-max-idle-conns", 8, "maximum idle SQLite connections")
 	flags.IntVar(&config.DatabaseMaxOpenConns, "database-max-open-conns", 8, "maximum open SQLite connections")
 	flags.StringVar(&config.DatabasePath, "database-path", "jena.db", "SQLite database file path")
 	flags.IntVar(&config.DatabaseRetryCount, "database-retry-count", 5, "SQLite busy/locked retry attempts")
 	flags.IntVar(&config.DatabaseRetryDelayMs, "database-retry-delay-ms", 25, "initial SQLite busy/locked retry delay in milliseconds")
+	flags.StringVar(&config.DiscordClientID, "discord-client-id", "", "Discord OAuth2 client ID")
+	flags.StringVar(&config.DiscordClientSecret, "discord-client-secret", "", "Discord OAuth2 client secret")
 	flags.StringVar(&config.LogElasticsearchIndexPrefix, "log-elasticsearch-index-prefix", "JENA-", "Elasticsearch daily index prefix")
 	flags.StringVar(&config.LogElasticsearchURL, "log-elasticsearch-url", "", "Elasticsearch base URL for log delivery")
 	flags.StringVar(&config.LogFilePath, "log-file-path", "jena.log", "log file path when -log-target=file")
@@ -57,6 +67,12 @@ func parse(args []string, output io.Writer) (Config, error) {
 	}
 	if config.DatabasePath == "" {
 		return Config{}, fmt.Errorf("database-path must not be empty")
+	}
+	if config.AuthCookieName == "" {
+		return Config{}, fmt.Errorf("auth-cookie-name must not be empty")
+	}
+	if config.AuthSessionDays < 1 {
+		return Config{}, fmt.Errorf("auth-session-days must be at least 1")
 	}
 	if config.DatabaseMaxOpenConns < 1 {
 		return Config{}, fmt.Errorf("database-max-open-conns must be at least 1")

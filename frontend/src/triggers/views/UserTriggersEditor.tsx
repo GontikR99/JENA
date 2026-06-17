@@ -8,7 +8,7 @@ import Button from 'react-bootstrap/Button'
 import Modal from 'react-bootstrap/Modal'
 import ProgressBar from 'react-bootstrap/ProgressBar'
 import toast from 'react-hot-toast'
-import { useAuthToken } from '../../auth/AuthContext'
+import { useAuth } from '../../auth/authContext'
 import type { CharacterPresence } from '../../shared/messages'
 import {
   createEmptyTrigger,
@@ -139,7 +139,7 @@ export function UserTriggersEditor({
     upsertTrigger,
     upsertTriggers,
   } = useTriggerManager()
-  const authToken = useAuthToken()
+  const { isAuthenticated } = useAuth()
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const [emptyGroups, setEmptyGroups] = useState<string[][]>([])
   const [emptyGroupsLoaded, setEmptyGroupsLoaded] = useState(false)
@@ -380,7 +380,7 @@ export function UserTriggersEditor({
     item: TreeTriggerItem,
     publish: boolean,
   ) {
-    if (!authToken) {
+    if (!isAuthenticated) {
       toast.error('Log in to publish triggers.')
       return
     }
@@ -409,7 +409,7 @@ export function UserTriggersEditor({
     group: TreeGroupItem,
     publish: boolean,
   ) {
-    if (!authToken) {
+    if (!isAuthenticated) {
       toast.error('Log in to publish triggers.')
       return
     }
@@ -1137,7 +1137,7 @@ export function UserTriggersEditor({
                 }}
                 onToggle={toggleGroup}
                 publishDisabled={
-                  !authToken ||
+                  !isAuthenticated ||
                   (groupStatesById.get(item.id)?.totalCount ?? 0) === 0
                 }
                 publishState={
@@ -1172,7 +1172,7 @@ export function UserTriggersEditor({
                 onToggle={(enabled) => {
                   void handleToggleTrigger(item, enabled)
                 }}
-                publishDisabled={!authToken}
+                publishDisabled={!isAuthenticated}
                 selected={selectedTriggerIds.has(item.id)}
                 showEnableColumn={showEnableColumn}
               />

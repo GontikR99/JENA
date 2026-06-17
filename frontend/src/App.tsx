@@ -11,7 +11,9 @@ import {
 } from './bridges/server/ServerBridge'
 import { LocalCharactersProvider } from './characters/LocalCharactersProvider'
 import { NearbyCharactersProvider } from './characters/NearbyCharactersProvider'
-import { AuthProvider } from './auth/AuthContext'
+import { AuthProvider } from './auth/AuthProvider'
+import { useAuth } from './auth/authContext'
+import { AuthScreen } from './auth/AuthScreen'
 import {
   TriggerRuntimePortal,
   TriggerRuntimeProvider,
@@ -30,25 +32,39 @@ export function App() {
     <MessageBrokerProvider broker={messageBroker}>
       <AuthProvider>
         <ServerBridge onStatusChange={setServerBridgeStatus} />
-        <WorkerBridge />
-        <TriggerStoreProvider>
-          <AlertCoordinationService />
-          <TriggerStopService />
-          <UserTriggerManagerProvider>
-            <NearbyCharactersProvider>
-              <LocalCharactersProvider>
-                <TriggerRuntimeProvider>
-                  <TriggerSpeechService />
-                  <AppShell />
-                  <TriggerRuntimePortal />
-                </TriggerRuntimeProvider>
-              </LocalCharactersProvider>
-            </NearbyCharactersProvider>
-          </UserTriggerManagerProvider>
-        </TriggerStoreProvider>
+        <AuthenticatedApp />
         <ServerConnectionGlass status={serverBridgeStatus} />
         <Toaster position="top-right" />
       </AuthProvider>
     </MessageBrokerProvider>
+  )
+}
+
+function AuthenticatedApp() {
+  const { status } = useAuth()
+
+  if (status !== 'authenticated') {
+    return <AuthScreen />
+  }
+
+  return (
+    <>
+      <WorkerBridge />
+      <TriggerStoreProvider>
+        <AlertCoordinationService />
+        <TriggerStopService />
+        <UserTriggerManagerProvider>
+          <NearbyCharactersProvider>
+            <LocalCharactersProvider>
+              <TriggerRuntimeProvider>
+                <TriggerSpeechService />
+                <AppShell />
+                <TriggerRuntimePortal />
+              </TriggerRuntimeProvider>
+            </LocalCharactersProvider>
+          </NearbyCharactersProvider>
+        </UserTriggerManagerProvider>
+      </TriggerStoreProvider>
+    </>
   )
 }

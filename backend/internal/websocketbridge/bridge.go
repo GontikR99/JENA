@@ -34,6 +34,7 @@ const (
 
 type Bridge struct {
 	activeConnections atomic.Int64
+	authCookieName    string
 	bus               *eventbus.Bus
 	connection        uint64
 	logger            logging.Logger
@@ -42,11 +43,10 @@ type Bridge struct {
 }
 
 type frame struct {
-	Type      string             `json:"type"`
-	Seq       uint64             `json:"seq,omitempty"`
-	Ack       uint64             `json:"ack,omitempty"`
-	AuthToken string             `json:"authToken,omitempty"`
-	Envelope  *eventbus.Envelope `json:"envelope,omitempty"`
+	Type     string             `json:"type"`
+	Seq      uint64             `json:"seq,omitempty"`
+	Ack      uint64             `json:"ack,omitempty"`
+	Envelope *eventbus.Envelope `json:"envelope,omitempty"`
 }
 
 type connection struct {
@@ -57,14 +57,16 @@ type connection struct {
 	outbound    chan eventbus.Envelope
 	ackOutbound chan uint64
 	ackReceived chan uint64
+	authToken   string
 	deduper     *messageDeduper
 }
 
-func New(bus *eventbus.Bus, logger logging.Logger) *Bridge {
+func New(bus *eventbus.Bus, logger logging.Logger, authCookieName string) *Bridge {
 	return &Bridge{
-		bus:           bus,
-		logger:        logger,
-		stopActiveLog: make(chan struct{}),
+		authCookieName: authCookieName,
+		bus:            bus,
+		logger:         logger,
+		stopActiveLog:  make(chan struct{}),
 	}
 }
 
@@ -104,6 +106,13 @@ func (bridge *Bridge) ServeHTTP(response http.ResponseWriter, request *http.Requ
 	}
 	socket.SetReadLimit(readLimitBytes)
 
+	authToken := ""
+	if bridge.authCookieName != "" {
+		if cookie, err := request.Cookie(bridge.authCookieName); err == nil {
+			authToken = cookie.Value
+		}
+	}
+
 	connectionID := atomic.AddUint64(&bridge.connection, 1)
 	connection := &connection{
 		bridge:      bridge,
@@ -113,6 +122,7 @@ func (bridge *Bridge) ServeHTTP(response http.ResponseWriter, request *http.Requ
 		outbound:    make(chan eventbus.Envelope, outboundQueueSize),
 		ackOutbound: make(chan uint64, 16),
 		ackReceived: make(chan uint64, 16),
+		authToken:   authToken,
 		deduper:     newMessageDeduper(dedupWindow),
 	}
 
@@ -144,6 +154,7 @@ func (connection *connection) run(parentCtx context.Context) {
 	}()
 
 	unlisten := connection.bridge.bus.Listen(connection.name+".*", func(_ context.Context, envelope eventbus.Envelope) {
+		envelope.AuthToken = ""
 		envelope.Destination = strings.TrimPrefix(envelope.Destination, connection.name+".")
 
 		select {
@@ -236,7 +247,7 @@ func (connection *connection) readLoop(ctx context.Context) error {
 				continue
 			}
 
-			connection.receiveEnvelope(ctx, incoming.Seq, incoming.AuthToken, *incoming.Envelope)
+			connection.receiveEnvelope(ctx, incoming.Seq, *incoming.Envelope)
 		case frameTypePing:
 			if err := connection.writeFrame(ctx, frame{
 				Ack:  incoming.Seq,
@@ -257,7 +268,7 @@ func (connection *connection) readLoop(ctx context.Context) error {
 	}
 }
 
-func (connection *connection) receiveEnvelope(ctx context.Context, seq uint64, authToken string, envelope eventbus.Envelope) {
+func (connection *connection) receiveEnvelope(ctx context.Context, seq uint64, envelope eventbus.Envelope) {
 	source := connection.name
 	if envelope.Source != nil && *envelope.Source != "" {
 		source = connection.name + "." + *envelope.Source
@@ -266,8 +277,8 @@ func (connection *connection) receiveEnvelope(ctx context.Context, seq uint64, a
 	if envelope.ID == "" {
 		envelope.ID = eventbus.CreateMessageID()
 	}
-	if authToken != "" {
-		envelope.AuthToken = authToken
+	if connection.authToken != "" {
+		envelope.AuthToken = connection.authToken
 	}
 	envelope.Source = &source
 
@@ -316,10 +327,9 @@ func (connection *connection) writeLoop(ctx context.Context) error {
 		case envelope := <-connection.outbound:
 			nextSeq++
 			outgoing := frame{
-				AuthToken: envelope.AuthToken,
-				Envelope:  &envelope,
-				Seq:       nextSeq,
-				Type:      frameTypeMessage,
+				Envelope: &envelope,
+				Seq:      nextSeq,
+				Type:     frameTypeMessage,
 			}
 			unacked[nextSeq] = outgoing
 

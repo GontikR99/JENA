@@ -1,8 +1,7 @@
-import { useCallback, useEffect, useRef } from 'react'
+import { useEffect } from 'react'
 import type { MessageBroker } from '../../shared/messageBroker'
 import { useMessageBroker } from '../../shared/messageBrokerHooks'
 import { ServerEndpointPrefix, type BusMessage } from '../../shared/messages'
-import { useAuthToken } from '../../auth/AuthContext'
 import {
   ExpiringMessageDeduper,
   getDefaultServerBridgeUrl,
@@ -33,19 +32,10 @@ const maxReconnectDelayMs = 2_000
 
 export function ServerBridge({ onStatusChange }: ServerBridgeProps) {
   const broker = useMessageBroker()
-  const authToken = useAuthToken()
-  const authTokenRef = useRef<string | null>(authToken)
-
-  useEffect(() => {
-    authTokenRef.current = authToken
-  }, [authToken])
-
-  const getAuthToken = useCallback(() => authTokenRef.current, [])
 
   useEffect(() => {
     const controller = new ServerBridgeController({
       broker,
-      getAuthToken,
       onStatusChange,
       url: getDefaultServerBridgeUrl(window.location),
     })
@@ -55,7 +45,7 @@ export function ServerBridge({ onStatusChange }: ServerBridgeProps) {
     return () => {
       controller.dispose()
     }
-  }, [broker, getAuthToken, onStatusChange])
+  }, [broker, onStatusChange])
 
   return null
 }
@@ -88,7 +78,6 @@ export function ServerConnectionGlass({
 class ServerBridgeController {
   private readonly broker: MessageBroker
   private readonly deduper = new ExpiringMessageDeduper(dedupWindowMs)
-  private readonly getAuthToken: () => string | null
   private readonly onStatusChange: (status: ServerBridgeStatus) => void
   private readonly queuedMessages: BusMessage[] = []
   private readonly unackedMessages = new Map<string, QueuedMessage>()
@@ -108,17 +97,14 @@ class ServerBridgeController {
 
   constructor({
     broker,
-    getAuthToken,
     onStatusChange,
     url,
   }: {
     broker: MessageBroker
-    getAuthToken: () => string | null
     onStatusChange: (status: ServerBridgeStatus) => void
     url: string
   }) {
     this.broker = broker
-    this.getAuthToken = getAuthToken
     this.onStatusChange = onStatusChange
     this.url = url
   }
@@ -244,7 +230,6 @@ class ServerBridgeController {
 
   private writeMessageFrame(message: BusMessage) {
     const seq = this.nextSequence()
-    const authToken = this.getAuthToken() ?? undefined
 
     this.unackedMessages.set(message.id, {
       lastSeq: seq,
@@ -252,11 +237,7 @@ class ServerBridgeController {
     })
 
     this.writeFrame({
-      authToken,
-      envelope: {
-        ...message,
-        authToken,
-      },
+      envelope: message,
       seq,
       type: 'message',
     })
@@ -281,7 +262,6 @@ class ServerBridgeController {
       case 'ping':
         this.writeFrame({
           ack: frame.seq,
-          authToken: this.getAuthToken() ?? undefined,
           type: 'pong',
         })
         return
@@ -294,7 +274,6 @@ class ServerBridgeController {
   private handleMessageFrame(frame: Extract<ServerBridgeFrame, { type: 'message' }>) {
     this.writeFrame({
       ack: frame.seq,
-      authToken: this.getAuthToken() ?? undefined,
       type: 'ack',
     })
 
@@ -316,7 +295,6 @@ class ServerBridgeController {
   private startTimers() {
     this.keepaliveIntervalId = globalThis.setInterval(() => {
       this.writeFrame({
-        authToken: this.getAuthToken() ?? undefined,
         seq: this.nextSequence(),
         type: 'ping',
       })

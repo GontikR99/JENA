@@ -8,25 +8,21 @@ import {
 export type ServerBridgeFrame =
   | {
       ack?: number
-      authToken?: string
       envelope: BusMessage
       seq: number
       type: 'message'
     }
   | {
       ack: number
-      authToken?: string
       type: 'ack'
     }
   | {
       ack?: number
-      authToken?: string
       seq: number
       type: 'ping'
     }
   | {
       ack: number
-      authToken?: string
       type: 'pong'
     }
 

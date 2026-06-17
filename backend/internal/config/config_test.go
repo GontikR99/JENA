@@ -11,6 +11,15 @@ func TestParseDefaults(t *testing.T) {
 	if config.Addr != "127.0.0.1:8080" {
 		t.Fatalf("unexpected Addr %q", config.Addr)
 	}
+	if config.AuthCookieName != "jena_session" {
+		t.Fatalf("unexpected AuthCookieName %q", config.AuthCookieName)
+	}
+	if config.AuthPublicBaseURL != "" {
+		t.Fatalf("unexpected AuthPublicBaseURL %q", config.AuthPublicBaseURL)
+	}
+	if config.AuthSessionDays != 365 {
+		t.Fatalf("unexpected AuthSessionDays %d", config.AuthSessionDays)
+	}
 	if config.DatabaseMaxIdleConns != 8 {
 		t.Fatalf("unexpected DatabaseMaxIdleConns %d", config.DatabaseMaxIdleConns)
 	}
@@ -25,6 +34,12 @@ func TestParseDefaults(t *testing.T) {
 	}
 	if config.DatabaseRetryDelayMs != 25 {
 		t.Fatalf("unexpected DatabaseRetryDelayMs %d", config.DatabaseRetryDelayMs)
+	}
+	if config.DiscordClientID != "" {
+		t.Fatalf("unexpected DiscordClientID %q", config.DiscordClientID)
+	}
+	if config.DiscordClientSecret != "" {
+		t.Fatalf("unexpected DiscordClientSecret %q", config.DiscordClientSecret)
 	}
 	if config.LogElasticsearchIndexPrefix != "JENA-" {
 		t.Fatalf("unexpected LogElasticsearchIndexPrefix %q", config.LogElasticsearchIndexPrefix)
@@ -83,6 +98,8 @@ func TestParseRejectsInvalidDatabasePoolSettings(t *testing.T) {
 		{"-database-max-idle-conns", "-1"},
 		{"-database-retry-count", "-1"},
 		{"-database-retry-delay-ms", "-1"},
+		{"-auth-cookie-name", ""},
+		{"-auth-session-days", "0"},
 	}
 
 	for _, args := range cases {

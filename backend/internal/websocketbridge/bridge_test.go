@@ -46,9 +46,10 @@ func TestMessageDeduperExpiresIDs(t *testing.T) {
 
 func TestReceiveEnvelopeDeduplicatesBeforeSendingToBus(t *testing.T) {
 	bus := eventbus.New()
-	bridge := New(bus, logging.NewNop())
+	bridge := New(bus, logging.NewNop(), "jena_session")
 	connection := &connection{
 		ackOutbound: make(chan uint64, 2),
+		authToken:   "token-1",
 		bridge:      bridge,
 		deduper:     newMessageDeduper(dedupWindow),
 		name:        "ws.127_0_0_1_1",
@@ -75,8 +76,8 @@ func TestReceiveEnvelopeDeduplicatesBeforeSendingToBus(t *testing.T) {
 		Source:      &source,
 	}
 
-	connection.receiveEnvelope(context.Background(), 1, "token-1", envelope)
-	connection.receiveEnvelope(context.Background(), 2, "token-1", envelope)
+	connection.receiveEnvelope(context.Background(), 1, envelope)
+	connection.receiveEnvelope(context.Background(), 2, envelope)
 
 	if received != 1 {
 		t.Fatalf("received %d messages, want 1", received)
@@ -94,7 +95,7 @@ func TestLogActiveConnectionsUsesInfoLevel(t *testing.T) {
 		t.Fatalf("logging.New returned error: %v", err)
 	}
 
-	bridge := New(eventbus.New(), logger)
+	bridge := New(eventbus.New(), logger, "jena_session")
 	bridge.activeConnections.Store(3)
 
 	bridge.logActiveConnections(context.Background())

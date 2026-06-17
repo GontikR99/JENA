@@ -10,6 +10,7 @@ import (
 	"syscall"
 
 	"jena/backend/internal/app"
+	"jena/backend/internal/authservice"
 	"jena/backend/internal/config"
 	"jena/backend/internal/database"
 	"jena/backend/internal/eventbus"
@@ -63,13 +64,20 @@ func run(args []string) error {
 	server := httpserver.New(config, installedLogger)
 	app.Install(container, server)
 
-	bridge := websocketbridge.New(bus, installedLogger)
+	authService, err := authservice.New(context.Background(), bus, db, config, installedLogger)
+	if err != nil {
+		return err
+	}
+	defer authService.Dispose()
+	app.Install(container, authService)
+
+	bridge := websocketbridge.New(bus, installedLogger, config.AuthCookieName)
 	app.Install(container, bridge)
 
 	worldwidePresenceService := worldwidepresenceservice.New(bus, installedLogger)
 	app.Install(container, worldwidePresenceService)
 
-	identityService := identityservice.New()
+	identityService := identityservice.New(authService)
 	app.Install(container, identityService)
 
 	triggerStore, err := triggerstore.New(context.Background(), bus, db)
@@ -89,6 +97,9 @@ func run(args []string) error {
 	server.RegisterFunc("GET /_jena/health", func(response http.ResponseWriter, _ *http.Request) {
 		response.WriteHeader(http.StatusNoContent)
 	})
+	server.RegisterFunc("GET "+authService.LoginPath(), authService.ServeLogin)
+	server.RegisterFunc("GET "+authService.CallbackPath(), authService.ServeCallback)
+	server.RegisterFunc("POST "+authService.LogoutPath(), authService.ServeLogout)
 	server.Register(config.WebSocketPath, bridge)
 	server.RegisterStaticApp()
 

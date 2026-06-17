@@ -69,8 +69,21 @@
   justify-self: end;
 }
 
-.app-login-button {
-  min-width: 4.75rem;
+.app-account-button {
+  align-items: center;
+  display: inline-flex;
+  gap: 0.5rem;
+  max-width: 18rem;
+  min-width: 0;
+}
+
+.app-account-username {
+  display: inline-block;
+  max-width: 12rem;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .app-main {

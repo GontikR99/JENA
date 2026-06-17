@@ -7,7 +7,7 @@ import {
   useState,
   type ReactNode,
 } from 'react'
-import { useAuthToken } from '../../auth/AuthContext'
+import { useAuth } from '../../auth/authContext'
 import { useListen, useRpc } from '../../shared/messageBrokerHooks'
 import { createMessageId, type BusMessage } from '../../shared/messages'
 import {
@@ -77,18 +77,18 @@ export function UserTriggerManagerProvider({
 }: {
   children: ReactNode
 }) {
-  const authToken = useAuthToken()
+  const { isAuthenticated } = useAuth()
   const call = useRpc('user-trigger-manager')
   const triggerStore = useTriggerStore()
-  const authTokenRef = useRef(authToken)
+  const isAuthenticatedRef = useRef(isAuthenticated)
   const recordsRef = useRef(new Map<JenaTriggerId, JenaExtendedTrigger>())
   const revisionRef = useRef<string | null>(null)
   const triggersByIdRef = useRef(new Map<JenaTriggerId, JenaTrigger>())
   const [triggers, setTriggers] = useState<JenaResolvedTrigger[]>([])
 
   useEffect(() => {
-    authTokenRef.current = authToken
-  }, [authToken])
+    isAuthenticatedRef.current = isAuthenticated
+  }, [isAuthenticated])
 
   const publishSnapshot = useCallback(() => {
     setTriggers(getResolvedSnapshot(recordsRef.current, triggersByIdRef.current))
@@ -162,7 +162,7 @@ export function UserTriggerManagerProvider({
     let cancelled = false
 
     void (async () => {
-      if (authToken) {
+      if (isAuthenticated) {
         await fetchServerState()
       } else {
         await loadLocalState()
@@ -180,10 +180,10 @@ export function UserTriggerManagerProvider({
     return () => {
       cancelled = true
     }
-  }, [authToken, fetchServerState, loadLocalState, publishSnapshot])
+  }, [isAuthenticated, fetchServerState, loadLocalState, publishSnapshot])
 
   useEffect(() => {
-    if (!authToken) {
+    if (!isAuthenticated) {
       return
     }
 
@@ -206,10 +206,10 @@ export function UserTriggerManagerProvider({
     return () => {
       globalThis.clearInterval(intervalId)
     }
-  }, [authToken, call, fetchServerState])
+  }, [isAuthenticated, call, fetchServerState])
 
   useListen('user-trigger-store.updated', (message: BusMessage) => {
-    if (!authTokenRef.current) {
+    if (!isAuthenticatedRef.current) {
       return
     }
 
@@ -235,7 +235,7 @@ export function UserTriggerManagerProvider({
     ) => {
       const upserts = normalizeUpsertInputs(triggerInputs)
 
-      if (authTokenRef.current) {
+      if (isAuthenticatedRef.current) {
         const update = await call('server.user-trigger-store', 'upsertTriggers', {
           deleteTriggerIds: options.deleteTriggerIds,
           knownRevision: revisionRef.current ?? undefined,
@@ -277,7 +277,7 @@ export function UserTriggerManagerProvider({
 
   const deleteTriggers = useCallback(
     async (triggerIds: JenaTriggerId[]) => {
-      if (authTokenRef.current) {
+      if (isAuthenticatedRef.current) {
         const update = await call('server.user-trigger-store', 'deleteTriggers', {
           knownRevision: revisionRef.current ?? undefined,
           triggerIds,
@@ -303,7 +303,7 @@ export function UserTriggerManagerProvider({
 
   const toggleTriggers = useCallback(
     async (changes: JenaTriggerEnablementChange[]) => {
-      if (authTokenRef.current) {
+      if (isAuthenticatedRef.current) {
         const update = await call('server.user-trigger-store', 'toggleTriggers', {
           changes,
           knownRevision: revisionRef.current ?? undefined,
@@ -322,7 +322,7 @@ export function UserTriggerManagerProvider({
 
   const setTriggerFlags = useCallback(
     async (changes: JenaTriggerFlagChange[]) => {
-      if (authTokenRef.current) {
+      if (isAuthenticatedRef.current) {
         const update = await call('server.user-trigger-store', 'setTriggerFlags', {
           changes,
           knownRevision: revisionRef.current ?? undefined,

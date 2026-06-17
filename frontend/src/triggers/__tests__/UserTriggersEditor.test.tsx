@@ -54,8 +54,10 @@ vi.mock('../model/UserTriggerManager', () => ({
   }),
 }))
 
-vi.mock('../../auth/AuthContext', () => ({
-  useAuthToken: () => 'test-token',
+vi.mock('../../auth/authContext', () => ({
+  useAuth: () => ({
+    isAuthenticated: true,
+  }),
 }))
 
 vi.mock('../../shared/messageBrokerHooks', () => ({

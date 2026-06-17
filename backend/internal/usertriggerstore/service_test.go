@@ -3,6 +3,7 @@ package usertriggerstore
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"reflect"
 	"strings"
 	"testing"
@@ -329,7 +330,7 @@ func newTestService(t *testing.T, ctx context.Context) (*eventbus.Bus, *database
 
 	bus := eventbus.New()
 	db := newTestDatabase(t)
-	identity := identityservice.New()
+	identity := identityservice.New(fakeSessionResolver{})
 	triggerStore, err := triggerstore.New(ctx, bus, db)
 	if err != nil {
 		t.Fatalf("triggerstore.New returned error: %v", err)
@@ -342,6 +343,16 @@ func newTestService(t *testing.T, ctx context.Context) (*eventbus.Bus, *database
 	}
 
 	return bus, db, service
+}
+
+type fakeSessionResolver struct{}
+
+func (resolver fakeSessionResolver) StableIDForSessionToken(_ context.Context, token string) (string, error) {
+	if strings.TrimSpace(token) == "" {
+		return "", errors.New("auth token is required")
+	}
+
+	return "test-user", nil
 }
 
 func newTestDatabase(t *testing.T) *database.Database {
