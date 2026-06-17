@@ -161,6 +161,9 @@ function createTriggerAlertPayload(
 ): TriggerAlertMatchedMessage {
   return withoutUndefinedValues({
     characterName: match.characterName,
+    clipboardText: trigger.actions.clipboard.enabled
+      ? substituteAlertTemplate(trigger.actions.clipboard.text, context)
+      : undefined,
     displayText: trigger.actions.display.enabled
       ? substituteAlertTemplate(trigger.actions.display.text, context)
       : undefined,

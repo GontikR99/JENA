@@ -54,6 +54,7 @@ export interface RegexMatchFoundMessage {
 
 export interface TriggerAlertMatchedMessage {
   characterName: string
+  clipboardText?: string
   displayText?: string
   serverName: string
   speechText?: string
