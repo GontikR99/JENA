@@ -6,7 +6,7 @@ import {
   getSpeechSynthesis,
 } from '../../shared/speechSynthesis'
 import { useTriggerRuntime } from '../../runtime/TriggerRuntime'
-import { useOnTriggerMatch } from './useTriggerAlerts'
+import { useOnTriggerMatch, useOnTriggerStop } from './useTriggerAlerts'
 
 interface SpeechJob {
   interrupt: boolean
@@ -38,7 +38,7 @@ export function TriggerSpeechService() {
     getSpeechSynthesis()?.cancel()
   }, [])
 
-  const speakNext = useCallback(() => {
+  const speakNext = useCallback(function speakNext() {
     if (currentUtteranceRef.current) {
       return
     }
@@ -139,6 +139,10 @@ export function TriggerSpeechService() {
         requireRunning: true,
       },
     )
+  })
+
+  useOnTriggerStop(() => {
+    cancelSpeech()
   })
 
   useListen('speech.preview-requested', (message) => {

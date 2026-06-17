@@ -18,6 +18,7 @@ import {
 } from './runtime/TriggerRuntime'
 import { AlertCoordinationService } from './triggers/alerts/AlertCoordinationService'
 import { TriggerSpeechService } from './triggers/alerts/TriggerSpeechService'
+import { TriggerStopService } from './triggers/alerts/TriggerStopService'
 import { TriggerStoreProvider } from './triggers/model/TriggerStore'
 import { UserTriggerManagerProvider } from './triggers/model/UserTriggerManager'
 
@@ -32,6 +33,7 @@ export function App() {
         <WorkerBridge />
         <TriggerStoreProvider>
           <AlertCoordinationService />
+          <TriggerStopService />
           <UserTriggerManagerProvider>
             <NearbyCharactersProvider>
               <LocalCharactersProvider>

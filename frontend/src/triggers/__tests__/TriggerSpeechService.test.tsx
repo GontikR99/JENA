@@ -11,11 +11,15 @@ import {
 import {
   TriggerSpeechService,
 } from '../alerts/TriggerSpeechService'
-import type { TriggerMatchEvent } from '../alerts/useTriggerAlerts'
+import type {
+  TriggerMatchEvent,
+  TriggerStopEvent,
+} from '../alerts/useTriggerAlerts'
 
 const hookState = vi.hoisted(() => ({
   areTriggersRunning: true,
   listeners: new Map<string, (message: { payload: unknown }) => void>(),
+  stopCallback: null as ((event: TriggerStopEvent) => void) | null,
   triggerMatchCallback: null as ((event: TriggerMatchEvent) => void) | null,
 }))
 
@@ -34,6 +38,9 @@ vi.mock('../../runtime/TriggerRuntime', () => ({
 vi.mock('../alerts/useTriggerAlerts', () => ({
   useOnTriggerMatch: (callback: (event: TriggerMatchEvent) => void) => {
     hookState.triggerMatchCallback = callback
+  },
+  useOnTriggerStop: (callback: (event: TriggerStopEvent) => void) => {
+    hookState.stopCallback = callback
   },
 }))
 
@@ -59,6 +66,7 @@ describe('TriggerSpeechService', () => {
   beforeEach(() => {
     hookState.areTriggersRunning = true
     hookState.listeners.clear()
+    hookState.stopCallback = null
     hookState.triggerMatchCallback = null
     spokenUtterances.length = 0
     speechSynthesis.cancel.mockClear()
@@ -127,6 +135,21 @@ describe('TriggerSpeechService', () => {
     expect(spokenUtterances.map((utterance) => utterance.text)).toEqual(['first'])
   })
 
+  it('cancels current speech and clears queued speech when a stop request arrives', () => {
+    render(<TriggerSpeechService />)
+
+    fireTriggerMatch('first')
+    fireTriggerMatch('second')
+    fireTriggerStop()
+
+    expect(speechSynthesis.cancel).toHaveBeenCalledTimes(1)
+
+    spokenUtterances[0]?.onend?.()
+
+    expect(spokenUtterances.map((utterance) => utterance.text)).toEqual(['first'])
+  })
+
+
   it('ignores trigger matches without speech text', () => {
     render(<TriggerSpeechService />)
 
@@ -183,6 +206,22 @@ function fireSpeechPreview(text: string) {
   listener({
     payload: {
       text,
+    },
+  })
+}
+
+function fireTriggerStop() {
+  if (!hookState.stopCallback) {
+    throw new Error('Trigger stop hook was not registered.')
+  }
+
+  hookState.stopCallback({
+    alert: {
+      characterName: 'Mesozoic',
+      command: '{JENA:STOP}',
+      serverName: 'Bristlebane',
+      text: '{jena:stop}',
+      timestamp: '2026-06-16T00:00:01.000Z',
     },
   })
 }

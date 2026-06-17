@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type {
   TriggerAlertMatchedMessage,
   TriggerEarlyEnderMatchedMessage,
+  TriggerStopRequestedMessage,
 } from '../../shared/messages'
 import {
   createEmptyTrigger,
@@ -14,6 +15,7 @@ import {
 import {
   useOnTimerEarlyEnder,
   useOnTriggerMatch,
+  useOnTriggerStop,
 } from '../alerts/useTriggerAlerts'
 
 const hookState = vi.hoisted(() => ({
@@ -137,6 +139,21 @@ describe('useTriggerAlerts', () => {
       trigger: testTrigger,
     })
   })
+
+  it('always passes through stop requests', () => {
+    const callback = vi.fn()
+    const alert = createStopAlert()
+    hookState.areTriggersRunning = false
+    hookState.triggers = []
+
+    renderHook(() => useOnTriggerStop(callback))
+    emit('alert.stop-requested', alert)
+
+    expect(callback).toHaveBeenCalledTimes(1)
+    expect(callback).toHaveBeenCalledWith({
+      alert,
+    })
+  })
 })
 
 function emit(destination: string, payload: unknown) {
@@ -171,6 +188,19 @@ function createEarlyEnderAlert(
     text: 'end timer',
     timestamp: '2026-06-16T00:00:00.000Z',
     trigger: testTrigger,
+    ...overrides,
+  }
+}
+
+function createStopAlert(
+  overrides: Partial<TriggerStopRequestedMessage> = {},
+): TriggerStopRequestedMessage {
+  return {
+    characterName: 'Mesozoic',
+    command: '{JENA:STOP}',
+    serverName: 'Bristlebane',
+    text: '{jena:stop}',
+    timestamp: '2026-06-16T00:00:00.000Z',
     ...overrides,
   }
 }

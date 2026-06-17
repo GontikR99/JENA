@@ -72,6 +72,14 @@ export interface TriggerEarlyEnderMatchedMessage {
   trigger: JenaTrigger
 }
 
+export interface TriggerStopRequestedMessage {
+  characterName: string
+  command: '{JENA:STOP}' | '{GINA:STOP}'
+  serverName: string
+  text: string
+  timestamp: string
+}
+
 export interface TriggerStoreTriggersSeenMessage {
   triggers: JenaTrigger[]
 }
@@ -108,6 +116,7 @@ export interface NearbyCharacterPresenceMessage {
 
 export interface EndpointMessages {
   'alert.timer-early-ended': TriggerEarlyEnderMatchedMessage
+  'alert.stop-requested': TriggerStopRequestedMessage
   'alert.trigger-matched': TriggerAlertMatchedMessage
   'character-presence.characters': CharacterPresenceCharactersMessage
   'file-watcher.characters': FileWatcherCharactersMessage

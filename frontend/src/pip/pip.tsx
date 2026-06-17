@@ -5,6 +5,7 @@ import type {
 } from '../shared/triggers'
 import {
   useOnTimerEarlyEnder,
+  useOnTriggerStop,
   useOnTriggerMatch,
   type TimerEarlyEnderEvent,
   type TriggerMatchEvent,
@@ -47,6 +48,11 @@ export function Pip() {
       currentTexts.filter((text) => text.id !== textId),
     )
   }, [])
+
+  useOnTriggerStop(() => {
+    setTimers([])
+    setTexts([])
+  })
 
   const handleTimerMatch = useCallback((event: TriggerMatchEvent) => {
     const timer = event.trigger.timer

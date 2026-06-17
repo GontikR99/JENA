@@ -6,17 +6,22 @@ import type { JenaTrigger } from '../../shared/triggers'
 import type {
   TimerEarlyEnderEvent,
   TriggerMatchEvent,
+  TriggerStopEvent,
 } from '../../triggers/alerts/useTriggerAlerts'
 import { Pip } from '../pip'
 
 const hookState = vi.hoisted(() => ({
   earlyEnderListeners: [] as Array<(event: TimerEarlyEnderEvent) => void>,
+  stopListeners: [] as Array<(event: TriggerStopEvent) => void>,
   triggerMatchListeners: [] as Array<(event: TriggerMatchEvent) => void>,
 }))
 
 vi.mock('../../triggers/alerts/useTriggerAlerts', () => ({
   useOnTimerEarlyEnder: (callback: (event: TimerEarlyEnderEvent) => void) => {
     hookState.earlyEnderListeners.push(callback)
+  },
+  useOnTriggerStop: (callback: (event: TriggerStopEvent) => void) => {
+    hookState.stopListeners.push(callback)
   },
   useOnTriggerMatch: (callback: (event: TriggerMatchEvent) => void) => {
     hookState.triggerMatchListeners.push(callback)
@@ -32,6 +37,7 @@ describe('Pip', () => {
     animationFrames = new Map()
     nextFrameId = 1
     hookState.earlyEnderListeners = []
+    hookState.stopListeners = []
     hookState.triggerMatchListeners = []
     nowSpy = vi.spyOn(performance, 'now').mockReturnValue(0)
 
@@ -134,6 +140,28 @@ describe('Pip', () => {
     expect(screen.queryByText('Endable Timer')).not.toBeInTheDocument()
   })
 
+  it('clears timers and text when a stop request arrives', () => {
+    render(<Pip />)
+
+    act(() => {
+      emitTriggerMatch({
+        displayText: 'Stop visible text',
+        timer: createTimer({ startBehavior: 'restart' }),
+        timerName: 'Stop Timer',
+      })
+    })
+
+    expect(screen.getByText('Stop visible text')).toBeInTheDocument()
+    expect(screen.getByText('Stop Timer')).toBeInTheDocument()
+
+    act(() => {
+      emitTriggerStop()
+    })
+
+    expect(screen.queryByText('Stop visible text')).not.toBeInTheDocument()
+    expect(screen.queryByText('Stop Timer')).not.toBeInTheDocument()
+  })
+
   function runAnimationFrames(nowMs: number) {
     const callbacks = [...animationFrames.values()]
     animationFrames.clear()
@@ -193,6 +221,20 @@ function emitTimerEarlyEnder({ timerName }: { timerName?: string }) {
         trigger,
       },
       trigger,
+    })
+  })
+}
+
+function emitTriggerStop() {
+  hookState.stopListeners.forEach((listener) => {
+    listener({
+      alert: {
+        characterName: 'Mesozoic',
+        command: '{JENA:STOP}',
+        serverName: 'Bristlebane',
+        text: '{jena:stop}',
+        timestamp: '2026-06-17T12:00:02Z',
+      },
     })
   })
 }

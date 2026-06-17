@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 import type {
   TriggerAlertMatchedMessage,
   TriggerEarlyEnderMatchedMessage,
+  TriggerStopRequestedMessage,
 } from '../../shared/messages'
 import {
   isJenaTriggerEnabledForCharacter,
@@ -20,6 +21,10 @@ export interface TriggerMatchEvent {
 export interface TimerEarlyEnderEvent {
   alert: TriggerEarlyEnderMatchedMessage
   trigger: TriggerEarlyEnderMatchedMessage['trigger']
+}
+
+export interface TriggerStopEvent {
+  alert: TriggerStopRequestedMessage
 }
 
 export function useOnTriggerMatch(
@@ -76,6 +81,14 @@ export function useOnTimerEarlyEnder(
     callback({
       alert,
       trigger: alert.trigger,
+    })
+  })
+}
+
+export function useOnTriggerStop(callback: (event: TriggerStopEvent) => void) {
+  useListen('alert.stop-requested', (message) => {
+    callback({
+      alert: message.payload as TriggerStopRequestedMessage,
     })
   })
 }
