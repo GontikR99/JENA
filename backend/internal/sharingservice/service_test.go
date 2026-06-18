@@ -10,6 +10,7 @@ import (
 	"jena/backend/internal/config"
 	"jena/backend/internal/database"
 	"jena/backend/internal/eventbus"
+	"jena/backend/internal/logging"
 	"jena/backend/internal/triggerstore"
 	"jena/backend/internal/usersettings"
 	"jena/backend/model"
@@ -157,7 +158,7 @@ func newTestService(t *testing.T, identity Identity) (*Service, *triggerstore.Se
 	if err != nil {
 		t.Fatalf("usersettings.NewStore returned error: %v", err)
 	}
-	triggerStore, err := triggerstore.New(context.Background(), bus, db)
+	triggerStore, err := triggerstore.New(context.Background(), bus, db, logging.NewNop())
 	if err != nil {
 		t.Fatalf("triggerstore.New returned error: %v", err)
 	}

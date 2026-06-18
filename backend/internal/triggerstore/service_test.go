@@ -11,6 +11,7 @@ import (
 	"jena/backend/internal/config"
 	"jena/backend/internal/database"
 	"jena/backend/internal/eventbus"
+	"jena/backend/internal/logging"
 	"jena/backend/model"
 )
 
@@ -18,7 +19,7 @@ func TestServiceStoresAndFetchesTriggersByID(t *testing.T) {
 	ctx := context.Background()
 	bus := eventbus.New()
 	db := newTestDatabase(t)
-	service, err := New(ctx, bus, db)
+	service, err := New(ctx, bus, db, logging.NewNop())
 	if err != nil {
 		t.Fatalf("New returned error: %v", err)
 	}
@@ -51,7 +52,7 @@ func TestServiceFetchesTriggersPartiallyByLimit(t *testing.T) {
 	ctx := context.Background()
 	bus := eventbus.New()
 	db := newTestDatabase(t)
-	service, err := New(ctx, bus, db)
+	service, err := New(ctx, bus, db, logging.NewNop())
 	if err != nil {
 		t.Fatalf("New returned error: %v", err)
 	}
@@ -84,7 +85,7 @@ func TestServiceFetchTriggersRPCReturnsAtMostOneHundredTriggers(t *testing.T) {
 	ctx := context.Background()
 	bus := eventbus.New()
 	db := newTestDatabase(t)
-	service, err := New(ctx, bus, db)
+	service, err := New(ctx, bus, db, logging.NewNop())
 	if err != nil {
 		t.Fatalf("New returned error: %v", err)
 	}
@@ -121,7 +122,7 @@ func TestServiceChecksMissingTriggerIDs(t *testing.T) {
 	ctx := context.Background()
 	bus := eventbus.New()
 	db := newTestDatabase(t)
-	service, err := New(ctx, bus, db)
+	service, err := New(ctx, bus, db, logging.NewNop())
 	if err != nil {
 		t.Fatalf("New returned error: %v", err)
 	}
@@ -158,7 +159,7 @@ func TestServiceRejectsTriggerWithMismatchedID(t *testing.T) {
 	ctx := context.Background()
 	bus := eventbus.New()
 	db := newTestDatabase(t)
-	service, err := New(ctx, bus, db)
+	service, err := New(ctx, bus, db, logging.NewNop())
 	if err != nil {
 		t.Fatalf("New returned error: %v", err)
 	}
@@ -186,7 +187,7 @@ func TestServiceStoresImportedTriggerWithAngleBrackets(t *testing.T) {
 	ctx := context.Background()
 	bus := eventbus.New()
 	db := newTestDatabase(t)
-	service, err := New(ctx, bus, db)
+	service, err := New(ctx, bus, db, logging.NewNop())
 	if err != nil {
 		t.Fatalf("New returned error: %v", err)
 	}
@@ -223,7 +224,7 @@ func TestServiceReturnsErrorForMissingTrigger(t *testing.T) {
 	ctx := context.Background()
 	bus := eventbus.New()
 	db := newTestDatabase(t)
-	service, err := New(ctx, bus, db)
+	service, err := New(ctx, bus, db, logging.NewNop())
 	if err != nil {
 		t.Fatalf("New returned error: %v", err)
 	}

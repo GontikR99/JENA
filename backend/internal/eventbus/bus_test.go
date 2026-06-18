@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"testing"
+
+	"jena/backend/internal/logging"
 )
 
 func TestBusRoutesByDestinationPattern(t *testing.T) {
@@ -95,3 +97,48 @@ func TestRegisterRPCPassesAuthTokenToHandler(t *testing.T) {
 		t.Fatalf("handler auth token %q, want token-1", handlerAuthToken)
 	}
 }
+
+func TestRegisterRPCLogsHandledCall(t *testing.T) {
+	bus := New()
+	logger := &capturingLogger{}
+	bus.SetLogger(logger)
+	source := "ws.127_0_0_1_1.test"
+
+	unlistenResponse := bus.Listen(source, func(context.Context, Envelope) {})
+	defer unlistenResponse()
+
+	unregister := bus.RegisterRPC("service", map[string]RPCHandler{
+		"ping": func(_ context.Context, _ RPCMetadata, _ json.RawMessage) (any, error) {
+			return map[string]string{"pong": "ok"}, nil
+		},
+	})
+	defer unregister()
+
+	payload := json.RawMessage(`{"method":"ping","params":{}}`)
+	if err := bus.Send(context.Background(), Envelope{
+		CorrelationID: "rpc-1",
+		Destination:   "service",
+		Payload:       payload,
+		Source:        &source,
+	}); err != nil {
+		t.Fatalf("Send returned error: %v", err)
+	}
+
+	if logger.debugMessage != "backend rpc handled" {
+		t.Fatalf("debug message %q, want backend rpc handled", logger.debugMessage)
+	}
+}
+
+type capturingLogger struct {
+	debugMessage string
+}
+
+func (logger *capturingLogger) Trace(context.Context, string, ...logging.Field) {}
+func (logger *capturingLogger) Debug(_ context.Context, message string, _ ...logging.Field) {
+	logger.debugMessage = message
+}
+func (logger *capturingLogger) Info(context.Context, string, ...logging.Field)  {}
+func (logger *capturingLogger) Warn(context.Context, string, ...logging.Field)  {}
+func (logger *capturingLogger) Error(context.Context, string, ...logging.Field) {}
+func (logger *capturingLogger) Fatal(context.Context, string, ...logging.Field) {}
+func (logger *capturingLogger) Close() error                                    { return nil }

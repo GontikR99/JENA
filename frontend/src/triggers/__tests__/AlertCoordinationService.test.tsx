@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import { render } from '@testing-library/react'
+import { act } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { RegexMatchFoundMessage } from '../../shared/messages'
 import {
@@ -40,13 +41,14 @@ describe('AlertCoordinationService', () => {
     hookState.send.mockReset()
   })
 
-  it('emits substituted clipboard text on trigger matches', () => {
+  it('emits substituted clipboard text on trigger matches', async () => {
     const trigger = createTrigger()
 
     render(<AlertCoordinationService />)
     emit('trigger-store.triggers-seen', {
       triggers: [trigger],
     })
+    await flushPatternRegistration()
     emit('matcher.match-found', createMatch())
 
     expect(hookState.send).toHaveBeenCalledWith(
@@ -60,6 +62,32 @@ describe('AlertCoordinationService', () => {
       }),
     )
   })
+
+  it('batches pattern registration for seen triggers', async () => {
+    const firstTrigger = createTrigger()
+    const secondTrigger = createTrigger({
+      matchText: '^Boss begins casting (?<spell>.+)$',
+      name: 'Second Trigger',
+    })
+
+    render(<AlertCoordinationService />)
+    emit('trigger-store.triggers-seen', {
+      triggers: [firstTrigger, secondTrigger],
+    })
+    await flushPatternRegistration()
+
+    expect(hookState.rpc).toHaveBeenCalledTimes(1)
+    expect(hookState.rpc).toHaveBeenCalledWith(
+      'worker.matcher-service',
+      'add-patterns',
+      {
+        patterns: [
+          expect.objectContaining({ pattern: expect.any(String) }),
+          expect.objectContaining({ pattern: expect.any(String) }),
+        ],
+      },
+    )
+  })
 })
 
 function emit(destination: string, payload: unknown) {
@@ -71,7 +99,16 @@ function emit(destination: string, payload: unknown) {
   listener({ payload })
 }
 
-function createTrigger(): JenaTrigger {
+async function flushPatternRegistration() {
+  await act(async () => {
+    await new Promise((resolve) => globalThis.setTimeout(resolve, 0))
+  })
+}
+
+function createTrigger({
+  matchText = '^Boss casts (?<spell>.+) on {C}$',
+  name = 'Clipboard Trigger',
+} = {}): JenaTrigger {
   return withCanonicalTriggerId({
     ...createEmptyTrigger(),
     actions: {
@@ -91,9 +128,9 @@ function createTrigger(): JenaTrigger {
     },
     match: {
       isRegex: true,
-      text: '^Boss casts (?<spell>.+) on {C}$',
+      text: matchText,
     },
-    name: 'Clipboard Trigger',
+    name,
     timer: {
       durationMs: 10_000,
       earlyEnders: [],

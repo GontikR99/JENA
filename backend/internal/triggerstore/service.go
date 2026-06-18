@@ -6,9 +6,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"jena/backend/internal/database"
 	"jena/backend/internal/eventbus"
+	"jena/backend/internal/logging"
 	"jena/backend/model"
 )
 
@@ -17,6 +19,7 @@ const fetchTriggerResponseLimit = 100
 
 type Service struct {
 	db         *database.Database
+	logger     logging.Logger
 	unregister func()
 }
 
@@ -45,9 +48,14 @@ type FetchTriggersResponse struct {
 	Triggers []model.Trigger `json:"triggers"`
 }
 
-func New(ctx context.Context, bus *eventbus.Bus, db *database.Database) (*Service, error) {
+func New(ctx context.Context, bus *eventbus.Bus, db *database.Database, logger logging.Logger) (*Service, error) {
+	if logger == nil {
+		logger = logging.NewNop()
+	}
+
 	service := &Service{
-		db: db,
+		db:     db,
+		logger: logger,
 	}
 
 	if err := service.migrate(ctx); err != nil {
@@ -74,11 +82,20 @@ func (service *Service) migrate(ctx context.Context) error {
 	_, err := service.db.ExecContext(ctx, `
 		CREATE TABLE IF NOT EXISTS triggers (
 			id TEXT PRIMARY KEY NOT NULL,
+			name TEXT NOT NULL,
+			path_key TEXT NOT NULL,
 			json TEXT NOT NULL
 		)
 	`)
 	if err != nil {
 		return fmt.Errorf("migrate trigger store: %w", err)
+	}
+
+	if _, err := service.db.ExecContext(ctx, `
+		CREATE INDEX IF NOT EXISTS triggers_path_name_id
+		ON triggers(path_key, name, id)
+	`); err != nil {
+		return fmt.Errorf("index trigger path and name: %w", err)
 	}
 
 	return nil
@@ -104,14 +121,24 @@ func (service *Service) StoreTrigger(ctx context.Context, trigger model.Trigger)
 		return model.Trigger{}, fmt.Errorf("marshal trigger: %w", err)
 	}
 
+	pathKey, err := PathKey(canonicalTrigger.GroupPath)
+	if err != nil {
+		return model.Trigger{}, err
+	}
+
 	if _, err := service.db.ExecContext(
 		ctx,
 		`
-			INSERT INTO triggers (id, json)
-			VALUES (?, ?)
-			ON CONFLICT(id) DO UPDATE SET json = excluded.json
+			INSERT INTO triggers (id, name, path_key, json)
+			VALUES (?, ?, ?, ?)
+			ON CONFLICT(id) DO UPDATE SET
+				name = excluded.name,
+				path_key = excluded.path_key,
+				json = excluded.json
 		`,
 		string(canonicalTrigger.ID),
+		canonicalTrigger.Name,
+		pathKey,
 		string(encodedTrigger),
 	); err != nil {
 		return model.Trigger{}, fmt.Errorf("insert trigger: %w", err)
@@ -121,6 +148,7 @@ func (service *Service) StoreTrigger(ctx context.Context, trigger model.Trigger)
 }
 
 func (service *Service) StoreTriggers(ctx context.Context, triggers []model.Trigger) ([]model.Trigger, error) {
+	startedAt := time.Now()
 	storedTriggers := make([]model.Trigger, 0, len(triggers))
 
 	for _, trigger := range triggers {
@@ -131,6 +159,13 @@ func (service *Service) StoreTriggers(ctx context.Context, triggers []model.Trig
 
 		storedTriggers = append(storedTriggers, storedTrigger)
 	}
+
+	service.logger.Debug(
+		ctx,
+		"trigger store batch stored",
+		logging.Int("triggerCount", len(triggers)),
+		logging.Int64("durationMs", time.Since(startedAt).Milliseconds()),
+	)
 
 	return storedTriggers, nil
 }
@@ -278,6 +313,15 @@ func (service *Service) storeTriggers(ctx context.Context, _ eventbus.RPCMetadat
 	return StoreTriggersResponse{
 		Triggers: storedTriggers,
 	}, nil
+}
+
+func PathKey(groupPath []string) (string, error) {
+	encodedPath, err := json.Marshal(groupPath)
+	if err != nil {
+		return "", fmt.Errorf("marshal trigger group path key: %w", err)
+	}
+
+	return string(encodedPath), nil
 }
 
 func (service *Service) checkTriggers(ctx context.Context, _ eventbus.RPCMetadata, params json.RawMessage) (any, error) {

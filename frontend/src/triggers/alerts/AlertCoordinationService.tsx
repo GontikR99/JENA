@@ -1,4 +1,4 @@
-import { useCallback, useRef } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import type {
   RegexMatchFoundMessage,
   TriggerAlertMatchedMessage,
@@ -32,8 +32,41 @@ export function AlertCoordinationService() {
   const sessionIdRef = useRef(createAlertPatternSessionId())
   const indexedTriggerIdsRef = useRef(new Set<string>())
   const patternIndexRef = useRef(new Map<string, AlertPatternBinding[]>())
+  const pendingPatternsRef = useRef(new Set<string>())
+  const patternFlushTimerRef =
+    useRef<ReturnType<typeof globalThis.setTimeout> | null>(null)
   const registeredPatternsRef = useRef(new Set<string>())
   const triggerCountersRef = useRef(new Map<string, number>())
+
+  const flushPendingPatterns = useCallback(() => {
+    patternFlushTimerRef.current = null
+    const patterns = [...pendingPatternsRef.current]
+    pendingPatternsRef.current.clear()
+
+    if (patterns.length === 0) {
+      return
+    }
+
+    void call('worker.matcher-service', 'add-patterns', {
+      patterns: patterns.map((pattern) => ({ pattern })),
+    }).catch((error: unknown) => {
+      console.warn('[AlertCoordinationService] pattern registration failed', {
+        error,
+        patternCount: patterns.length,
+      })
+    })
+  }, [call])
+
+  const schedulePatternFlush = useCallback(() => {
+    if (patternFlushTimerRef.current !== null) {
+      return
+    }
+
+    patternFlushTimerRef.current = globalThis.setTimeout(
+      flushPendingPatterns,
+      0,
+    )
+  }, [flushPendingPatterns])
 
   const registerTrigger = useCallback(
     (trigger: JenaTrigger) => {
@@ -43,7 +76,7 @@ export function AlertCoordinationService() {
 
       indexedTriggerIdsRef.current.add(trigger.id)
       const bindings = getTriggerPatternBindings(trigger, sessionIdRef.current)
-      const novelPatterns: string[] = []
+      let hasNovelPattern = false
 
       bindings.forEach((binding) => {
         const pattern = binding.compiledPattern.pattern
@@ -56,23 +89,15 @@ export function AlertCoordinationService() {
         }
 
         registeredPatternsRef.current.add(pattern)
-        novelPatterns.push(pattern)
+        pendingPatternsRef.current.add(pattern)
+        hasNovelPattern = true
       })
 
-      if (novelPatterns.length === 0) {
-        return
+      if (hasNovelPattern) {
+        schedulePatternFlush()
       }
-
-      void call('worker.matcher-service', 'add-patterns', {
-        patterns: novelPatterns.map((pattern) => ({ pattern })),
-      }).catch((error: unknown) => {
-        console.warn('[AlertCoordinationService] pattern registration failed', {
-          error,
-          trigger,
-        })
-      })
     },
-    [call],
+    [schedulePatternFlush],
   )
 
   const handleMatchFound = useCallback(
@@ -131,6 +156,15 @@ export function AlertCoordinationService() {
   useListen('matcher.match-found', (message) => {
     handleMatchFound(message.payload as RegexMatchFoundMessage)
   })
+
+  useEffect(() => {
+    return () => {
+      if (patternFlushTimerRef.current !== null) {
+        globalThis.clearTimeout(patternFlushTimerRef.current)
+        patternFlushTimerRef.current = null
+      }
+    }
+  }, [])
 
   return null
 }

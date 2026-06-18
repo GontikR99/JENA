@@ -1207,7 +1207,7 @@ export function UserTriggersEditor({
               disabled={effectiveMenuSelection.length !== 1}
               onClick={() => handleEditTrigger(effectiveMenuSelection[0])}
             >
-              edit
+              Edit...
             </MenuItem>
             <MenuItem
               disabled={effectiveMenuSelection.length !== 1}
@@ -1219,7 +1219,7 @@ export function UserTriggersEditor({
                 )
               }}
             >
-              rename
+              Rename...
             </MenuItem>
             <MenuItem
               disabled={effectiveMenuSelection.length === 0}
@@ -1228,8 +1228,8 @@ export function UserTriggersEditor({
               }}
             >
               {effectiveMenuSelection.length > 1
-                ? 'export selected triggers'
-                : 'export trigger'}
+                ? 'Export selected triggers...'
+                : 'Export trigger...'}
             </MenuItem>
             <MenuItem
               disabled={effectiveMenuSelection.length === 0}
@@ -1238,8 +1238,8 @@ export function UserTriggersEditor({
               }}
             >
               {effectiveMenuSelection.length > 1
-                ? 'share selected triggers'
-                : 'share trigger'}
+                ? 'Share selected triggers'
+                : 'Share trigger'}
             </MenuItem>
           </>
         ) : null}
@@ -1252,13 +1252,13 @@ export function UserTriggersEditor({
                 })
               }}
             >
-              rename group
+              Rename group...
             </MenuItem>
             <MenuItem onClick={() => handleAddGroup(menuGroup.path)}>
-              add subgroup
+              Add subgroup...
             </MenuItem>
             <MenuItem onClick={() => handleAddTrigger(menuGroup.path)}>
-              add trigger
+              Add trigger...
             </MenuItem>
             <MenuItem
               disabled={menuGroupExportCount === 0}
@@ -1266,7 +1266,7 @@ export function UserTriggersEditor({
                 void handleExportGroup(menuGroup)
               }}
             >
-              export this group
+              Export this group...
             </MenuItem>
             <MenuItem
               disabled={menuGroupExportCount === 0}
@@ -1274,7 +1274,7 @@ export function UserTriggersEditor({
                 void handleShareTriggerIds(getTriggerIdsUnderPath(triggers, menuGroup.path))
               }}
             >
-              share this group
+              Share this group
             </MenuItem>
             {selectedGroupPath &&
             !areStringArraysEqual(selectedGroupPath, menuGroup.path) ? (
@@ -1285,7 +1285,7 @@ export function UserTriggersEditor({
                     void handleExportSelectedGroup(selectedGroupPath)
                   }}
                 >
-                  export selected group
+                  Export selected group...
                 </MenuItem>
                 <MenuItem
                   disabled={selectedGroupExportCount === 0}
@@ -1295,7 +1295,7 @@ export function UserTriggersEditor({
                     )
                   }}
                 >
-                  share selected group
+                  Share selected group
                 </MenuItem>
               </>
             ) : null}
@@ -1314,15 +1314,15 @@ export function UserTriggersEditor({
               }}
             >
               {selectedGroupPath
-                ? 'move selected group here'
-                : 'move selected triggers here'}
+                ? 'Move selected group here...'
+                : 'Move selected triggers here...'}
             </MenuItem>
           </>
         ) : null}
         {!menuGroup && !menuTrigger ? (
           <>
-            <MenuItem onClick={handleAddRootGroup}>add group</MenuItem>
-            <MenuItem onClick={handleImportClick}>import GINA</MenuItem>
+            <MenuItem onClick={handleAddRootGroup}>Add group...</MenuItem>
+            <MenuItem onClick={handleImportClick}>Import GINA...</MenuItem>
             {selection.type === 'triggers' ? (
               <>
                 <MenuItem
@@ -1331,7 +1331,7 @@ export function UserTriggersEditor({
                     void handleExportSelectedTriggers([...selection.ids])
                   }}
                 >
-                  export selected triggers
+                  Export selected triggers...
                 </MenuItem>
                 <MenuItem
                   disabled={selection.ids.size === 0}
@@ -1339,7 +1339,7 @@ export function UserTriggersEditor({
                     void handleShareTriggerIds([...selection.ids])
                   }}
                 >
-                  share selected triggers
+                  Share selected triggers
                 </MenuItem>
               </>
             ) : null}
@@ -1351,7 +1351,7 @@ export function UserTriggersEditor({
                     void handleExportSelectedGroup(selectedGroupPath)
                   }}
                 >
-                  export selected group
+                  Export selected group...
                 </MenuItem>
                 <MenuItem
                   disabled={selectedGroupExportCount === 0}
@@ -1361,7 +1361,7 @@ export function UserTriggersEditor({
                     )
                   }}
                 >
-                  share selected group
+                  Share selected group
                 </MenuItem>
               </>
             ) : null}
@@ -1374,7 +1374,7 @@ export function UserTriggersEditor({
               void handleDeleteGroup(menuGroup)
             }}
           >
-            delete
+            Delete...
           </MenuItem>
         ) : (
           <MenuItem
@@ -1383,7 +1383,7 @@ export function UserTriggersEditor({
               void handleDeleteTriggerIds(effectiveMenuSelection)
             }}
           >
-            delete
+            Delete...
           </MenuItem>
         )}
       </ControlledMenu>

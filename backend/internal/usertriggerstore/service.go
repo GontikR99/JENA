@@ -6,13 +6,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"reflect"
 	"strings"
 	"time"
 
 	"jena/backend/internal/database"
 	"jena/backend/internal/eventbus"
 	"jena/backend/internal/identityservice"
+	"jena/backend/internal/logging"
 	"jena/backend/internal/triggerstore"
 	"jena/backend/model"
 )
@@ -23,6 +23,7 @@ type Service struct {
 	bus          *eventbus.Bus
 	db           *database.Database
 	identity     *identityservice.Service
+	logger       logging.Logger
 	triggerStore *triggerstore.Service
 	unregister   func()
 }
@@ -67,11 +68,17 @@ func New(
 	db *database.Database,
 	identity *identityservice.Service,
 	triggerStore *triggerstore.Service,
+	logger logging.Logger,
 ) (*Service, error) {
+	if logger == nil {
+		logger = logging.NewNop()
+	}
+
 	service := &Service{
 		bus:          bus,
 		db:           db,
 		identity:     identity,
+		logger:       logger,
 		triggerStore: triggerStore,
 	}
 
@@ -268,6 +275,7 @@ func (service *Service) broadcastUpdate(ctx context.Context, userID string, upda
 }
 
 func (service *Service) applyUpsert(ctx context.Context, userID string, request UpsertTriggersRequest) (model.UserTriggerUpdate, error) {
+	startedAt := time.Now()
 	updatedAtMs := time.Now().UnixMilli()
 	canonicalUpserts := make([]model.TriggerUpsert, 0, len(request.Triggers))
 	upsertedTriggers := make([]model.Trigger, 0, len(request.Triggers))
@@ -282,6 +290,7 @@ func (service *Service) applyUpsert(ctx context.Context, userID string, request 
 		}
 	}
 
+	preparationStartedAt := time.Now()
 	for _, upsert := range request.Triggers {
 		canonicalTrigger, err := service.triggerStore.StoreTrigger(ctx, upsert.Trigger)
 		if err != nil {
@@ -311,6 +320,14 @@ func (service *Service) applyUpsert(ctx context.Context, userID string, request 
 		upsertedTriggers = append(upsertedTriggers, canonicalTrigger)
 		delete(deleteIDs, canonicalTrigger.ID)
 	}
+	service.logger.Debug(
+		ctx,
+		"user trigger upsert preparation completed",
+		logging.Int("requestTriggerCount", len(request.Triggers)),
+		logging.Int("preparedTriggerCount", len(canonicalUpserts)),
+		logging.Int("deleteTriggerCount", len(deleteIDs)),
+		logging.Int64("durationMs", time.Since(preparationStartedAt).Milliseconds()),
+	)
 	if len(canonicalUpserts) == 1 {
 		copySourcesByTriggerID[canonicalUpserts[0].Trigger.ID] = append(
 			copySourcesByTriggerID[canonicalUpserts[0].Trigger.ID],
@@ -324,46 +341,111 @@ func (service *Service) applyUpsert(ctx context.Context, userID string, request 
 	}
 	defer tx.Rollback()
 
+	transactionStartedAt := time.Now()
+	tombstoneCount := 0
+	var tombstoneDuration time.Duration
 	for triggerID := range deleteIDs {
+		operationStartedAt := time.Now()
 		if err := tombstoneTrigger(ctx, tx, userID, triggerID, updatedAtMs); err != nil {
 			return model.UserTriggerUpdate{}, err
 		}
+		tombstoneDuration += time.Since(operationStartedAt)
+		tombstoneCount += 1
 	}
 
+	userTriggerUpsertCount := 0
+	copiedEnabledForCount := 0
+	copiedFlagCount := 0
+	enabledForCount := 0
+	var userTriggerUpsertDuration time.Duration
+	var copiedEnabledForDuration time.Duration
+	var copiedFlagDuration time.Duration
+	var enabledForDuration time.Duration
 	for _, upsert := range canonicalUpserts {
+		operationStartedAt := time.Now()
 		if err := upsertUserTrigger(ctx, tx, userID, upsert.Trigger.ID, updatedAtMs); err != nil {
 			return model.UserTriggerUpdate{}, err
 		}
+		userTriggerUpsertDuration += time.Since(operationStartedAt)
+		userTriggerUpsertCount += 1
 
 		for _, deleteID := range copySourcesByTriggerID[upsert.Trigger.ID] {
+			operationStartedAt := time.Now()
 			if err := copyEnabledFor(ctx, tx, userID, deleteID, upsert.Trigger.ID, updatedAtMs); err != nil {
 				return model.UserTriggerUpdate{}, err
 			}
+			copiedEnabledForDuration += time.Since(operationStartedAt)
+			copiedEnabledForCount += 1
 		}
+		operationStartedAt = time.Now()
 		if err := copyTriggerFlags(ctx, tx, userID, copySourcesByTriggerID[upsert.Trigger.ID], upsert.Trigger.ID, updatedAtMs); err != nil {
 			return model.UserTriggerUpdate{}, err
 		}
+		copiedFlagDuration += time.Since(operationStartedAt)
+		if len(copySourcesByTriggerID[upsert.Trigger.ID]) > 0 {
+			copiedFlagCount += 1
+		}
 
 		for _, enabledFor := range upsert.EnabledFor {
+			operationStartedAt := time.Now()
 			if err := setEnabledFor(ctx, tx, userID, upsert.Trigger.ID, enabledFor, true, updatedAtMs); err != nil {
 				return model.UserTriggerUpdate{}, err
 			}
+			enabledForDuration += time.Since(operationStartedAt)
+			enabledForCount += 1
 		}
 	}
 
+	revisionStartedAt := time.Now()
 	revision, err := bumpRevision(ctx, tx, userID, updatedAtMs)
 	if err != nil {
 		return model.UserTriggerUpdate{}, err
 	}
+	revisionDuration := time.Since(revisionStartedAt)
 
+	commitStartedAt := time.Now()
 	if err := tx.Commit(); err != nil {
 		return model.UserTriggerUpdate{}, fmt.Errorf("commit user trigger upsert: %w", err)
 	}
+	commitDuration := time.Since(commitStartedAt)
+	service.logger.Debug(
+		ctx,
+		"user trigger upsert transaction completed",
+		logging.Int("triggerCount", len(canonicalUpserts)),
+		logging.Int("tombstoneCount", tombstoneCount),
+		logging.Int("userTriggerUpsertCount", userTriggerUpsertCount),
+		logging.Int("copiedEnabledForCount", copiedEnabledForCount),
+		logging.Int("copiedFlagCount", copiedFlagCount),
+		logging.Int("enabledForCount", enabledForCount),
+		logging.Int64("tombstoneDurationMs", tombstoneDuration.Milliseconds()),
+		logging.Int64("userTriggerUpsertDurationMs", userTriggerUpsertDuration.Milliseconds()),
+		logging.Int64("copiedEnabledForDurationMs", copiedEnabledForDuration.Milliseconds()),
+		logging.Int64("copiedFlagDurationMs", copiedFlagDuration.Milliseconds()),
+		logging.Int64("enabledForDurationMs", enabledForDuration.Milliseconds()),
+		logging.Int64("revisionDurationMs", revisionDuration.Milliseconds()),
+		logging.Int64("commitDurationMs", commitDuration.Milliseconds()),
+		logging.Int64("durationMs", time.Since(transactionStartedAt).Milliseconds()),
+	)
 
+	fetchStartedAt := time.Now()
 	records, err := service.fetchRecordsForIDs(ctx, userID, getTriggerIDs(upsertedTriggers))
 	if err != nil {
 		return model.UserTriggerUpdate{}, err
 	}
+	service.logger.Debug(
+		ctx,
+		"user trigger upsert records fetched",
+		logging.Int("recordCount", len(records)),
+		logging.Int64("durationMs", time.Since(fetchStartedAt).Milliseconds()),
+	)
+	service.logger.Debug(
+		ctx,
+		"user trigger upsert completed",
+		logging.Int("requestTriggerCount", len(request.Triggers)),
+		logging.Int("upsertedTriggerCount", len(upsertedTriggers)),
+		logging.Int("deletedTriggerCount", len(deleteIDs)),
+		logging.Int64("durationMs", time.Since(startedAt).Milliseconds()),
+	)
 
 	return model.UserTriggerUpdate{
 		DeletedTriggerIDs: mapKeys(deleteIDs),
@@ -629,29 +711,45 @@ func (service *Service) fetchTriggersForIDs(ctx context.Context, triggerIDs []mo
 }
 
 func (service *Service) findPathNameMatches(ctx context.Context, userID string, trigger model.Trigger) ([]model.TriggerID, error) {
-	state, err := service.fetchState(ctx, userID)
+	pathKey, err := triggerstore.PathKey(trigger.GroupPath)
 	if err != nil {
 		return nil, err
 	}
 
-	triggerIDs := make([]model.TriggerID, 0, len(state.Records))
-	for _, record := range state.Records {
-		triggerIDs = append(triggerIDs, record.TriggerID)
-	}
-
-	candidates, err := service.triggerStore.GetTriggers(ctx, triggerIDs)
+	rows, err := service.db.QueryContext(
+		ctx,
+		`
+			SELECT ut.trigger_id
+			FROM triggers t
+			CROSS JOIN user_triggers ut
+			WHERE t.path_key = ?
+				AND t.name = ?
+				AND t.id <> ?
+				AND ut.user_id = ?
+				AND ut.deleted = 0
+				AND ut.trigger_id = t.id
+			ORDER BY ut.trigger_id
+		`,
+		pathKey,
+		trigger.Name,
+		string(trigger.ID),
+		userID,
+	)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("find trigger path/name matches: %w", err)
 	}
+	defer rows.Close()
 
 	matches := []model.TriggerID{}
-	for _, candidate := range candidates {
-		if candidate.ID == trigger.ID {
-			continue
+	for rows.Next() {
+		var triggerID string
+		if err := rows.Scan(&triggerID); err != nil {
+			return nil, fmt.Errorf("scan trigger path/name match: %w", err)
 		}
-		if candidate.Name == trigger.Name && reflect.DeepEqual(candidate.GroupPath, trigger.GroupPath) {
-			matches = append(matches, candidate.ID)
-		}
+		matches = append(matches, model.TriggerID(triggerID))
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate trigger path/name matches: %w", err)
 	}
 
 	return matches, nil

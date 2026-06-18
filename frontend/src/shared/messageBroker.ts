@@ -41,7 +41,6 @@ export type TypedRpcHandlerMap<TEndpoint extends keyof RpcEndpoints> = {
 }
 
 const defaultRpcTimeoutMs = 30_000
-
 export class MessageBus {
   private readonly listeners = new Set<ListenerRegistration>()
 
@@ -184,12 +183,10 @@ export class MessageBroker {
       const handler = methods[message.payload.method]
 
       if (!handler) {
-        this.replyWithError(
-          message,
-          new Error(
-            `RPC method ${message.payload.method} is not registered on ${endpoint}.`,
-          ),
+        const error = new Error(
+          `RPC method ${message.payload.method} is not registered on ${endpoint}.`,
         )
+        this.replyWithError(message, error)
         return
       }
 

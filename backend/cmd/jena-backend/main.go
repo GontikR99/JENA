@@ -62,6 +62,7 @@ func run(args []string) error {
 	app.Install(container, db)
 
 	bus := eventbus.New()
+	bus.SetLogger(installedLogger)
 	app.Install(container, bus)
 
 	server := httpserver.New(config, installedLogger)
@@ -97,7 +98,7 @@ func run(args []string) error {
 	worldwidePresenceService := worldwidepresenceservice.New(bus, installedLogger)
 	app.Install(container, worldwidePresenceService)
 
-	triggerStore, err := triggerstore.New(context.Background(), bus, db)
+	triggerStore, err := triggerstore.New(context.Background(), bus, db, installedLogger)
 	if err != nil {
 		return err
 	}
@@ -111,7 +112,7 @@ func run(args []string) error {
 	defer sharingService.Dispose()
 	app.Install(container, sharingService)
 
-	userTriggerStore, err := usertriggerstore.New(context.Background(), bus, db, identityService, triggerStore)
+	userTriggerStore, err := usertriggerstore.New(context.Background(), bus, db, identityService, triggerStore, installedLogger)
 	if err != nil {
 		return err
 	}

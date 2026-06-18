@@ -8,6 +8,9 @@ import (
 	"fmt"
 	"path"
 	"sync"
+	"time"
+
+	"jena/backend/internal/logging"
 )
 
 type Envelope struct {
@@ -45,6 +48,7 @@ type RPCHandler func(ctx context.Context, metadata RPCMetadata, params json.RawM
 
 type Bus struct {
 	mu             sync.RWMutex
+	logger         logging.Logger
 	nextListenerID uint64
 	listeners      map[uint64]listenerRegistration
 }
@@ -56,8 +60,19 @@ type listenerRegistration struct {
 
 func New() *Bus {
 	return &Bus{
+		logger:    logging.NewNop(),
 		listeners: make(map[uint64]listenerRegistration),
 	}
+}
+
+func (bus *Bus) SetLogger(logger logging.Logger) {
+	bus.mu.Lock()
+	defer bus.mu.Unlock()
+
+	if logger == nil {
+		logger = logging.NewNop()
+	}
+	bus.logger = logger
 }
 
 func (bus *Bus) Listen(pattern string, listener Listener) func() {
@@ -106,21 +121,25 @@ func (bus *Bus) RegisterRPC(endpoint string, handlers map[string]RPCHandler) fun
 			return
 		}
 
+		startedAt := time.Now()
 		var request RPCRequestPayload
 		if err := json.Unmarshal(envelope.Payload, &request); err != nil {
 			bus.sendRPCError(ctx, endpoint, *envelope.Source, envelope.CorrelationID, err)
+			bus.logRPC(ctx, endpoint, envelope, "", false, startedAt, err)
 			return
 		}
 
 		handler, ok := handlers[request.Method]
 		if !ok {
+			err := fmt.Errorf("unknown RPC method %q", request.Method)
 			bus.sendRPCError(
 				ctx,
 				endpoint,
 				*envelope.Source,
 				envelope.CorrelationID,
-				fmt.Errorf("unknown RPC method %q", request.Method),
+				err,
 			)
+			bus.logRPC(ctx, endpoint, envelope, request.Method, false, startedAt, err)
 			return
 		}
 
@@ -131,6 +150,7 @@ func (bus *Bus) RegisterRPC(endpoint string, handlers map[string]RPCHandler) fun
 		}, request.Params)
 		if err != nil {
 			bus.sendRPCError(ctx, endpoint, *envelope.Source, envelope.CorrelationID, err)
+			bus.logRPC(ctx, endpoint, envelope, request.Method, false, startedAt, err)
 			return
 		}
 
@@ -138,7 +158,42 @@ func (bus *Bus) RegisterRPC(endpoint string, handlers map[string]RPCHandler) fun
 			OK:     true,
 			Result: result,
 		})
+		bus.logRPC(ctx, endpoint, envelope, request.Method, true, startedAt, nil)
 	})
+}
+
+func (bus *Bus) logRPC(
+	ctx context.Context,
+	endpoint string,
+	envelope Envelope,
+	method string,
+	ok bool,
+	startedAt time.Time,
+	err error,
+) {
+	bus.mu.RLock()
+	logger := bus.logger
+	bus.mu.RUnlock()
+
+	source := ""
+	if envelope.Source != nil {
+		source = *envelope.Source
+	}
+	duration := time.Since(startedAt)
+	fields := []logging.Field{
+		logging.String("source", source),
+		logging.String("destination", envelope.Destination),
+		logging.String("topic", endpoint),
+		logging.String("method", method),
+		logging.Bool("ok", ok),
+		logging.Int64("durationMs", duration.Milliseconds()),
+		logging.Int64("durationUs", duration.Microseconds()),
+	}
+	if err != nil {
+		fields = append(fields, logging.Error(err))
+	}
+
+	logger.Debug(ctx, "backend rpc handled", fields...)
 }
 
 func (bus *Bus) sendRPCError(
