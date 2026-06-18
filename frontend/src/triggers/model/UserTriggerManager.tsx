@@ -74,6 +74,12 @@ interface ResolvedUserTriggerState extends JenaUserTriggerFetchResponse {
   triggers: JenaTrigger[]
 }
 
+interface UserTriggerManagerStateSnapshot {
+  records: Map<JenaTriggerId, JenaExtendedTrigger>
+  revision: string | null
+  triggersById: Map<JenaTriggerId, JenaTrigger>
+}
+
 const TriggerManagerContext = createContext<TriggerManagerApi | null>(null)
 
 export function UserTriggerManagerProvider({
@@ -135,11 +141,11 @@ export function UserTriggerManagerProvider({
       })
       revisionRef.current = update.revision
 
+      publishSnapshot()
+
       if (update.upsertedTriggers.length > 0) {
         await triggerStore.storeTriggers(update.upsertedTriggers)
       }
-
-      publishSnapshot()
     },
     [publishSnapshot, triggerStore],
   )
@@ -168,6 +174,61 @@ export function UserTriggerManagerProvider({
       triggers,
     })
   }, [call, replaceState, triggerStore])
+
+  const refreshAfterAuthenticatedMutationFailure = useCallback(
+    (error: unknown) => {
+      console.warn('[UserTriggerManager] authenticated mutation failed', error)
+      void fetchServerState().catch((refreshError: unknown) => {
+        console.warn('[UserTriggerManager] failed to refresh after mutation failure', refreshError)
+      })
+    },
+    [fetchServerState],
+  )
+
+  const captureStateSnapshot = useCallback((): UserTriggerManagerStateSnapshot => {
+    return {
+      records: new Map(
+        [...recordsRef.current].map(([triggerId, record]) => [
+          triggerId,
+          {
+            ...record,
+            enabledFor: [...record.enabledFor],
+          },
+        ]),
+      ),
+      revision: revisionRef.current,
+      triggersById: new Map(triggersByIdRef.current),
+    }
+  }, [])
+
+  const restoreStateSnapshot = useCallback(
+    (snapshot: UserTriggerManagerStateSnapshot) => {
+      recordsRef.current = new Map(
+        [...snapshot.records].map(([triggerId, record]) => [
+          triggerId,
+          {
+            ...record,
+            enabledFor: [...record.enabledFor],
+          },
+        ]),
+      )
+      triggersByIdRef.current = new Map(snapshot.triggersById)
+      revisionRef.current = snapshot.revision
+      publishSnapshot()
+    },
+    [publishSnapshot],
+  )
+
+  const applyAuthoritativeUpdate = useCallback(
+    async (
+      snapshot: UserTriggerManagerStateSnapshot,
+      update: JenaUserTriggerUpdate,
+    ) => {
+      restoreStateSnapshot(snapshot)
+      await applyUpdate(update)
+    },
+    [applyUpdate, restoreStateSnapshot],
+  )
 
   useEffect(() => {
     let cancelled = false
@@ -247,13 +308,29 @@ export function UserTriggerManagerProvider({
       const upserts = normalizeUpsertInputs(triggerInputs)
 
       if (isAuthenticatedRef.current) {
-        const update = await call('server.user-trigger-store', 'upsertTriggers', {
-          deleteTriggerIds: options.deleteTriggerIds,
-          knownRevision: revisionRef.current ?? undefined,
-          triggers: upserts,
-        })
-        await applyUpdate(update)
-        return update
+        const knownRevision = revisionRef.current ?? undefined
+        const snapshot = captureStateSnapshot()
+        const optimisticUpdate = applyLocalUpsert(
+          recordsRef.current,
+          triggersByIdRef.current,
+          upserts,
+          options.deleteTriggerIds ?? [],
+        )
+        await applyUpdate(optimisticUpdate)
+
+        try {
+          const update = await call('server.user-trigger-store', 'upsertTriggers', {
+            deleteTriggerIds: options.deleteTriggerIds,
+            knownRevision,
+            triggers: upserts,
+          })
+          await applyAuthoritativeUpdate(snapshot, update)
+          return update
+        } catch (error) {
+          restoreStateSnapshot(snapshot)
+          refreshAfterAuthenticatedMutationFailure(error)
+          throw error
+        }
       }
 
       const update = applyLocalUpsert(
@@ -266,7 +343,15 @@ export function UserTriggerManagerProvider({
       await persistLocalState()
       return update
     },
-    [applyUpdate, call, persistLocalState],
+    [
+      applyAuthoritativeUpdate,
+      applyUpdate,
+      call,
+      captureStateSnapshot,
+      persistLocalState,
+      refreshAfterAuthenticatedMutationFailure,
+      restoreStateSnapshot,
+    ],
   )
 
   const upsertTrigger = useCallback(
@@ -289,12 +374,23 @@ export function UserTriggerManagerProvider({
   const deleteTriggers = useCallback(
     async (triggerIds: JenaTriggerId[]) => {
       if (isAuthenticatedRef.current) {
-        const update = await call('server.user-trigger-store', 'deleteTriggers', {
-          knownRevision: revisionRef.current ?? undefined,
-          triggerIds,
-        })
-        await applyUpdate(update)
-        return update
+        const knownRevision = revisionRef.current ?? undefined
+        const snapshot = captureStateSnapshot()
+        const optimisticUpdate = applyLocalDelete(triggerIds)
+        await applyUpdate(optimisticUpdate)
+
+        try {
+          const update = await call('server.user-trigger-store', 'deleteTriggers', {
+            knownRevision,
+            triggerIds,
+          })
+          await applyAuthoritativeUpdate(snapshot, update)
+          return update
+        } catch (error) {
+          restoreStateSnapshot(snapshot)
+          refreshAfterAuthenticatedMutationFailure(error)
+          throw error
+        }
       }
 
       const update = applyLocalDelete(triggerIds)
@@ -302,7 +398,15 @@ export function UserTriggerManagerProvider({
       await persistLocalState()
       return update
     },
-    [applyUpdate, call, persistLocalState],
+    [
+      applyAuthoritativeUpdate,
+      applyUpdate,
+      call,
+      captureStateSnapshot,
+      persistLocalState,
+      refreshAfterAuthenticatedMutationFailure,
+      restoreStateSnapshot,
+    ],
   )
 
   const deleteTrigger = useCallback(
@@ -315,12 +419,23 @@ export function UserTriggerManagerProvider({
   const toggleTriggers = useCallback(
     async (changes: JenaTriggerEnablementChange[]) => {
       if (isAuthenticatedRef.current) {
-        const update = await call('server.user-trigger-store', 'toggleTriggers', {
-          changes,
-          knownRevision: revisionRef.current ?? undefined,
-        })
-        await applyUpdate(update)
-        return update
+        const knownRevision = revisionRef.current ?? undefined
+        const snapshot = captureStateSnapshot()
+        const optimisticUpdate = applyLocalToggle(changes)
+        await applyUpdate(optimisticUpdate)
+
+        try {
+          const update = await call('server.user-trigger-store', 'toggleTriggers', {
+            changes,
+            knownRevision,
+          })
+          await applyAuthoritativeUpdate(snapshot, update)
+          return update
+        } catch (error) {
+          restoreStateSnapshot(snapshot)
+          refreshAfterAuthenticatedMutationFailure(error)
+          throw error
+        }
       }
 
       const update = applyLocalToggle(changes)
@@ -328,18 +443,37 @@ export function UserTriggerManagerProvider({
       await persistLocalState()
       return update
     },
-    [applyUpdate, call, persistLocalState],
+    [
+      applyAuthoritativeUpdate,
+      applyUpdate,
+      call,
+      captureStateSnapshot,
+      persistLocalState,
+      refreshAfterAuthenticatedMutationFailure,
+      restoreStateSnapshot,
+    ],
   )
 
   const setTriggerFlags = useCallback(
     async (changes: JenaTriggerFlagChange[]) => {
       if (isAuthenticatedRef.current) {
-        const update = await call('server.user-trigger-store', 'setTriggerFlags', {
-          changes,
-          knownRevision: revisionRef.current ?? undefined,
-        })
-        await applyUpdate(update)
-        return update
+        const knownRevision = revisionRef.current ?? undefined
+        const snapshot = captureStateSnapshot()
+        const optimisticUpdate = applyLocalFlagChanges(changes, true)
+        await applyUpdate(optimisticUpdate)
+
+        try {
+          const update = await call('server.user-trigger-store', 'setTriggerFlags', {
+            changes,
+            knownRevision,
+          })
+          await applyAuthoritativeUpdate(snapshot, update)
+          return update
+        } catch (error) {
+          restoreStateSnapshot(snapshot)
+          refreshAfterAuthenticatedMutationFailure(error)
+          throw error
+        }
       }
 
       const update = applyLocalFlagChanges(changes, false)
@@ -347,7 +481,15 @@ export function UserTriggerManagerProvider({
       await persistLocalState()
       return update
     },
-    [applyUpdate, call, persistLocalState],
+    [
+      applyAuthoritativeUpdate,
+      applyUpdate,
+      call,
+      captureStateSnapshot,
+      persistLocalState,
+      refreshAfterAuthenticatedMutationFailure,
+      restoreStateSnapshot,
+    ],
   )
 
   function applyLocalDelete(triggerIds: JenaTriggerId[]): JenaUserTriggerUpdate {

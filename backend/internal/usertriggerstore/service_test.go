@@ -293,15 +293,15 @@ func TestServicePingReturnsCurrentRevision(t *testing.T) {
 	}
 }
 
-func TestServiceBroadcastsUpdatesToUserSources(t *testing.T) {
+func TestServiceBroadcastsUpdatesToStableUserDestination(t *testing.T) {
 	ctx := context.Background()
 	bus, _, service := newTestService(t, ctx)
 	defer service.Dispose()
 
-	source := "ws.127_0_0_1_1.client"
+	source := "ws.127_0_0_1_1.user-trigger-manager"
 	var event model.UserTriggerUpdate
 	received := false
-	unlisten := bus.Listen(source+".user-trigger-store.updated", func(_ context.Context, envelope eventbus.Envelope) {
+	unlisten := bus.Listen("user.test-user.user-trigger-store.updated", func(_ context.Context, envelope eventbus.Envelope) {
 		if err := json.Unmarshal(envelope.Payload, &event); err != nil {
 			t.Fatalf("Unmarshal update returned error: %v", err)
 		}
@@ -319,6 +319,53 @@ func TestServiceBroadcastsUpdatesToUserSources(t *testing.T) {
 	}
 	if len(event.UpsertedRecords) != 1 || event.UpsertedRecords[0].TriggerID != trigger.ID {
 		t.Fatalf("event %#v, want upserted trigger", event)
+	}
+}
+
+func TestServiceBroadcastsToggleUpdatesToStableUserDestination(t *testing.T) {
+	ctx := context.Background()
+	bus, _, service := newTestService(t, ctx)
+	defer service.Dispose()
+
+	source := "ws.127_0_0_1_1.user-trigger-manager"
+	trigger := createCanonicalTestTrigger(t, "Broadcast Toggle Trigger", []string{"Raid"})
+	character := model.CharacterServer{
+		CharacterName: "Mesozoic",
+		ServerName:    "Bristlebane",
+	}
+	callRPCWithSource[model.UserTriggerUpdate](t, bus, "upsertTriggers", "token", source, UpsertTriggersRequest{
+		Triggers: []model.TriggerUpsert{{
+			EnabledFor: []model.CharacterServer{character},
+			Trigger:    trigger,
+		}},
+	})
+
+	var event model.UserTriggerUpdate
+	received := false
+	unlisten := bus.Listen("user.test-user.user-trigger-store.updated", func(_ context.Context, envelope eventbus.Envelope) {
+		if err := json.Unmarshal(envelope.Payload, &event); err != nil {
+			t.Fatalf("Unmarshal update returned error: %v", err)
+		}
+		received = true
+	})
+	defer unlisten()
+
+	callRPCWithSource[model.UserTriggerUpdate](t, bus, "toggleTriggers", "token", source, ToggleTriggersRequest{
+		Changes: []model.TriggerEnablementChange{{
+			Character: character,
+			Enabled:   false,
+			TriggerID: trigger.ID,
+		}},
+	})
+
+	if !received {
+		t.Fatal("toggle update event was not received")
+	}
+	if len(event.UpsertedRecords) != 1 || event.UpsertedRecords[0].TriggerID != trigger.ID {
+		t.Fatalf("event %#v, want toggled trigger record", event)
+	}
+	if len(event.UpsertedRecords[0].EnabledFor) != 0 {
+		t.Fatalf("enabledFor %#v, want empty", event.UpsertedRecords[0].EnabledFor)
 	}
 }
 

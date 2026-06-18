@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
-	"sync"
 	"time"
 
 	"jena/backend/internal/database"
@@ -26,11 +25,6 @@ type Service struct {
 	identity     *identityservice.Service
 	triggerStore *triggerstore.Service
 	unregister   func()
-
-	mu             sync.Mutex
-	sourcesByUser  map[string]map[string]struct{}
-	sourceLastSeen map[string]time.Time
-	sourceUser     map[string]string
 }
 
 type FetchTriggersResponse struct {
@@ -75,13 +69,10 @@ func New(
 	triggerStore *triggerstore.Service,
 ) (*Service, error) {
 	service := &Service{
-		bus:            bus,
-		db:             db,
-		identity:       identity,
-		triggerStore:   triggerStore,
-		sourcesByUser:  make(map[string]map[string]struct{}),
-		sourceLastSeen: make(map[string]time.Time),
-		sourceUser:     make(map[string]string),
+		bus:          bus,
+		db:           db,
+		identity:     identity,
+		triggerStore: triggerStore,
 	}
 
 	if err := service.migrate(ctx); err != nil {
@@ -259,30 +250,7 @@ func (service *Service) authenticate(ctx context.Context, metadata eventbus.RPCM
 		return "", err
 	}
 
-	service.rememberSource(userID, metadata.Sender)
 	return userID, nil
-}
-
-func (service *Service) rememberSource(userID string, source string) {
-	if source == "" {
-		return
-	}
-
-	service.mu.Lock()
-	defer service.mu.Unlock()
-
-	if oldUserID, ok := service.sourceUser[source]; ok && oldUserID != userID {
-		delete(service.sourcesByUser[oldUserID], source)
-	}
-
-	if service.sourcesByUser[userID] == nil {
-		service.sourcesByUser[userID] = make(map[string]struct{})
-	}
-
-	service.sourcesByUser[userID][source] = struct{}{}
-	service.sourceLastSeen[source] = time.Now()
-	service.sourceUser[source] = userID
-	service.expireSourcesLocked(time.Now())
 }
 
 func (service *Service) broadcastUpdate(ctx context.Context, userID string, update model.UserTriggerUpdate) {
@@ -291,43 +259,12 @@ func (service *Service) broadcastUpdate(ctx context.Context, userID string, upda
 		return
 	}
 
-	sources := service.getActiveSources(userID)
 	source := endpoint
-	for _, destinationSource := range sources {
-		_ = service.bus.Send(ctx, eventbus.Envelope{
-			Destination: destinationSource + ".user-trigger-store.updated",
-			Payload:     payload,
-			Source:      &source,
-		})
-	}
-}
-
-func (service *Service) getActiveSources(userID string) []string {
-	service.mu.Lock()
-	defer service.mu.Unlock()
-
-	service.expireSourcesLocked(time.Now())
-
-	sources := make([]string, 0, len(service.sourcesByUser[userID]))
-	for source := range service.sourcesByUser[userID] {
-		sources = append(sources, source)
-	}
-
-	return sources
-}
-
-func (service *Service) expireSourcesLocked(now time.Time) {
-	expiresBefore := now.Add(-45 * time.Second)
-	for source, lastSeen := range service.sourceLastSeen {
-		if lastSeen.After(expiresBefore) {
-			continue
-		}
-
-		userID := service.sourceUser[source]
-		delete(service.sourceLastSeen, source)
-		delete(service.sourceUser, source)
-		delete(service.sourcesByUser[userID], source)
-	}
+	_ = service.bus.Send(ctx, eventbus.Envelope{
+		Destination: "user." + userID + ".user-trigger-store.updated",
+		Payload:     payload,
+		Source:      &source,
+	})
 }
 
 func (service *Service) applyUpsert(ctx context.Context, userID string, request UpsertTriggersRequest) (model.UserTriggerUpdate, error) {

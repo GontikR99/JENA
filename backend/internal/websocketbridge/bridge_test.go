@@ -46,7 +46,7 @@ func TestMessageDeduperExpiresIDs(t *testing.T) {
 
 func TestReceiveEnvelopeDeduplicatesBeforeSendingToBus(t *testing.T) {
 	bus := eventbus.New()
-	bridge := New(bus, logging.NewNop(), "jena_session")
+	bridge := New(bus, logging.NewNop(), "jena_session", nil)
 	connection := &connection{
 		ackOutbound: make(chan uint64, 2),
 		authToken:   "token-1",
@@ -84,6 +84,47 @@ func TestReceiveEnvelopeDeduplicatesBeforeSendingToBus(t *testing.T) {
 	}
 }
 
+func TestConnectionPublishesStableUserConnectionEvents(t *testing.T) {
+	bus := eventbus.New()
+	bridge := New(bus, logging.NewNop(), "jena_session", nil)
+	connection := &connection{
+		bridge:       bridge,
+		name:         "ws.127_0_0_1_1",
+		stableUserID: "user-1",
+	}
+	events := []UserConnectionEvent{}
+
+	unlisten := bus.Listen(UserConnectedEndpoint, func(_ context.Context, envelope eventbus.Envelope) {
+		var event UserConnectionEvent
+		if err := json.Unmarshal(envelope.Payload, &event); err != nil {
+			t.Fatalf("Unmarshal connection event returned error: %v", err)
+		}
+		events = append(events, event)
+	})
+	defer unlisten()
+
+	connection.publishUserConnectionEvent(context.Background(), UserConnectedEndpoint)
+
+	if len(events) != 1 {
+		t.Fatalf("received %d events, want 1", len(events))
+	}
+	if events[0].Source != "ws.127_0_0_1_1" || events[0].StableUserID != "user-1" {
+		t.Fatalf("event %#v, want source and stable user", events[0])
+	}
+}
+
+func TestResolveStableUserIDUsesAuthToken(t *testing.T) {
+	bridge := New(eventbus.New(), logging.NewNop(), "jena_session", fakeStableUserResolver{
+		stableUserID: "user-1",
+	})
+
+	stableUserID := bridge.resolveStableUserID(context.Background(), "token-1")
+
+	if stableUserID != "user-1" {
+		t.Fatalf("stableUserID %q, want user-1", stableUserID)
+	}
+}
+
 func TestLogActiveConnectionsUsesInfoLevel(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "jena.log")
 	logger, err := logging.New(config.Config{
@@ -95,7 +136,7 @@ func TestLogActiveConnectionsUsesInfoLevel(t *testing.T) {
 		t.Fatalf("logging.New returned error: %v", err)
 	}
 
-	bridge := New(eventbus.New(), logger, "jena_session")
+	bridge := New(eventbus.New(), logger, "jena_session", nil)
 	bridge.activeConnections.Store(3)
 
 	bridge.logActiveConnections(context.Background())
@@ -123,4 +164,16 @@ func TestLogActiveConnectionsUsesInfoLevel(t *testing.T) {
 	if record["activeConnections"] != float64(3) {
 		t.Fatalf("activeConnections %v, want 3", record["activeConnections"])
 	}
+}
+
+type fakeStableUserResolver struct {
+	stableUserID string
+}
+
+func (resolver fakeStableUserResolver) StableIDForAuthToken(_ context.Context, authToken *string) (string, error) {
+	if authToken == nil || *authToken == "" {
+		return "", nil
+	}
+
+	return resolver.stableUserID, nil
 }

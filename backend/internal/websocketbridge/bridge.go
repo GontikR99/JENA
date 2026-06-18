@@ -18,6 +18,9 @@ import (
 )
 
 const (
+	UserConnectedEndpoint    = "websocket.user-connected"
+	UserDisconnectedEndpoint = "websocket.user-disconnected"
+
 	frameTypeAck     = "ack"
 	frameTypeMessage = "message"
 	frameTypePing    = "ping"
@@ -32,11 +35,21 @@ const (
 	activeLogInterval = time.Minute
 )
 
+type StableUserResolver interface {
+	StableIDForAuthToken(context.Context, *string) (string, error)
+}
+
+type UserConnectionEvent struct {
+	Source       string `json:"source"`
+	StableUserID string `json:"stableUserId"`
+}
+
 type Bridge struct {
 	activeConnections atomic.Int64
 	authCookieName    string
 	bus               *eventbus.Bus
 	connection        uint64
+	identity          StableUserResolver
 	logger            logging.Logger
 	stopActiveLog     chan struct{}
 	stopActiveLogOnce sync.Once
@@ -50,21 +63,23 @@ type frame struct {
 }
 
 type connection struct {
-	bridge      *Bridge
-	conn        *websocket.Conn
-	name        string
-	remoteAddr  string
-	outbound    chan eventbus.Envelope
-	ackOutbound chan uint64
-	ackReceived chan uint64
-	authToken   string
-	deduper     *messageDeduper
+	bridge       *Bridge
+	conn         *websocket.Conn
+	name         string
+	remoteAddr   string
+	outbound     chan eventbus.Envelope
+	ackOutbound  chan uint64
+	ackReceived  chan uint64
+	authToken    string
+	deduper      *messageDeduper
+	stableUserID string
 }
 
-func New(bus *eventbus.Bus, logger logging.Logger, authCookieName string) *Bridge {
+func New(bus *eventbus.Bus, logger logging.Logger, authCookieName string, identity StableUserResolver) *Bridge {
 	return &Bridge{
 		authCookieName: authCookieName,
 		bus:            bus,
+		identity:       identity,
 		logger:         logger,
 		stopActiveLog:  make(chan struct{}),
 	}
@@ -112,21 +127,41 @@ func (bridge *Bridge) ServeHTTP(response http.ResponseWriter, request *http.Requ
 			authToken = cookie.Value
 		}
 	}
+	stableUserID := bridge.resolveStableUserID(request.Context(), authToken)
 
 	connectionID := atomic.AddUint64(&bridge.connection, 1)
 	connection := &connection{
-		bridge:      bridge,
-		conn:        socket,
-		name:        makeConnectionName(request.RemoteAddr, connectionID),
-		remoteAddr:  request.RemoteAddr,
-		outbound:    make(chan eventbus.Envelope, outboundQueueSize),
-		ackOutbound: make(chan uint64, 16),
-		ackReceived: make(chan uint64, 16),
-		authToken:   authToken,
-		deduper:     newMessageDeduper(dedupWindow),
+		bridge:       bridge,
+		conn:         socket,
+		name:         makeConnectionName(request.RemoteAddr, connectionID),
+		remoteAddr:   request.RemoteAddr,
+		outbound:     make(chan eventbus.Envelope, outboundQueueSize),
+		ackOutbound:  make(chan uint64, 16),
+		ackReceived:  make(chan uint64, 16),
+		authToken:    authToken,
+		deduper:      newMessageDeduper(dedupWindow),
+		stableUserID: stableUserID,
 	}
 
 	connection.run(request.Context())
+}
+
+func (bridge *Bridge) resolveStableUserID(ctx context.Context, authToken string) string {
+	if authToken == "" || bridge.identity == nil {
+		return ""
+	}
+
+	stableUserID, err := bridge.identity.StableIDForAuthToken(ctx, &authToken)
+	if err != nil {
+		bridge.logger.Debug(
+			ctx,
+			"websocket auth token did not resolve stable user",
+			logging.Error(err),
+		)
+		return ""
+	}
+
+	return stableUserID
 }
 
 func (connection *connection) run(parentCtx context.Context) {
@@ -143,6 +178,7 @@ func (connection *connection) run(parentCtx context.Context) {
 		logging.Int64("activeConnections", activeCount),
 	)
 	defer func() {
+		connection.publishUserConnectionEvent(context.Background(), UserDisconnectedEndpoint)
 		activeCount := connection.bridge.activeConnections.Add(-1)
 		connection.bridge.logger.Info(
 			context.Background(),
@@ -170,6 +206,7 @@ func (connection *connection) run(parentCtx context.Context) {
 		}
 	})
 	defer unlisten()
+	connection.publishUserConnectionEvent(ctx, UserConnectedEndpoint)
 
 	var waitGroup sync.WaitGroup
 	waitGroup.Add(2)
@@ -201,6 +238,28 @@ func (connection *connection) run(parentCtx context.Context) {
 	}()
 
 	waitGroup.Wait()
+}
+
+func (connection *connection) publishUserConnectionEvent(ctx context.Context, destination string) {
+	stableUserID := strings.TrimSpace(connection.stableUserID)
+	if stableUserID == "" {
+		return
+	}
+
+	payload, err := json.Marshal(UserConnectionEvent{
+		Source:       connection.name,
+		StableUserID: stableUserID,
+	})
+	if err != nil {
+		return
+	}
+
+	source := "websocket"
+	_ = connection.bridge.bus.Send(ctx, eventbus.Envelope{
+		Destination: destination,
+		Payload:     payload,
+		Source:      &source,
+	})
 }
 
 func (bridge *Bridge) logActiveConnections(ctx context.Context) {
