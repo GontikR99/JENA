@@ -3,11 +3,11 @@ BACKEND_VENDOR_DIR ?= backend/vendor
 EMBEDDED_STATIC_DIR ?= backend/internal/staticfiles/app
 FRONTEND_NODE_MODULES_DIR ?= frontend/node_modules
 
-.PHONY: help clean dev dist-clean frontend init package package-linux-x86_64 test test-backend test-frontend vendor-backend
+.PHONY: help clean clean-go-cache dev dist-clean frontend init package package-linux-x86_64 test test-backend test-frontend vendor-backend
 
 help:
 	@echo Available targets:
-	@echo   clean          Remove generated frontend, embedded static, and package output directories
+	@echo   clean          Remove generated frontend, embedded static, package output directories, and Go build cache
 	@echo   dev            Run the Go backend server
 	@echo   dist-clean     Run clean and remove frontend node_modules and backend vendor
 	@echo   frontend       Run the Vite frontend dev server
@@ -19,9 +19,12 @@ help:
 	@echo   test-frontend  Run frontend Vitest tests
 	@echo   vendor-backend Tidy Go modules and rebuild backend/vendor
 
-clean:
+clean: clean-go-cache
 	powershell -NoProfile -ExecutionPolicy Bypass -Command "$$paths = @('frontend/dist', 'backend/static', 'dist'); foreach ($$path in $$paths) { if (Test-Path -LiteralPath $$path) { Remove-Item -LiteralPath $$path -Recurse -Force } }"
 	powershell -NoProfile -ExecutionPolicy Bypass -Command "if (Test-Path '$(EMBEDDED_STATIC_DIR)') { Get-ChildItem -LiteralPath '$(EMBEDDED_STATIC_DIR)' -Force | Where-Object { $$_.Name -ne '.gitkeep' } | Remove-Item -Recurse -Force }"
+
+clean-go-cache:
+	cd backend && go clean -cache
 
 dist-clean: clean
 	powershell -NoProfile -ExecutionPolicy Bypass -Command "$$paths = @('$(FRONTEND_NODE_MODULES_DIR)', '$(BACKEND_VENDOR_DIR)'); foreach ($$path in $$paths) { if (Test-Path -LiteralPath $$path) { Remove-Item -LiteralPath $$path -Recurse -Force } }"
@@ -49,14 +52,14 @@ vendor-backend:
 	powershell -NoProfile -ExecutionPolicy Bypass -Command "if (Test-Path -LiteralPath '$(BACKEND_VENDOR_DIR)') { Remove-Item -LiteralPath '$(BACKEND_VENDOR_DIR)' -Recurse -Force }"
 	cd backend && go mod vendor
 
-package:
+package: clean-go-cache
 	cd frontend && npm run build
 	powershell -NoProfile -ExecutionPolicy Bypass -Command "New-Item -ItemType Directory -Force '$(EMBEDDED_STATIC_DIR)' | Out-Null; Get-ChildItem -LiteralPath '$(EMBEDDED_STATIC_DIR)' -Force | Where-Object { $$_.Name -ne '.gitkeep' } | Remove-Item -Recurse -Force; Copy-Item -Recurse frontend/dist/* '$(EMBEDDED_STATIC_DIR)'"
 	cd backend && go test -mod=vendor ./...
 	powershell -NoProfile -ExecutionPolicy Bypass -Command "New-Item -ItemType Directory -Force dist | Out-Null"
 	cd backend && go build -mod=vendor -buildvcs=false -o ../dist/jena-backend.exe ./cmd/jena-backend
 
-package-linux-x86_64:
+package-linux-x86_64: clean-go-cache
 	cd frontend && npm run build
 	powershell -NoProfile -ExecutionPolicy Bypass -Command "New-Item -ItemType Directory -Force '$(EMBEDDED_STATIC_DIR)' | Out-Null; Get-ChildItem -LiteralPath '$(EMBEDDED_STATIC_DIR)' -Force | Where-Object { $$_.Name -ne '.gitkeep' } | Remove-Item -Recurse -Force; Copy-Item -Recurse frontend/dist/* '$(EMBEDDED_STATIC_DIR)'"
 	cd backend && go test -mod=vendor ./...
