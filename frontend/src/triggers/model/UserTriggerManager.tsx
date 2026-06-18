@@ -34,6 +34,7 @@ const triggerCacheStoreName = 'trigger-cache'
 const userTriggerCacheStoreName = 'user-trigger-cache'
 const settingsStoreName = 'settings'
 const loggedOutCacheKey = 'logged-out'
+const triggerTreeViewStateCacheKey = 'trigger-tree-view-state'
 const pingIntervalMs = 10_000
 
 export interface UpsertTriggerOptions {
@@ -46,11 +47,15 @@ export interface UpsertTriggersOptions {
 }
 
 export interface TriggerManagerApi {
+  collapsedGroupIds: Set<string>
   deleteTrigger: (triggerId: JenaTriggerId) => Promise<JenaUserTriggerUpdate>
   deleteTriggers: (triggerIds: JenaTriggerId[]) => Promise<JenaUserTriggerUpdate>
+  reconcileKnownGroupIds: (groupIds: string[]) => void
+  setGroupCollapsed: (groupId: string, collapsed: boolean) => void
   setTriggerFlags: (
     changes: JenaTriggerFlagChange[],
   ) => Promise<JenaUserTriggerUpdate>
+  toggleGroupCollapsed: (groupId: string) => void
   toggleTriggers: (
     changes: JenaTriggerEnablementChange[],
   ) => Promise<JenaUserTriggerUpdate>
@@ -69,6 +74,10 @@ interface LocalUserTriggerCache {
   records: JenaExtendedTrigger[]
   revision: string
   triggers: JenaTrigger[]
+}
+
+interface TriggerTreeViewState {
+  collapsedGroupIds: string[]
 }
 
 interface ResolvedUserTriggerState extends JenaUserTriggerFetchResponse {
@@ -95,7 +104,14 @@ export function UserTriggerManagerProvider({
   const recordsRef = useRef(new Map<JenaTriggerId, JenaExtendedTrigger>())
   const revisionRef = useRef<string | null>(null)
   const triggersByIdRef = useRef(new Map<JenaTriggerId, JenaTrigger>())
+  const collapsedGroupIdsRef = useRef(new Set<string>())
+  const knownTreeGroupIdsRef = useRef<Set<string> | null>(null)
+  const collapseInitialKnownTreeGroupsRef = useRef(false)
+  const treeViewStateLoadedRef = useRef(false)
   const [triggers, setTriggers] = useState<JenaResolvedTrigger[]>([])
+  const [collapsedGroupIds, setCollapsedGroupIds] = useState<Set<string>>(
+    () => new Set(),
+  )
 
   useEffect(() => {
     isAuthenticatedRef.current = isAuthenticated
@@ -104,6 +120,151 @@ export function UserTriggerManagerProvider({
   const publishSnapshot = useCallback(() => {
     setTriggers(getResolvedSnapshot(recordsRef.current, triggersByIdRef.current))
   }, [])
+
+  const persistTreeViewState = useCallback((groupIds: Set<string>) => {
+    void writeTriggerTreeViewState({
+      collapsedGroupIds: [...groupIds].sort(),
+    }).catch((error: unknown) => {
+      console.warn('[UserTriggerManager] failed to persist tree view state', error)
+    })
+  }, [])
+
+  const applyCollapsedGroupIds = useCallback(
+    (next: Set<string>, persist = true) => {
+      if (areSetsEqual(collapsedGroupIdsRef.current, next)) {
+        return
+      }
+
+      collapsedGroupIdsRef.current = next
+      setCollapsedGroupIds(next)
+
+      if (persist && treeViewStateLoadedRef.current) {
+        persistTreeViewState(next)
+      }
+    },
+    [persistTreeViewState],
+  )
+
+  const reconcileCollapsedGroupIds = useCallback(
+    (
+      groupIds: string[],
+      previousKnownGroupIds: Set<string> | null,
+      collapseUnknownGroups: boolean,
+    ) => {
+      const currentGroupIds = new Set(groupIds)
+      const next = new Set(
+        [...collapsedGroupIdsRef.current].filter((groupId) =>
+          currentGroupIds.has(groupId),
+        ),
+      )
+
+      if (collapseUnknownGroups) {
+        groupIds.forEach((groupId) => {
+          if (!previousKnownGroupIds?.has(groupId)) {
+            next.add(groupId)
+          }
+        })
+      }
+
+      applyCollapsedGroupIds(next)
+    },
+    [applyCollapsedGroupIds],
+  )
+
+  const reconcileKnownGroupIds = useCallback(
+    (groupIds: string[]) => {
+      const previousKnownGroupIds = knownTreeGroupIdsRef.current
+      knownTreeGroupIdsRef.current = new Set(groupIds)
+
+      if (!treeViewStateLoadedRef.current) {
+        return
+      }
+
+      const collapseUnknownGroups =
+        previousKnownGroupIds !== null ||
+        collapseInitialKnownTreeGroupsRef.current
+      collapseInitialKnownTreeGroupsRef.current = false
+
+      reconcileCollapsedGroupIds(
+        groupIds,
+        previousKnownGroupIds,
+        collapseUnknownGroups,
+      )
+    },
+    [reconcileCollapsedGroupIds],
+  )
+
+  const setGroupCollapsed = useCallback(
+    (groupId: string, collapsed: boolean) => {
+      const next = new Set(collapsedGroupIdsRef.current)
+
+      if (collapsed) {
+        next.add(groupId)
+      } else {
+        next.delete(groupId)
+      }
+
+      applyCollapsedGroupIds(next)
+    },
+    [applyCollapsedGroupIds],
+  )
+
+  const toggleGroupCollapsed = useCallback(
+    (groupId: string) => {
+      const next = new Set(collapsedGroupIdsRef.current)
+
+      if (next.has(groupId)) {
+        next.delete(groupId)
+      } else {
+        next.add(groupId)
+      }
+
+      applyCollapsedGroupIds(next)
+    },
+    [applyCollapsedGroupIds],
+  )
+
+  useEffect(() => {
+    let cancelled = false
+
+    void readTriggerTreeViewState()
+      .then((state) => {
+        if (cancelled) {
+          return
+        }
+
+        const persistedCollapsedGroupIds = new Set(state?.collapsedGroupIds ?? [])
+        collapseInitialKnownTreeGroupsRef.current = state === undefined
+        treeViewStateLoadedRef.current = true
+        collapsedGroupIdsRef.current = persistedCollapsedGroupIds
+        setCollapsedGroupIds(persistedCollapsedGroupIds)
+
+        const knownGroupIds = knownTreeGroupIdsRef.current
+        if (knownGroupIds) {
+          const collapseInitialGroups = collapseInitialKnownTreeGroupsRef.current
+          collapseInitialKnownTreeGroupsRef.current = false
+          reconcileCollapsedGroupIds(
+            [...knownGroupIds],
+            null,
+            collapseInitialGroups,
+          )
+        }
+      })
+      .catch((error: unknown) => {
+        console.warn('[UserTriggerManager] failed to load tree view state', error)
+        collapseInitialKnownTreeGroupsRef.current = true
+        treeViewStateLoadedRef.current = true
+        const knownGroupIds = knownTreeGroupIdsRef.current
+        if (knownGroupIds) {
+          collapseInitialKnownTreeGroupsRef.current = false
+          reconcileCollapsedGroupIds([...knownGroupIds], null, true)
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [reconcileCollapsedGroupIds])
 
   const replaceState = useCallback(
     async (state: ResolvedUserTriggerState) => {
@@ -682,9 +843,13 @@ export function UserTriggerManagerProvider({
   return (
     <TriggerManagerContext.Provider
       value={{
+        collapsedGroupIds,
         deleteTrigger,
         deleteTriggers,
+        reconcileKnownGroupIds,
+        setGroupCollapsed,
         setTriggerFlags,
+        toggleGroupCollapsed,
         toggleTriggers,
         triggers,
         upsertTrigger,
@@ -827,6 +992,13 @@ function areStringArraysEqual(left: string[], right: string[]) {
   return left.length === right.length && left.every((value, index) => value === right[index])
 }
 
+function areSetsEqual<TValue>(left: Set<TValue>, right: Set<TValue>) {
+  return (
+    left.size === right.size &&
+    [...left].every((value) => right.has(value))
+  )
+}
+
 function sortCharacterServers(characters: JenaCharacterServer[]) {
   return [...characters].sort((left, right) => {
     const serverComparison = left.serverName.localeCompare(right.serverName, undefined, {
@@ -876,6 +1048,29 @@ async function writeLocalUserTriggerCache(cache: LocalUserTriggerCache) {
 
   try {
     await putValue(database, loggedOutCacheKey, cache)
+  } finally {
+    database.close()
+  }
+}
+
+async function readTriggerTreeViewState() {
+  const database = await openDatabase()
+
+  try {
+    return await getValue<TriggerTreeViewState>(
+      database,
+      triggerTreeViewStateCacheKey,
+    )
+  } finally {
+    database.close()
+  }
+}
+
+async function writeTriggerTreeViewState(state: TriggerTreeViewState) {
+  const database = await openDatabase()
+
+  try {
+    await putValue(database, triggerTreeViewStateCacheKey, state)
   } finally {
     database.close()
   }

@@ -44,9 +44,13 @@ const selectedCharacter: CharacterPresence = {
 
 vi.mock('../model/UserTriggerManager', () => ({
   useTriggerManager: () => ({
+    collapsedGroupIds: new Set<string>(),
     deleteTrigger: vi.fn(),
     deleteTriggers: vi.fn(),
+    reconcileKnownGroupIds: vi.fn(),
     setTriggerFlags: vi.fn(),
+    setGroupCollapsed: vi.fn(),
+    toggleGroupCollapsed: vi.fn(),
     toggleTriggers: vi.fn(),
     triggers: resolvedTriggers,
     upsertTrigger: vi.fn(),
@@ -75,11 +79,8 @@ describe('UserTriggersEditor', () => {
   })
 
   it('hides enable controls when no character is selected', async () => {
-    const user = userEvent.setup()
-
     render(<UserTriggersEditor selectedCharacter={null} />)
 
-    await user.click(await screen.findByRole('button', { name: 'Expand Raid' }))
     expect(await screen.findByText('Test Trigger')).toBeInTheDocument()
     expect(screen.queryByLabelText('Enable Test Trigger')).not.toBeInTheDocument()
     expect(screen.queryByLabelText('Enable triggers in Raid')).not.toBeInTheDocument()
@@ -88,11 +89,8 @@ describe('UserTriggersEditor', () => {
   })
 
   it('shows enable controls when a character is selected', async () => {
-    const user = userEvent.setup()
-
     render(<UserTriggersEditor selectedCharacter={selectedCharacter} />)
 
-    await user.click(await screen.findByRole('button', { name: 'Expand Raid' }))
     expect(await screen.findByLabelText('Enable Test Trigger')).toBeInTheDocument()
     expect(screen.getByLabelText('Enable triggers in Raid')).toBeInTheDocument()
   })
@@ -102,7 +100,6 @@ describe('UserTriggersEditor', () => {
 
     render(<UserTriggersEditor selectedCharacter={selectedCharacter} />)
 
-    await user.click(await screen.findByRole('button', { name: 'Expand Raid' }))
     await user.dblClick(await screen.findByText('Test Trigger'))
 
     expect(await screen.findByText('Trigger Editor')).toBeInTheDocument()

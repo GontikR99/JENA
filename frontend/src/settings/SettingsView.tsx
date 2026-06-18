@@ -194,8 +194,8 @@ export function SettingsView() {
               ) : null}
             </div>
 
-            <Form.Group className="settings-field" controlId="call-me">
-              <Form.Label>Call me...</Form.Label>
+            <Form.Group className="settings-field" controlId="sharing-name">
+              <Form.Label>Sharing name</Form.Label>
               <Form.Control
                 isInvalid={isDisplayNameInvalid}
                 minLength={2}
@@ -210,8 +210,11 @@ export function SettingsView() {
                 type="text"
                 value={displayName}
               />
+              <Form.Text muted>
+                Shown to other users when you share triggers.
+              </Form.Text>
               <Form.Control.Feedback type="invalid">
-                Display name must be at least 2 characters.
+                Sharing name must be at least 2 characters.
               </Form.Control.Feedback>
             </Form.Group>
           </fieldset>
@@ -222,7 +225,7 @@ export function SettingsView() {
           ) : null}
           {isUserSettingsAvailable && !isUserSettingsValid ? (
             <div className="settings-validation-note" role="status">
-              Display name must be at least 2 characters.
+              Sharing name must be at least 2 characters.
             </div>
           ) : null}
         </section>

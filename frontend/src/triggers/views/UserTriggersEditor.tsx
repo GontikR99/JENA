@@ -134,8 +134,12 @@ export function UserTriggersEditor({
   selectedCharacter,
 }: UserTriggersEditorProps) {
   const {
+    collapsedGroupIds,
     deleteTriggers,
+    reconcileKnownGroupIds,
     setTriggerFlags,
+    setGroupCollapsed,
+    toggleGroupCollapsed,
     toggleTriggers,
     triggers,
     upsertTrigger,
@@ -146,9 +150,6 @@ export function UserTriggersEditor({
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const [emptyGroups, setEmptyGroups] = useState<string[][]>([])
   const [emptyGroupsLoaded, setEmptyGroupsLoaded] = useState(false)
-  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(
-    () => new Set(),
-  )
   const [selection, setSelection] = useState<TreeSelection>({ type: 'none' })
   const [editorSession, setEditorSession] = useState<EditorSession | null>(null)
   const [importSession, setImportSession] = useState<ImportSession | null>(null)
@@ -157,7 +158,6 @@ export function UserTriggersEditor({
     useState<OperationSession | null>(null)
   const [menuTarget, setMenuTarget] = useState<MenuTarget>({ item: null })
   const [anchorPoint, setAnchorPoint] = useState({ x: 0, y: 0 })
-  const knownGroupIdsRef = useRef<Set<string>>(new Set())
   const [{ state: menuState, endTransition }, setMenuOpen] = useMenuState()
   const selectedCharacterKey = selectedCharacter
     ? getJenaCharacterServerKey(selectedCharacter)
@@ -166,8 +166,8 @@ export function UserTriggersEditor({
     ? toCharacterServer(selectedCharacter)
     : null
   const treeItems = useMemo(
-    () => buildVisibleTreeItems(triggers, emptyGroups, collapsedGroups),
-    [collapsedGroups, emptyGroups, triggers],
+    () => buildVisibleTreeItems(triggers, emptyGroups, collapsedGroupIds),
+    [collapsedGroupIds, emptyGroups, triggers],
   )
   const groupIds = useMemo(
     () => getGroupIds(triggers, emptyGroups),
@@ -227,25 +227,8 @@ export function UserTriggersEditor({
   }, [emptyGroups, emptyGroupsLoaded])
 
   useEffect(() => {
-    const currentGroupIds = new Set(groupIds)
-    const knownGroupIds = knownGroupIdsRef.current
-
-    setCollapsedGroups((previous) => {
-      const next = new Set(
-        [...previous].filter((groupId) => currentGroupIds.has(groupId)),
-      )
-
-      groupIds.forEach((groupId) => {
-        if (!knownGroupIds.has(groupId)) {
-          next.add(groupId)
-        }
-      })
-
-      return areSetsEqual(previous, next) ? previous : next
-    })
-
-    knownGroupIdsRef.current = currentGroupIds
-  }, [groupIds])
+    reconcileKnownGroupIds(groupIds)
+  }, [groupIds, reconcileKnownGroupIds])
 
   function openContextMenu(
     event: MouseEvent,
@@ -331,17 +314,7 @@ export function UserTriggersEditor({
   }
 
   function toggleGroup(item: TreeGroupItem) {
-    setCollapsedGroups((previous) => {
-      const next = new Set(previous)
-
-      if (next.has(item.id)) {
-        next.delete(item.id)
-      } else {
-        next.add(item.id)
-      }
-
-      return next
-    })
+    toggleGroupCollapsed(item.id)
   }
 
   async function handleToggleTrigger(item: TreeTriggerItem, enabled: boolean) {
@@ -465,11 +438,7 @@ export function UserTriggersEditor({
 
     const groupPath = [...parentPath, normalizedName]
     setEmptyGroups((previous) => mergeGroupPaths([...previous, groupPath]))
-    setCollapsedGroups((previous) => {
-      const next = new Set(previous)
-      next.delete(getGroupId(parentPath))
-      return next
-    })
+    setGroupCollapsed(getGroupId(parentPath), false)
   }
 
   function handleAddTrigger(groupPath: string[]) {
@@ -746,13 +715,8 @@ export function UserTriggersEditor({
         previous.map((path) => renamePathPrefix(path, sourcePath, movedPath)),
       ),
     )
-    setCollapsedGroups((previous) => {
-      const next = new Set(previous)
-      next.delete(getGroupId(targetParentPath))
-      next.delete(getGroupId(movedPath))
-      return next
-    })
-    knownGroupIdsRef.current.add(getGroupId(movedPath))
+    setGroupCollapsed(getGroupId(targetParentPath), false)
+    setGroupCollapsed(getGroupId(movedPath), false)
     setSelection({ path: movedPath, type: 'group' })
   }
 
@@ -1135,7 +1099,7 @@ export function UserTriggersEditor({
           treeItems.map((item) =>
             item.type === 'group' ? (
               <GroupRow
-                collapsed={collapsedGroups.has(item.id)}
+                collapsed={collapsedGroupIds.has(item.id)}
                 checkboxState={
                   groupStatesById.get(item.id)?.state ?? 'unchecked'
                 }
@@ -2328,13 +2292,6 @@ function renamePathPrefix(
 
 function getGroupId(path: string[]) {
   return path.join('\0')
-}
-
-function areSetsEqual<TValue>(left: Set<TValue>, right: Set<TValue>) {
-  return (
-    left.size === right.size &&
-    [...left].every((value) => right.has(value))
-  )
 }
 
 function areStringArraysEqual(left: string[], right: string[]) {
