@@ -43,7 +43,7 @@ export function App() {
 function AuthenticatedApp() {
   const { status } = useAuth()
 
-  if (status !== 'authenticated') {
+  if (status === 'checking') {
     return <AuthScreen />
   }
 
