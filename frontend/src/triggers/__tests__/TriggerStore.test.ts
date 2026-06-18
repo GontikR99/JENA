@@ -11,7 +11,7 @@ import {
 } from '../model/TriggerStore'
 
 describe('WriteThroughTriggerStore', () => {
-  it('stores only novel triggers and returns results in input order', async () => {
+  it('checks the server and stores only missing triggers in input order', async () => {
     const firstTrigger = createTestTrigger('First Trigger')
     const secondTrigger = createTestTrigger('Second Trigger')
     const server = createServer()
@@ -22,12 +22,73 @@ describe('WriteThroughTriggerStore', () => {
 
     expect(firstResult).toEqual([firstTrigger, secondTrigger])
     expect(secondResult).toEqual([secondTrigger, firstTrigger])
+    expect(server.checkTriggers).toHaveBeenCalledTimes(2)
+    expect(server.checkTriggers).toHaveBeenNthCalledWith(1, [
+      firstTrigger.id,
+      secondTrigger.id,
+    ])
+    expect(server.checkTriggers).toHaveBeenNthCalledWith(2, [
+      secondTrigger.id,
+      firstTrigger.id,
+    ])
     expect(server.storeTriggers).toHaveBeenCalledTimes(1)
     expect(server.storeTriggers).toHaveBeenCalledWith([
       firstTrigger,
       secondTrigger,
     ])
     expect(server.fetchTriggers).not.toHaveBeenCalled()
+  })
+
+  it('does not send trigger bodies when the server already has them', async () => {
+    const trigger = createTestTrigger('Existing Trigger')
+    const server = createServer({
+      triggers: [trigger],
+    })
+    const store = new WriteThroughTriggerStore(server, new InMemoryTriggerCache())
+
+    await expect(store.storeTriggers([trigger])).resolves.toEqual([trigger])
+
+    expect(server.checkTriggers).toHaveBeenCalledTimes(1)
+    expect(server.checkTriggers).toHaveBeenCalledWith([trigger.id])
+    expect(server.storeTriggers).not.toHaveBeenCalled()
+  })
+
+  it('batches large missing store requests and reports save progress', async () => {
+    const triggers = Array.from({ length: 101 }, (_, index) =>
+      createTestTrigger(`Missing Trigger ${index}`),
+    )
+    const server = createServer()
+    const reportFetchProgress = vi.fn()
+    const store = new WriteThroughTriggerStore(
+      server,
+      new InMemoryTriggerCache(),
+      undefined,
+      reportFetchProgress,
+    )
+
+    await expect(store.storeTriggers(triggers)).resolves.toEqual(triggers)
+
+    expect(server.checkTriggers).toHaveBeenCalledTimes(1)
+    expect(server.storeTriggers).toHaveBeenCalledTimes(2)
+    expect(server.storeTriggers).toHaveBeenNthCalledWith(1, triggers.slice(0, 100))
+    expect(server.storeTriggers).toHaveBeenNthCalledWith(2, triggers.slice(100))
+    expect(reportFetchProgress).toHaveBeenCalledTimes(4)
+    expect(reportFetchProgress).toHaveBeenNthCalledWith(1, {
+      completedCount: 0,
+      phase: 'saving',
+      totalCount: 101,
+    })
+    expect(reportFetchProgress).toHaveBeenNthCalledWith(2, {
+      completedCount: 100,
+      phase: 'saving',
+      totalCount: 101,
+    })
+    expect(reportFetchProgress).toHaveBeenNthCalledWith(3, {
+      completedCount: 101,
+      phase: 'saving',
+      totalCount: 101,
+    })
+    expect(reportFetchProgress).toHaveBeenNthCalledWith(4, null)
   })
 
   it('fetches only missing triggers and preserves requested order', async () => {
@@ -100,15 +161,18 @@ describe('WriteThroughTriggerStore', () => {
 
     expect(reportFetchProgress).toHaveBeenCalledTimes(4)
     expect(reportFetchProgress).toHaveBeenNthCalledWith(1, {
-      fetchedCount: 1,
+      completedCount: 1,
+      phase: 'loading',
       totalCount: 3,
     })
     expect(reportFetchProgress).toHaveBeenNthCalledWith(2, {
-      fetchedCount: 2,
+      completedCount: 2,
+      phase: 'loading',
       totalCount: 3,
     })
     expect(reportFetchProgress).toHaveBeenNthCalledWith(3, {
-      fetchedCount: 3,
+      completedCount: 3,
+      phase: 'loading',
       totalCount: 3,
     })
     expect(reportFetchProgress).toHaveBeenNthCalledWith(4, null)
@@ -140,6 +204,7 @@ describe('WriteThroughTriggerStore', () => {
     await expect(store.storeTriggers([])).resolves.toEqual([])
     await expect(store.fetchTriggers([])).resolves.toEqual([])
 
+    expect(server.checkTriggers).not.toHaveBeenCalled()
     expect(server.storeTriggers).not.toHaveBeenCalled()
     expect(server.fetchTriggers).not.toHaveBeenCalled()
   })
@@ -188,7 +253,8 @@ describe('WriteThroughTriggerStore', () => {
       trigger,
     ])
     expect(secondServer.fetchTriggers).not.toHaveBeenCalled()
-    expect(secondServer.storeTriggers).not.toHaveBeenCalled()
+    expect(secondServer.storeTriggers).toHaveBeenCalledTimes(1)
+    expect(secondServer.storeTriggers).toHaveBeenCalledWith([trigger])
   })
 
   it('notifies once for newly stored triggers', async () => {
@@ -243,6 +309,11 @@ function createServer({
   )
 
   return {
+    checkTriggers: vi.fn(async (ids: JenaTriggerId[]) => {
+      return {
+        missingIds: ids.filter((id) => !triggersByID.has(id)),
+      }
+    }),
     fetchTriggers: vi.fn(async (ids: JenaTriggerId[]) => {
       const matchingTriggers = ids.flatMap((id) => {
         const trigger = triggersByID.get(id)

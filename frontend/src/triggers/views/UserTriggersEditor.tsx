@@ -30,6 +30,7 @@ import { IconTriStateToggle } from '../../shared/widgets/IconTriStateToggle'
 import { TriggerEditorDialog } from '../editor/TriggerEditorDialog'
 import { exportGinaPackageFile } from '../gina/ginaPackageExporter'
 import { parseGinaPackageFile } from '../gina/ginaPackageParser'
+import { useTriggerStore } from '../model/TriggerStore'
 import { useTriggerManager } from '../model/UserTriggerManager'
 import './UserTriggersEditor.css'
 
@@ -146,6 +147,7 @@ export function UserTriggersEditor({
     upsertTriggers,
   } = useTriggerManager()
   const call = useRpc('user-triggers-editor')
+  const triggerStore = useTriggerStore()
   const { isAuthenticated } = useAuth()
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const [emptyGroups, setEmptyGroups] = useState<string[][]>([])
@@ -960,9 +962,21 @@ export function UserTriggersEditor({
       return
     }
 
+    const shareTriggers = uniqueTriggerIds.flatMap((triggerId) => {
+      const resolved = triggersById.get(triggerId)
+
+      return resolved ? [resolved.trigger] : []
+    })
+
+    if (shareTriggers.length === 0) {
+      toast.error('No stored triggers selected for sharing.')
+      return
+    }
+
     try {
+      const storedTriggers = await triggerStore.storeTriggers(shareTriggers)
       const response = await call('server.sharing', 'createSharePackage', {
-        triggerIds: uniqueTriggerIds,
+        triggerIds: storedTriggers.map((trigger) => trigger.id),
       })
 
       try {

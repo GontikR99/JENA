@@ -117,6 +117,43 @@ func TestServiceFetchTriggersRPCReturnsAtMostOneHundredTriggers(t *testing.T) {
 	}
 }
 
+func TestServiceChecksMissingTriggerIDs(t *testing.T) {
+	ctx := context.Background()
+	bus := eventbus.New()
+	db := newTestDatabase(t)
+	service, err := New(ctx, bus, db)
+	if err != nil {
+		t.Fatalf("New returned error: %v", err)
+	}
+	defer service.Dispose()
+
+	firstTrigger := createCanonicalTestTrigger(t, "First Trigger")
+	secondTrigger := createCanonicalTestTrigger(t, "Second Trigger")
+
+	callRPC[StoreTriggersResponse](t, bus, "storeTriggers", StoreTriggersRequest{
+		Triggers: []model.Trigger{firstTrigger},
+	})
+
+	response := callRPC[CheckTriggersResponse](t, bus, "checkTriggers", CheckTriggersRequest{
+		IDs: []model.TriggerID{
+			firstTrigger.ID,
+			secondTrigger.ID,
+			"missing-trigger",
+			secondTrigger.ID,
+			"",
+		},
+	})
+
+	expectedMissingIDs := []model.TriggerID{
+		secondTrigger.ID,
+		"missing-trigger",
+		"",
+	}
+	if !reflect.DeepEqual(response.MissingIDs, expectedMissingIDs) {
+		t.Fatalf("missing ids %#v, want %#v", response.MissingIDs, expectedMissingIDs)
+	}
+}
+
 func TestServiceRejectsTriggerWithMismatchedID(t *testing.T) {
 	ctx := context.Background()
 	bus := eventbus.New()

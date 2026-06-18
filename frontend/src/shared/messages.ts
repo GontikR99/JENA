@@ -228,6 +228,14 @@ export interface RpcEndpoints {
     }
   }
   'server.trigger-store': {
+    checkTriggers: {
+      request: {
+        ids: string[]
+      }
+      response: {
+        missingIds: JenaTriggerId[]
+      }
+    }
     storeTriggers: {
       request: {
         triggers: JenaTrigger[]

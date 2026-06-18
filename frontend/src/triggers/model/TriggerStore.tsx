@@ -20,18 +20,24 @@ export interface TriggerStoreApi {
 }
 
 export type SeenTriggersPublisher = (triggers: JenaTrigger[]) => void
-export type TriggerFetchProgressReporter = (
-  progress: TriggerFetchProgress | null,
+export type TriggerStoreProgressReporter = (
+  progress: TriggerStoreProgress | null,
 ) => void
 
-export interface TriggerFetchProgress {
-  fetchedCount: number
+export interface TriggerStoreProgress {
+  completedCount: number
+  phase: 'loading' | 'saving'
   totalCount: number
 }
 
 interface ServerTriggerStoreApi {
+  checkTriggers: (ids: JenaTriggerId[]) => Promise<CheckTriggersResult>
   fetchTriggers: (ids: JenaTriggerId[]) => Promise<FetchTriggersResult>
   storeTriggers: (triggers: JenaTrigger[]) => Promise<JenaTrigger[]>
+}
+
+interface CheckTriggersResult {
+  missingIds: JenaTriggerId[]
 }
 
 interface FetchTriggersResult {
@@ -52,17 +58,25 @@ const handlesStoreName = 'handles'
 const triggerCacheStoreName = 'trigger-cache'
 const userTriggerCacheStoreName = 'user-trigger-cache'
 const settingsStoreName = 'settings'
+const storeTriggerBatchSize = 100
 
 const TriggerStoreContext = createContext<TriggerStoreApi | null>(null)
 
 export function TriggerStoreProvider({ children }: { children: ReactNode }) {
   const call = useRpc('trigger-store')
   const send = useSender('trigger-store')
-  const [fetchProgress, setFetchProgress] =
-    useState<TriggerFetchProgress | null>(null)
+  const [storeProgress, setStoreProgress] =
+    useState<TriggerStoreProgress | null>(null)
   const store = useMemo(() => {
     return new WriteThroughTriggerStore(
       {
+        checkTriggers: async (ids) => {
+          const response = await call('server.trigger-store', 'checkTriggers', {
+            ids,
+          })
+
+          return response
+        },
         fetchTriggers: async (ids) => {
           const response = await call('server.trigger-store', 'fetchTriggers', {
             ids,
@@ -82,14 +96,14 @@ export function TriggerStoreProvider({ children }: { children: ReactNode }) {
       (triggers) => {
         send('trigger-store.triggers-seen', { triggers })
       },
-      setFetchProgress,
+      setStoreProgress,
     )
-  }, [call, send, setFetchProgress])
+  }, [call, send, setStoreProgress])
 
   return (
     <TriggerStoreContext.Provider value={store}>
       {children}
-      <TriggerFetchProgressGlass progress={fetchProgress} />
+      <TriggerStoreProgressGlass progress={storeProgress} />
     </TriggerStoreContext.Provider>
   )
 }
@@ -110,20 +124,20 @@ export class WriteThroughTriggerStore implements TriggerStoreApi {
   private readonly pendingFetches = new Map<JenaTriggerId, Promise<JenaTrigger>>()
   private readonly pendingStores = new Map<JenaTriggerId, Promise<JenaTrigger>>()
   private readonly publishSeenTriggers: SeenTriggersPublisher
-  private readonly reportFetchProgress: TriggerFetchProgressReporter
+  private readonly reportStoreProgress: TriggerStoreProgressReporter
   private readonly server: ServerTriggerStoreApi
-  private fetchProgressToken = 0
+  private storeProgressToken = 0
 
   constructor(
     server: ServerTriggerStoreApi,
     cache: TriggerCache,
     publishSeenTriggers: SeenTriggersPublisher = () => undefined,
-    reportFetchProgress: TriggerFetchProgressReporter = () => undefined,
+    reportStoreProgress: TriggerStoreProgressReporter = () => undefined,
   ) {
     this.server = server
     this.cache = cache
     this.publishSeenTriggers = publishSeenTriggers
-    this.reportFetchProgress = reportFetchProgress
+    this.reportStoreProgress = reportStoreProgress
   }
 
   async storeTriggers(triggers: JenaTrigger[]) {
@@ -132,44 +146,37 @@ export class WriteThroughTriggerStore implements TriggerStoreApi {
     }
 
     const canonicalTriggers = triggers.map(withCanonicalTriggerId)
-    const novelTriggers = new Map<JenaTriggerId, JenaTrigger>()
+    const triggersById = new Map<JenaTriggerId, JenaTrigger>()
     const pendingTriggers = new Map<JenaTriggerId, Promise<JenaTrigger>>()
-    const cachedTriggers = await this.getCachedTriggers(
-      canonicalTriggers.map((trigger) => trigger.id),
-    )
 
     canonicalTriggers.forEach((trigger) => {
-      if (cachedTriggers.has(trigger.id)) {
-        return
-      }
-
       const pendingStore = this.pendingStores.get(trigger.id)
       if (pendingStore) {
         pendingTriggers.set(trigger.id, pendingStore)
         return
       }
 
-      novelTriggers.set(trigger.id, trigger)
+      triggersById.set(trigger.id, trigger)
     })
 
-    const novelStorePromise =
-      novelTriggers.size > 0
-        ? this.storeNovelTriggers([...novelTriggers.values()])
+    const storePromise =
+      triggersById.size > 0
+        ? this.storeMissingTriggers([...triggersById.values()])
         : Promise.resolve(new Map<JenaTriggerId, JenaTrigger>())
 
-    const storedNovelTriggers = await novelStorePromise
+    const storedTriggers = await storePromise
     const pendingStoredTriggers = await resolvePendingTriggers(pendingTriggers)
 
     const resolvedTriggers = canonicalTriggers.map((trigger) => {
       return (
-        storedNovelTriggers.get(trigger.id) ??
+        storedTriggers.get(trigger.id) ??
         pendingStoredTriggers.get(trigger.id) ??
-        cachedTriggers.get(trigger.id) ??
         this.cachedTriggers.get(trigger.id) ??
         trigger
       )
     })
 
+    this.cacheTriggers(resolvedTriggers)
     this.markHandledTriggers(resolvedTriggers)
     return resolvedTriggers
   }
@@ -222,7 +229,54 @@ export class WriteThroughTriggerStore implements TriggerStoreApi {
     return resolvedTriggers
   }
 
-  private async storeNovelTriggers(triggers: JenaTrigger[]) {
+  private async storeMissingTriggers(triggers: JenaTrigger[]) {
+    const response = await this.server.checkTriggers(
+      triggers.map((trigger) => trigger.id),
+    )
+    const missingIds = new Set(response.missingIds)
+    const missingTriggers = triggers.filter((trigger) => missingIds.has(trigger.id))
+
+    if (missingTriggers.length === 0) {
+      return new Map<JenaTriggerId, JenaTrigger>()
+    }
+
+    if (missingTriggers.length <= storeTriggerBatchSize) {
+      return await this.storeTriggersOnServer(missingTriggers)
+    }
+
+    const progressToken = ++this.storeProgressToken
+    const storedTriggers = new Map<JenaTriggerId, JenaTrigger>()
+    let completedCount = 0
+
+    try {
+      this.reportStoreProgress({
+        completedCount,
+        phase: 'saving',
+        totalCount: missingTriggers.length,
+      })
+
+      for (const chunk of chunkArray(missingTriggers, storeTriggerBatchSize)) {
+        const storedChunk = await this.storeTriggersOnServer(chunk)
+        storedChunk.forEach((trigger, triggerId) => {
+          storedTriggers.set(triggerId, trigger)
+        })
+        completedCount += chunk.length
+        this.reportStoreProgress({
+          completedCount,
+          phase: 'saving',
+          totalCount: missingTriggers.length,
+        })
+      }
+    } finally {
+      if (progressToken === this.storeProgressToken) {
+        this.reportStoreProgress(null)
+      }
+    }
+
+    return storedTriggers
+  }
+
+  private async storeTriggersOnServer(triggers: JenaTrigger[]) {
     const pendingStore = this.server
       .storeTriggers(triggers)
       .then((storedTriggers) => {
@@ -298,10 +352,11 @@ export class WriteThroughTriggerStore implements TriggerStoreApi {
 
         if (response.partial || progressToken !== null) {
           if (progressToken === null) {
-            progressToken = ++this.fetchProgressToken
+            progressToken = ++this.storeProgressToken
           }
-          this.reportFetchProgress({
-            fetchedCount: fetchedIds.size,
+          this.reportStoreProgress({
+            completedCount: fetchedIds.size,
+            phase: 'loading',
             totalCount: ids.length,
           })
         }
@@ -316,8 +371,8 @@ export class WriteThroughTriggerStore implements TriggerStoreApi {
         remainingIds = remainingIds.filter((id) => !fetchedIds.has(id))
       }
     } finally {
-      if (progressToken !== null && progressToken === this.fetchProgressToken) {
-        this.reportFetchProgress(null)
+      if (progressToken !== null && progressToken === this.storeProgressToken) {
+        this.reportStoreProgress(null)
       }
     }
 
@@ -411,6 +466,15 @@ export class WriteThroughTriggerStore implements TriggerStoreApi {
     })
   }
 
+  private cacheTriggers(triggers: JenaTrigger[]) {
+    const canonicalTriggers = triggers.map(withCanonicalTriggerId)
+
+    canonicalTriggers.forEach((trigger) => {
+      this.cachedTriggers.set(trigger.id, trigger)
+    })
+    this.persistTriggers(canonicalTriggers)
+  }
+
   private markHandledTriggers(triggers: Iterable<JenaTrigger>) {
     const newlySeenTriggers: JenaTrigger[] = []
 
@@ -430,10 +494,10 @@ export class WriteThroughTriggerStore implements TriggerStoreApi {
   }
 }
 
-function TriggerFetchProgressGlass({
+function TriggerStoreProgressGlass({
   progress,
 }: {
-  progress: TriggerFetchProgress | null
+  progress: TriggerStoreProgress | null
 }) {
   if (!progress) {
     return null
@@ -441,8 +505,9 @@ function TriggerFetchProgressGlass({
 
   const progressPercent =
     progress.totalCount > 0
-      ? Math.round((progress.fetchedCount / progress.totalCount) * 100)
+      ? Math.round((progress.completedCount / progress.totalCount) * 100)
       : 0
+  const title = progress.phase === 'saving' ? 'Saving triggers' : 'Loading triggers'
 
   return (
     <div
@@ -451,9 +516,9 @@ function TriggerFetchProgressGlass({
       role="status"
     >
       <div className="trigger-store-progress-panel">
-        <div className="trigger-store-progress-title">Loading triggers</div>
+        <div className="trigger-store-progress-title">{title}</div>
         <div className="trigger-store-progress-status">
-          {progress.fetchedCount} / {progress.totalCount} triggers
+          {progress.completedCount} / {progress.totalCount} triggers
         </div>
         <ProgressBar
           animated
@@ -464,6 +529,16 @@ function TriggerFetchProgressGlass({
       </div>
     </div>
   )
+}
+
+function chunkArray<TItem>(items: TItem[], chunkSize: number) {
+  const chunks: TItem[][] = []
+
+  for (let index = 0; index < items.length; index += chunkSize) {
+    chunks.push(items.slice(index, index + chunkSize))
+  }
+
+  return chunks
 }
 
 async function resolvePendingTriggers(

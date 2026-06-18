@@ -28,6 +28,14 @@ type StoreTriggersResponse struct {
 	Triggers []model.Trigger `json:"triggers"`
 }
 
+type CheckTriggersRequest struct {
+	IDs []model.TriggerID `json:"ids"`
+}
+
+type CheckTriggersResponse struct {
+	MissingIDs []model.TriggerID `json:"missingIds"`
+}
+
 type FetchTriggersRequest struct {
 	IDs []model.TriggerID `json:"ids"`
 }
@@ -47,6 +55,7 @@ func New(ctx context.Context, bus *eventbus.Bus, db *database.Database) (*Servic
 	}
 
 	service.unregister = bus.RegisterRPC(endpoint, map[string]eventbus.RPCHandler{
+		"checkTriggers": service.checkTriggers,
 		"fetchTriggers": service.fetchTriggers,
 		"storeTriggers": service.storeTriggers,
 	})
@@ -199,6 +208,39 @@ func (service *Service) FilterStoredTriggerIDs(ctx context.Context, ids []model.
 	return filteredIDs, nil
 }
 
+func (service *Service) MissingTriggerIDs(ctx context.Context, ids []model.TriggerID) ([]model.TriggerID, error) {
+	missingIDs := make([]model.TriggerID, 0, len(ids))
+	seenIDs := make(map[model.TriggerID]struct{}, len(ids))
+
+	for _, id := range ids {
+		if _, ok := seenIDs[id]; ok {
+			continue
+		}
+		seenIDs[id] = struct{}{}
+
+		if id == "" {
+			missingIDs = append(missingIDs, id)
+			continue
+		}
+
+		var storedID string
+		err := service.db.QueryRowContext(
+			ctx,
+			"SELECT id FROM triggers WHERE id = ?",
+			string(id),
+		).Scan(&storedID)
+		if errors.Is(err, sql.ErrNoRows) {
+			missingIDs = append(missingIDs, id)
+			continue
+		}
+		if err != nil {
+			return nil, fmt.Errorf("lookup stored trigger id: %w", err)
+		}
+	}
+
+	return missingIDs, nil
+}
+
 func (service *Service) GetTriggersPartial(ctx context.Context, ids []model.TriggerID, limit int) ([]model.Trigger, bool, error) {
 	if limit <= 0 {
 		return nil, false, errors.New("trigger fetch limit must be greater than zero")
@@ -235,6 +277,22 @@ func (service *Service) storeTriggers(ctx context.Context, _ eventbus.RPCMetadat
 
 	return StoreTriggersResponse{
 		Triggers: storedTriggers,
+	}, nil
+}
+
+func (service *Service) checkTriggers(ctx context.Context, _ eventbus.RPCMetadata, params json.RawMessage) (any, error) {
+	var request CheckTriggersRequest
+	if err := json.Unmarshal(params, &request); err != nil {
+		return nil, fmt.Errorf("decode check triggers request: %w", err)
+	}
+
+	missingIDs, err := service.MissingTriggerIDs(ctx, request.IDs)
+	if err != nil {
+		return nil, err
+	}
+
+	return CheckTriggersResponse{
+		MissingIDs: missingIDs,
 	}, nil
 }
 

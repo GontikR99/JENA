@@ -58,6 +58,13 @@ vi.mock('../model/UserTriggerManager', () => ({
   }),
 }))
 
+vi.mock('../model/TriggerStore', () => ({
+  useTriggerStore: () => ({
+    fetchTriggers: vi.fn(),
+    storeTriggers: vi.fn(async (triggers) => triggers),
+  }),
+}))
+
 vi.mock('../../auth/authContext', () => ({
   useAuth: () => ({
     isAuthenticated: true,
