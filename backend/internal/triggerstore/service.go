@@ -13,6 +13,7 @@ import (
 )
 
 const endpoint = "trigger-store"
+const fetchTriggerResponseLimit = 100
 
 type Service struct {
 	db         *database.Database
@@ -32,6 +33,7 @@ type FetchTriggersRequest struct {
 }
 
 type FetchTriggersResponse struct {
+	Partial  bool            `json:"partial"`
 	Triggers []model.Trigger `json:"triggers"`
 }
 
@@ -165,6 +167,29 @@ func (service *Service) GetTriggers(ctx context.Context, ids []model.TriggerID) 
 	return triggers, nil
 }
 
+func (service *Service) GetTriggersPartial(ctx context.Context, ids []model.TriggerID, limit int) ([]model.Trigger, bool, error) {
+	if limit <= 0 {
+		return nil, false, errors.New("trigger fetch limit must be greater than zero")
+	}
+
+	triggers := make([]model.Trigger, 0, min(len(ids), limit))
+
+	for index, id := range ids {
+		if index >= limit {
+			return triggers, true, nil
+		}
+
+		trigger, err := service.GetTrigger(ctx, id)
+		if err != nil {
+			return nil, false, err
+		}
+
+		triggers = append(triggers, trigger)
+	}
+
+	return triggers, false, nil
+}
+
 func (service *Service) storeTriggers(ctx context.Context, _ eventbus.RPCMetadata, params json.RawMessage) (any, error) {
 	var request StoreTriggersRequest
 	if err := json.Unmarshal(params, &request); err != nil {
@@ -187,12 +212,13 @@ func (service *Service) fetchTriggers(ctx context.Context, _ eventbus.RPCMetadat
 		return nil, fmt.Errorf("decode fetch triggers request: %w", err)
 	}
 
-	triggers, err := service.GetTriggers(ctx, request.IDs)
+	triggers, partial, err := service.GetTriggersPartial(ctx, request.IDs, fetchTriggerResponseLimit)
 	if err != nil {
 		return nil, err
 	}
 
 	return FetchTriggersResponse{
+		Partial:  partial,
 		Triggers: triggers,
 	}, nil
 }

@@ -3,6 +3,7 @@ package triggerstore
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -40,6 +41,79 @@ func TestServiceStoresAndFetchesTriggersByID(t *testing.T) {
 
 	if !reflect.DeepEqual(fetchResponse.Triggers, []model.Trigger{secondTrigger, firstTrigger}) {
 		t.Fatalf("fetched triggers %#v, want %#v", fetchResponse.Triggers, []model.Trigger{secondTrigger, firstTrigger})
+	}
+	if fetchResponse.Partial {
+		t.Fatal("fetch response was partial, want complete")
+	}
+}
+
+func TestServiceFetchesTriggersPartiallyByLimit(t *testing.T) {
+	ctx := context.Background()
+	bus := eventbus.New()
+	db := newTestDatabase(t)
+	service, err := New(ctx, bus, db)
+	if err != nil {
+		t.Fatalf("New returned error: %v", err)
+	}
+	defer service.Dispose()
+
+	firstTrigger := createCanonicalTestTrigger(t, "First Trigger")
+	secondTrigger := createCanonicalTestTrigger(t, "Second Trigger")
+
+	callRPC[StoreTriggersResponse](t, bus, "storeTriggers", StoreTriggersRequest{
+		Triggers: []model.Trigger{firstTrigger, secondTrigger},
+	})
+
+	triggers, partial, err := service.GetTriggersPartial(
+		ctx,
+		[]model.TriggerID{firstTrigger.ID, secondTrigger.ID},
+		1,
+	)
+	if err != nil {
+		t.Fatalf("GetTriggersPartial returned error: %v", err)
+	}
+	if !partial {
+		t.Fatal("partial was false, want true")
+	}
+	if !reflect.DeepEqual(triggers, []model.Trigger{firstTrigger}) {
+		t.Fatalf("triggers %#v, want first trigger only", triggers)
+	}
+}
+
+func TestServiceFetchTriggersRPCReturnsAtMostOneHundredTriggers(t *testing.T) {
+	ctx := context.Background()
+	bus := eventbus.New()
+	db := newTestDatabase(t)
+	service, err := New(ctx, bus, db)
+	if err != nil {
+		t.Fatalf("New returned error: %v", err)
+	}
+	defer service.Dispose()
+
+	triggers := make([]model.Trigger, 0, fetchTriggerResponseLimit+1)
+	ids := make([]model.TriggerID, 0, fetchTriggerResponseLimit+1)
+	for index := range fetchTriggerResponseLimit + 1 {
+		trigger := createCanonicalTestTrigger(t, fmt.Sprintf("Trigger %03d", index))
+		triggers = append(triggers, trigger)
+		ids = append(ids, trigger.ID)
+	}
+
+	callRPC[StoreTriggersResponse](t, bus, "storeTriggers", StoreTriggersRequest{
+		Triggers: triggers,
+	})
+
+	fetchResponse := callRPC[FetchTriggersResponse](t, bus, "fetchTriggers", FetchTriggersRequest{
+		IDs: ids,
+	})
+
+	if !fetchResponse.Partial {
+		t.Fatal("partial was false, want true")
+	}
+	if len(fetchResponse.Triggers) != fetchTriggerResponseLimit {
+		t.Fatalf("fetched %d triggers, want %d", len(fetchResponse.Triggers), fetchTriggerResponseLimit)
+	}
+	if !reflect.DeepEqual(fetchResponse.Triggers, triggers[:fetchTriggerResponseLimit]) {
+		t.Fatal("fetched triggers did not match first requested page")
 	}
 }
 
@@ -102,6 +176,9 @@ func TestServiceStoresImportedTriggerWithAngleBrackets(t *testing.T) {
 
 	if !reflect.DeepEqual(fetchResponse.Triggers, []model.Trigger{trigger}) {
 		t.Fatalf("fetched triggers %#v, want %#v", fetchResponse.Triggers, []model.Trigger{trigger})
+	}
+	if fetchResponse.Partial {
+		t.Fatal("fetch response was partial, want complete")
 	}
 }
 

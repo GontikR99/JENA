@@ -70,6 +70,10 @@ interface LocalUserTriggerCache {
   triggers: JenaTrigger[]
 }
 
+interface ResolvedUserTriggerState extends JenaUserTriggerFetchResponse {
+  triggers: JenaTrigger[]
+}
+
 const TriggerManagerContext = createContext<TriggerManagerApi | null>(null)
 
 export function UserTriggerManagerProvider({
@@ -95,7 +99,7 @@ export function UserTriggerManagerProvider({
   }, [])
 
   const replaceState = useCallback(
-    async (state: JenaUserTriggerFetchResponse) => {
+    async (state: ResolvedUserTriggerState) => {
       recordsRef.current = new Map(
         state.records.map((record) => [record.triggerId, normalizeRecord(record)]),
       )
@@ -155,8 +159,15 @@ export function UserTriggerManagerProvider({
       'fetchTriggers',
       {},
     )
-    await replaceState(state)
-  }, [call, replaceState])
+    const triggers = await triggerStore.fetchTriggers(
+      state.records.map((record) => record.triggerId),
+    )
+
+    await replaceState({
+      ...state,
+      triggers,
+    })
+  }, [call, replaceState, triggerStore])
 
   useEffect(() => {
     let cancelled = false

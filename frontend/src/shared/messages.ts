@@ -205,6 +205,7 @@ export interface RpcEndpoints {
         ids: string[]
       }
       response: {
+        partial: boolean
         triggers: JenaTrigger[]
       }
     }
@@ -244,7 +245,6 @@ export interface RpcEndpoints {
       response: {
         records: JenaUserTriggerFetchResponse['records']
         revision: string
-        triggers: JenaTrigger[]
       }
     }
     ping: {

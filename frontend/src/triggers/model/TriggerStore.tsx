@@ -2,14 +2,17 @@ import {
   createContext,
   useContext,
   useMemo,
+  useState,
   type ReactNode,
 } from 'react'
+import ProgressBar from 'react-bootstrap/ProgressBar'
 import { useRpc, useSender } from '../../shared/messageBrokerHooks'
 import {
   withCanonicalTriggerId,
   type JenaTrigger,
   type JenaTriggerId,
 } from '../../shared/triggers'
+import './TriggerStore.css'
 
 export interface TriggerStoreApi {
   fetchTriggers: (ids: JenaTriggerId[]) => Promise<JenaTrigger[]>
@@ -17,10 +20,23 @@ export interface TriggerStoreApi {
 }
 
 export type SeenTriggersPublisher = (triggers: JenaTrigger[]) => void
+export type TriggerFetchProgressReporter = (
+  progress: TriggerFetchProgress | null,
+) => void
+
+export interface TriggerFetchProgress {
+  fetchedCount: number
+  totalCount: number
+}
 
 interface ServerTriggerStoreApi {
-  fetchTriggers: (ids: JenaTriggerId[]) => Promise<JenaTrigger[]>
+  fetchTriggers: (ids: JenaTriggerId[]) => Promise<FetchTriggersResult>
   storeTriggers: (triggers: JenaTrigger[]) => Promise<JenaTrigger[]>
+}
+
+interface FetchTriggersResult {
+  partial: boolean
+  triggers: JenaTrigger[]
 }
 
 interface TriggerCache {
@@ -41,6 +57,8 @@ const TriggerStoreContext = createContext<TriggerStoreApi | null>(null)
 export function TriggerStoreProvider({ children }: { children: ReactNode }) {
   const call = useRpc('trigger-store')
   const send = useSender('trigger-store')
+  const [fetchProgress, setFetchProgress] =
+    useState<TriggerFetchProgress | null>(null)
   const store = useMemo(() => {
     return new WriteThroughTriggerStore(
       {
@@ -49,7 +67,7 @@ export function TriggerStoreProvider({ children }: { children: ReactNode }) {
             ids,
           })
 
-          return response.triggers
+          return response
         },
         storeTriggers: async (triggers) => {
           const response = await call('server.trigger-store', 'storeTriggers', {
@@ -63,12 +81,14 @@ export function TriggerStoreProvider({ children }: { children: ReactNode }) {
       (triggers) => {
         send('trigger-store.triggers-seen', { triggers })
       },
+      setFetchProgress,
     )
-  }, [call, send])
+  }, [call, send, setFetchProgress])
 
   return (
     <TriggerStoreContext.Provider value={store}>
       {children}
+      <TriggerFetchProgressGlass progress={fetchProgress} />
     </TriggerStoreContext.Provider>
   )
 }
@@ -89,16 +109,20 @@ export class WriteThroughTriggerStore implements TriggerStoreApi {
   private readonly pendingFetches = new Map<JenaTriggerId, Promise<JenaTrigger>>()
   private readonly pendingStores = new Map<JenaTriggerId, Promise<JenaTrigger>>()
   private readonly publishSeenTriggers: SeenTriggersPublisher
+  private readonly reportFetchProgress: TriggerFetchProgressReporter
   private readonly server: ServerTriggerStoreApi
+  private fetchProgressToken = 0
 
   constructor(
     server: ServerTriggerStoreApi,
     cache: TriggerCache,
     publishSeenTriggers: SeenTriggersPublisher = () => undefined,
+    reportFetchProgress: TriggerFetchProgressReporter = () => undefined,
   ) {
     this.server = server
     this.cache = cache
     this.publishSeenTriggers = publishSeenTriggers
+    this.reportFetchProgress = reportFetchProgress
   }
 
   async storeTriggers(triggers: JenaTrigger[]) {
@@ -225,8 +249,7 @@ export class WriteThroughTriggerStore implements TriggerStoreApi {
   }
 
   private async fetchMissingTriggers(ids: JenaTriggerId[]) {
-    const pendingFetch = this.server
-      .fetchTriggers(ids)
+    const pendingFetch = this.fetchMissingTriggersFromServer(ids)
       .then((fetchedTriggers) => {
         const cachedTriggers = this.cacheReturnedTriggersByIDs(ids, fetchedTriggers)
         this.markHandledTriggers(cachedTriggers.values())
@@ -249,6 +272,55 @@ export class WriteThroughTriggerStore implements TriggerStoreApi {
         this.pendingFetches.delete(id)
       })
     }
+  }
+
+  private async fetchMissingTriggersFromServer(ids: JenaTriggerId[]) {
+    const fetchedTriggers: JenaTrigger[] = []
+    const fetchedIds = new Set<JenaTriggerId>()
+    let progressToken: number | null = null
+    let remainingIds = [...ids]
+
+    try {
+      while (remainingIds.length > 0) {
+        const response = await this.server.fetchTriggers(remainingIds)
+        const novelTriggers = response.triggers.filter((trigger) => {
+          const canonicalTrigger = withCanonicalTriggerId(trigger)
+
+          return !fetchedIds.has(canonicalTrigger.id)
+        })
+
+        novelTriggers.forEach((trigger) => {
+          const canonicalTrigger = withCanonicalTriggerId(trigger)
+          fetchedIds.add(canonicalTrigger.id)
+          fetchedTriggers.push(canonicalTrigger)
+        })
+
+        if (response.partial || progressToken !== null) {
+          if (progressToken === null) {
+            progressToken = ++this.fetchProgressToken
+          }
+          this.reportFetchProgress({
+            fetchedCount: fetchedIds.size,
+            totalCount: ids.length,
+          })
+        }
+
+        if (!response.partial) {
+          break
+        }
+        if (novelTriggers.length === 0) {
+          throw new Error('Partial trigger fetch made no progress.')
+        }
+
+        remainingIds = remainingIds.filter((id) => !fetchedIds.has(id))
+      }
+    } finally {
+      if (progressToken !== null && progressToken === this.fetchProgressToken) {
+        this.reportFetchProgress(null)
+      }
+    }
+
+    return fetchedTriggers
   }
 
   private cacheReturnedTriggers(
@@ -355,6 +427,42 @@ export class WriteThroughTriggerStore implements TriggerStoreApi {
       this.publishSeenTriggers(newlySeenTriggers)
     }
   }
+}
+
+function TriggerFetchProgressGlass({
+  progress,
+}: {
+  progress: TriggerFetchProgress | null
+}) {
+  if (!progress) {
+    return null
+  }
+
+  const progressPercent =
+    progress.totalCount > 0
+      ? Math.round((progress.fetchedCount / progress.totalCount) * 100)
+      : 0
+
+  return (
+    <div
+      aria-live="polite"
+      className="trigger-store-glass"
+      role="status"
+    >
+      <div className="trigger-store-progress-panel">
+        <div className="trigger-store-progress-title">Loading triggers</div>
+        <div className="trigger-store-progress-status">
+          {progress.fetchedCount} / {progress.totalCount} triggers
+        </div>
+        <ProgressBar
+          animated
+          now={progressPercent}
+          striped
+          variant="success"
+        />
+      </div>
+    </div>
+  )
 }
 
 async function resolvePendingTriggers(

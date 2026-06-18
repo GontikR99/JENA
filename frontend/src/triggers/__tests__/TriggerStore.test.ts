@@ -46,6 +46,93 @@ describe('WriteThroughTriggerStore', () => {
     expect(server.fetchTriggers).toHaveBeenCalledWith([secondTrigger.id])
   })
 
+  it('retries partial fetch responses for remaining trigger IDs', async () => {
+    const firstTrigger = createTestTrigger('First Trigger')
+    const secondTrigger = createTestTrigger('Second Trigger')
+    const thirdTrigger = createTestTrigger('Third Trigger')
+    const server = createServer({
+      partialFetchSize: 1,
+      triggers: [firstTrigger, secondTrigger, thirdTrigger],
+    })
+    const store = new WriteThroughTriggerStore(server, new InMemoryTriggerCache())
+
+    const result = await store.fetchTriggers([
+      firstTrigger.id,
+      secondTrigger.id,
+      thirdTrigger.id,
+    ])
+
+    expect(result).toEqual([firstTrigger, secondTrigger, thirdTrigger])
+    expect(server.fetchTriggers).toHaveBeenCalledTimes(3)
+    expect(server.fetchTriggers).toHaveBeenNthCalledWith(1, [
+      firstTrigger.id,
+      secondTrigger.id,
+      thirdTrigger.id,
+    ])
+    expect(server.fetchTriggers).toHaveBeenNthCalledWith(2, [
+      secondTrigger.id,
+      thirdTrigger.id,
+    ])
+    expect(server.fetchTriggers).toHaveBeenNthCalledWith(3, [thirdTrigger.id])
+  })
+
+  it('reports progress only while resolving partial fetch responses', async () => {
+    const firstTrigger = createTestTrigger('First Trigger')
+    const secondTrigger = createTestTrigger('Second Trigger')
+    const thirdTrigger = createTestTrigger('Third Trigger')
+    const server = createServer({
+      partialFetchSize: 1,
+      triggers: [firstTrigger, secondTrigger, thirdTrigger],
+    })
+    const reportFetchProgress = vi.fn()
+    const store = new WriteThroughTriggerStore(
+      server,
+      new InMemoryTriggerCache(),
+      undefined,
+      reportFetchProgress,
+    )
+
+    await store.fetchTriggers([
+      firstTrigger.id,
+      secondTrigger.id,
+      thirdTrigger.id,
+    ])
+
+    expect(reportFetchProgress).toHaveBeenCalledTimes(4)
+    expect(reportFetchProgress).toHaveBeenNthCalledWith(1, {
+      fetchedCount: 1,
+      totalCount: 3,
+    })
+    expect(reportFetchProgress).toHaveBeenNthCalledWith(2, {
+      fetchedCount: 2,
+      totalCount: 3,
+    })
+    expect(reportFetchProgress).toHaveBeenNthCalledWith(3, {
+      fetchedCount: 3,
+      totalCount: 3,
+    })
+    expect(reportFetchProgress).toHaveBeenNthCalledWith(4, null)
+  })
+
+  it('does not report progress for fetch responses completed in one batch', async () => {
+    const firstTrigger = createTestTrigger('First Trigger')
+    const secondTrigger = createTestTrigger('Second Trigger')
+    const server = createServer({
+      triggers: [firstTrigger, secondTrigger],
+    })
+    const reportFetchProgress = vi.fn()
+    const store = new WriteThroughTriggerStore(
+      server,
+      new InMemoryTriggerCache(),
+      undefined,
+      reportFetchProgress,
+    )
+
+    await store.fetchTriggers([firstTrigger.id, secondTrigger.id])
+
+    expect(reportFetchProgress).not.toHaveBeenCalled()
+  })
+
   it('does not call the server for empty store or fetch requests', async () => {
     const server = createServer()
     const store = new WriteThroughTriggerStore(server, new InMemoryTriggerCache())
@@ -144,18 +231,30 @@ describe('WriteThroughTriggerStore', () => {
   })
 })
 
-function createServer({ triggers = [] }: { triggers?: JenaTrigger[] } = {}) {
+function createServer({
+  partialFetchSize = Number.POSITIVE_INFINITY,
+  triggers = [],
+}: {
+  partialFetchSize?: number
+  triggers?: JenaTrigger[]
+} = {}) {
   const triggersByID = new Map<JenaTriggerId, JenaTrigger>(
     triggers.map((trigger) => [trigger.id, trigger]),
   )
 
   return {
     fetchTriggers: vi.fn(async (ids: JenaTriggerId[]) => {
-      return ids.flatMap((id) => {
+      const matchingTriggers = ids.flatMap((id) => {
         const trigger = triggersByID.get(id)
 
         return trigger ? [trigger] : []
       })
+      const returnedTriggers = matchingTriggers.slice(0, partialFetchSize)
+
+      return {
+        partial: returnedTriggers.length < matchingTriggers.length,
+        triggers: returnedTriggers,
+      }
     }),
     storeTriggers: vi.fn(async (storedTriggers: JenaTrigger[]) => {
       storedTriggers.forEach((trigger) => {

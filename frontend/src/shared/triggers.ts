@@ -110,7 +110,6 @@ export interface JenaTriggerUpsert {
 export interface JenaUserTriggerFetchResponse {
   records: JenaExtendedTrigger[]
   revision: string
-  triggers: JenaTrigger[]
 }
 
 export interface JenaUserTriggerUpdate {

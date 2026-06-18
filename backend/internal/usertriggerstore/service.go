@@ -36,7 +36,6 @@ type Service struct {
 type FetchTriggersResponse struct {
 	Records  []model.ExtendedTrigger `json:"records"`
 	Revision string                  `json:"revision"`
-	Triggers []model.Trigger         `json:"triggers"`
 }
 
 type UpsertTriggersRequest struct {
@@ -588,13 +587,11 @@ func (service *Service) fetchState(ctx context.Context, userID string) (FetchTri
 	rows, err := service.db.QueryContext(ctx, `
 		SELECT
 			ut.trigger_id,
-			t.json,
 			ut.publish,
 			ut.broadcast_mode,
 			ute.character_name,
 			ute.server_name
 		FROM user_triggers ut
-		JOIN triggers t ON t.id = ut.trigger_id
 		LEFT JOIN user_trigger_enabled_for ute
 			ON ute.user_id = ut.user_id
 			AND ute.trigger_id = ut.trigger_id
@@ -609,28 +606,21 @@ func (service *Service) fetchState(ctx context.Context, userID string) (FetchTri
 	defer rows.Close()
 
 	recordsByID := make(map[model.TriggerID]*model.ExtendedTrigger)
-	triggersByID := make(map[model.TriggerID]model.Trigger)
 	orderedIDs := []model.TriggerID{}
 
 	for rows.Next() {
 		var triggerID model.TriggerID
-		var encodedTrigger string
 		var publish int
 		var broadcastMode model.BroadcastMode
 		var characterName sql.NullString
 		var serverName sql.NullString
 
-		if err := rows.Scan(&triggerID, &encodedTrigger, &publish, &broadcastMode, &characterName, &serverName); err != nil {
+		if err := rows.Scan(&triggerID, &publish, &broadcastMode, &characterName, &serverName); err != nil {
 			return FetchTriggersResponse{}, fmt.Errorf("scan user trigger: %w", err)
 		}
 
 		record, ok := recordsByID[triggerID]
 		if !ok {
-			var trigger model.Trigger
-			if err := json.Unmarshal([]byte(encodedTrigger), &trigger); err != nil {
-				return FetchTriggersResponse{}, fmt.Errorf("decode trigger %q: %w", triggerID, err)
-			}
-
 			recordsByID[triggerID] = &model.ExtendedTrigger{
 				TriggerID:     triggerID,
 				EnabledFor:    []model.CharacterServer{},
@@ -638,7 +628,6 @@ func (service *Service) fetchState(ctx context.Context, userID string) (FetchTri
 				BroadcastMode: broadcastMode,
 			}
 			record = recordsByID[triggerID]
-			triggersByID[triggerID] = trigger
 			orderedIDs = append(orderedIDs, triggerID)
 		}
 
@@ -654,10 +643,8 @@ func (service *Service) fetchState(ctx context.Context, userID string) (FetchTri
 	}
 
 	records := make([]model.ExtendedTrigger, 0, len(orderedIDs))
-	triggers := make([]model.Trigger, 0, len(orderedIDs))
 	for _, triggerID := range orderedIDs {
 		records = append(records, *recordsByID[triggerID])
-		triggers = append(triggers, triggersByID[triggerID])
 	}
 
 	revision, err := service.getOrCreateRevision(ctx, userID)
@@ -668,7 +655,6 @@ func (service *Service) fetchState(ctx context.Context, userID string) (FetchTri
 	return FetchTriggersResponse{
 		Records:  records,
 		Revision: revision,
-		Triggers: triggers,
 	}, nil
 }
 
@@ -711,8 +697,18 @@ func (service *Service) findPathNameMatches(ctx context.Context, userID string, 
 		return nil, err
 	}
 
+	triggerIDs := make([]model.TriggerID, 0, len(state.Records))
+	for _, record := range state.Records {
+		triggerIDs = append(triggerIDs, record.TriggerID)
+	}
+
+	candidates, err := service.triggerStore.GetTriggers(ctx, triggerIDs)
+	if err != nil {
+		return nil, err
+	}
+
 	matches := []model.TriggerID{}
-	for _, candidate := range state.Triggers {
+	for _, candidate := range candidates {
 		if candidate.ID == trigger.ID {
 			continue
 		}

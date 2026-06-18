@@ -55,9 +55,6 @@ func TestServiceUpsertsAndFetchesTriggersForUser(t *testing.T) {
 	if !reflect.DeepEqual(fetchResponse.Records, []model.ExtendedTrigger{expectedRecord}) {
 		t.Fatalf("records %#v, want %#v", fetchResponse.Records, []model.ExtendedTrigger{expectedRecord})
 	}
-	if !reflect.DeepEqual(fetchResponse.Triggers, []model.Trigger{trigger}) {
-		t.Fatalf("triggers %#v, want %#v", fetchResponse.Triggers, []model.Trigger{trigger})
-	}
 	if fetchResponse.Revision != update.Revision {
 		t.Fatalf("revision %q, want %q", fetchResponse.Revision, update.Revision)
 	}
