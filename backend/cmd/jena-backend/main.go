@@ -15,7 +15,6 @@ import (
 	"jena/backend/internal/database"
 	"jena/backend/internal/eventbus"
 	"jena/backend/internal/httpserver"
-	"jena/backend/internal/identityservice"
 	"jena/backend/internal/logging"
 	"jena/backend/internal/sharingservice"
 	"jena/backend/internal/triggerstore"
@@ -81,14 +80,11 @@ func run(args []string) error {
 	defer authService.Dispose()
 	app.Install(container, authService)
 
-	identityService := identityservice.New(authService)
-	app.Install(container, identityService)
-
-	userSettingsService := usersettings.NewService(bus, identityService, userSettingsStore)
+	userSettingsService := usersettings.NewService(bus, authService, userSettingsStore)
 	defer userSettingsService.Dispose()
 	app.Install(container, userSettingsService)
 
-	bridge := websocketbridge.New(bus, installedLogger, config.AuthCookieName, identityService)
+	bridge := websocketbridge.New(bus, installedLogger, config.AuthCookieName, authService)
 	app.Install(container, bridge)
 
 	userBridge := userbridge.New(bus)
@@ -105,14 +101,14 @@ func run(args []string) error {
 	defer triggerStore.Dispose()
 	app.Install(container, triggerStore)
 
-	sharingService, err := sharingservice.New(context.Background(), bus, db, identityService, triggerStore, userSettingsStore, config)
+	sharingService, err := sharingservice.New(context.Background(), bus, db, authService, triggerStore, userSettingsStore, config)
 	if err != nil {
 		return err
 	}
 	defer sharingService.Dispose()
 	app.Install(container, sharingService)
 
-	userTriggerStore, err := usertriggerstore.New(context.Background(), bus, db, identityService, triggerStore, installedLogger)
+	userTriggerStore, err := usertriggerstore.New(context.Background(), bus, db, authService, triggerStore, installedLogger)
 	if err != nil {
 		return err
 	}

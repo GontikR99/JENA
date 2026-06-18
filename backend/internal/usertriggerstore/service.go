@@ -11,7 +11,6 @@ import (
 
 	"jena/backend/internal/database"
 	"jena/backend/internal/eventbus"
-	"jena/backend/internal/identityservice"
 	"jena/backend/internal/logging"
 	"jena/backend/internal/triggerstore"
 	"jena/backend/model"
@@ -22,10 +21,14 @@ const endpoint = "user-trigger-store"
 type Service struct {
 	bus          *eventbus.Bus
 	db           *database.Database
-	identity     *identityservice.Service
+	identity     Identity
 	logger       logging.Logger
 	triggerStore *triggerstore.Service
 	unregister   func()
+}
+
+type Identity interface {
+	StableIDForAuthToken(context.Context, *string) (string, error)
 }
 
 type FetchTriggersResponse struct {
@@ -66,7 +69,7 @@ func New(
 	ctx context.Context,
 	bus *eventbus.Bus,
 	db *database.Database,
-	identity *identityservice.Service,
+	identity Identity,
 	triggerStore *triggerstore.Service,
 	logger logging.Logger,
 ) (*Service, error) {

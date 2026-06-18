@@ -4,7 +4,7 @@
 
 JENA is a React/Vite frontend with a Go backend for EverQuest log-file driven trigger tooling. The frontend works with an EverQuest installation directory through browser file-system APIs, tails EverQuest log files in a web worker, manages user trigger data, and opens a Document Picture-in-Picture trigger runtime window.
 
-The backend is an HTTP/WebSocket server with a small dependency container, an event bus, SQLite-backed persistence, trigger stores, identity stubs, and worldwide presence services. Backend dependencies are vendored.
+The backend is an HTTP/WebSocket server with a small dependency container, an event bus, SQLite-backed persistence, Discord authentication/session services, trigger stores, and worldwide presence services. Backend dependencies are vendored.
 
 The frontend is built with Vite, React 19, TypeScript, Bootstrap, React Bootstrap, `react-hot-toast`, `react-resizable-panels`, `@tanstack/react-virtual`, `@szhsin/react-menu`, `fflate`, `htmlparser2`, `re2js`, and Lucide icons.
 
@@ -13,14 +13,16 @@ The frontend is built with Vite, React 19, TypeScript, Bootstrap, React Bootstra
 - `frontend/`: Browser application.
 - `frontend/src/main.tsx`: Browser entry point.
 - `frontend/src/App.tsx`: Top-level provider and bridge stack.
-- `frontend/src/AppShell.tsx`: Main navigation shell, startup button slot, login button, and current app section.
-- `frontend/src/auth/`: Dummy auth context.
+- `frontend/src/AppShell.tsx`: Main navigation shell, startup button slot, Discord login/logout button, and current app section.
+- `frontend/src/auth/`: Discord session context and startup checking screen.
 - `frontend/src/assets/`: Frontend image assets such as the JENA lockup and character activity indicators.
 - `frontend/src/bridges/server/`: Browser websocket bridge to the Go backend.
 - `frontend/src/bridges/worker/`: Browser-to-worker bridge.
 - `frontend/src/characters/`: Local and nearby character presence providers.
 - `frontend/src/pip/`: Components rendered into the Document Picture-in-Picture runtime window.
 - `frontend/src/runtime/`: Trigger runtime and EverQuest-directory startup workflow.
+- `frontend/src/settings/`: Local machine settings, remote user settings, and browser speech voice provider.
+- `frontend/src/sharing/`: Trigger share-code detection and merge dialog.
 - `frontend/src/shared/`: Shared browser utilities, typed messages, message broker code, trigger models, widgets, and browser API wrappers.
 - `frontend/src/triggers/`: Trigger editor, GINA import/export, user trigger editor/manager/store, alert coordination, trigger views, and trigger model helpers.
 - `frontend/src/triggers/alerts/`: Alert pattern compilation, trigger match coordination, speech service, and alert hooks.
@@ -43,21 +45,28 @@ The main app is mounted from `frontend/src/main.tsx`. It imports Bootstrap, `fro
 
 - `MessageBrokerProvider`
 - `AuthProvider`
+- `SpeechVoiceProvider`
+- `SettingsProvider`
 - `ServerBridge`
+- `AuthenticatedApp`, which waits only while auth status is `checking`
 - `WorkerBridge`
 - `TriggerStoreProvider`
 - `AlertCoordinationService`
+- `TriggerStopService`
 - `UserTriggerManagerProvider`
 - `NearbyCharactersProvider`
 - `LocalCharactersProvider`
 - `TriggerRuntimeProvider`
 - `TriggerSpeechService`
+- `TriggerShareCoordinator`
 - `AppShell`
 - `TriggerRuntimePortal`
 - `ServerConnectionGlass`
 - `Toaster`
 
-`frontend/src/AppShell.tsx` owns the top navigation shell, login button, startup button slot, and current main section. The active app section is currently `Triggers`; `Rolls` and `Search` are present but disabled.
+The application remains usable while logged out. The only full-screen auth placeholder is the startup `checking` state while the client asks `server.auth.getSession` whether an HTTP-only session cookie is valid.
+
+`frontend/src/AppShell.tsx` owns the top navigation shell, Discord login/logout button, startup button slot, and current main section. The active app sections are currently `Triggers` and `Settings`; `Rolls` and `Search` are present but disabled.
 
 `frontend/src/runtime/StartupButton.tsx` owns the EverQuest-directory workflow:
 
@@ -87,7 +96,7 @@ const {
 } = useTriggerRuntime()
 ```
 
-`TriggerRuntimePortal` renders `frontend/src/pip/pip.tsx` into the PiP document with `createPortal`. This is intentional: React context flows through the portal, so PiP components can use the same providers as the main app. The current PiP content is minimal and should be treated as unfinished runtime UI.
+`TriggerRuntimePortal` renders `frontend/src/pip/pip.tsx` into the PiP document with `createPortal`. This is intentional: React context flows through the portal, so PiP components can use the same providers as the main app. The PiP UI renders timer progress bars and transient trigger text on a black background, removes timers on early enders, and clears timers/text when a stop command is detected.
 
 `frontend/src/shared/documentPipHost.ts` wraps the Document Picture-in-Picture API without creating a React root. It creates the PiP document host element, injects minimal base styles, mirrors main-document `<style>` and stylesheet `<link>` nodes into the PiP document, and observes `document.head` so Vite-injected or component-imported CSS is copied into the PiP window.
 
@@ -98,6 +107,8 @@ When changing PiP behavior, preserve feature detection, user-gesture compatibili
 `frontend/src/shared/fileSystemAccess.ts` wraps the File System Access API. It keeps local TypeScript interfaces for the directory and file handle methods the app uses. The main validation rule is that an EverQuest directory must contain `eqgame.exe`.
 
 `frontend/src/shared/directoryHandleStore.ts` persists the selected directory handle in IndexedDB using database `jena`, object store `handles`, and key `everquest-directory`.
+
+Trigger caches, logged-out user trigger state, trigger tree collapsed state, and machine settings also use the `jena` IndexedDB database. The settings view has a dangerous "Wipe out cached information" action that deletes the whole JENA IndexedDB database and reloads the page.
 
 `frontend/src/shared/documentPipHost.ts` wraps the Document Picture-in-Picture host/window mechanics.
 
@@ -111,7 +122,6 @@ The bus uses a routed envelope instead of event-name subscriptions:
 
 ```ts
 interface BusMessage<TPayload = unknown> {
-  authToken?: string
   id: string
   source: string | null
   destination: string
@@ -153,8 +163,9 @@ Client-side endpoint prefixes have transport meaning:
 - Client-to-worker messages use destinations such as `worker.file-watcher`; `WorkerBridge` strips `worker.` before posting to the worker.
 - Worker-to-client messages use `client.*`; `WorkerMessageBus` strips `client.` before posting to the main bus, so main-window listeners use unprefixed destinations such as `matcher.match-found`.
 - Worker-to-server messages use `server.*`; `WorkerMessageBus` posts these to the main bus for `ServerBridge`.
-- Client-to-server messages use `server.*`; `ServerBridge` strips `server.` before sending over the websocket.
+- Client-to-server messages use `server.*`; `ServerBridge` strips `server.` before sending over the websocket. Authentication is carried below the application message envelope by HTTP-only cookies.
 - Backend websocket sources are internally expanded to `ws.<connection>.<source>` by `backend/internal/websocketbridge/bridge.go`; replies and broadcasts to a specific browser are sent to `ws.<connection>.<topic>` and stripped again before reaching the browser.
+- Backend user-targeted broadcasts use `user.<stableUserId>.<topic>`; `backend/internal/userbridge/service.go` fans those messages out to each active websocket source for that stable user and ignores empty user IDs.
 
 Client code should generally listen for unprefixed local destinations such as `matcher.match-found`, not `client.matcher.match-found`.
 
@@ -166,16 +177,18 @@ The canonical typed frontend contract is `frontend/src/shared/messages.ts`. Work
 
 | Topic | Contract source | Producer source | Consumer source | Purpose |
 | --- | --- | --- | --- | --- |
+| `alert.stop-requested` | `frontend/src/shared/messages.ts` (`EndpointMessages`) | `frontend/src/triggers/alerts/TriggerStopService.tsx` | `frontend/src/triggers/alerts/useTriggerAlerts.ts`, `frontend/src/pip/pip.tsx`, `frontend/src/triggers/alerts/TriggerSpeechService.tsx` | Announces `{JENA:STOP}` or `{GINA:STOP}` so timers, text, and speech stop immediately. |
 | `alert.timer-early-ended` | `frontend/src/shared/messages.ts` (`EndpointMessages`) | `frontend/src/triggers/alerts/AlertCoordinationService.tsx` | `frontend/src/triggers/alerts/useTriggerAlerts.ts` | Announces that a timer early-ender pattern matched a log line. |
 | `alert.trigger-matched` | `frontend/src/shared/messages.ts` (`EndpointMessages`) | `frontend/src/triggers/alerts/AlertCoordinationService.tsx` | `frontend/src/triggers/alerts/useTriggerAlerts.ts`, `frontend/src/triggers/alerts/TriggerSpeechService.tsx` | Announces a trigger match with substituted display, speech, and timer text. |
 | `character-presence.characters` | `frontend/src/shared/messages.ts` (`EndpointMessages`) | `frontend/src/worker/CharacterPresenceService.ts` as `client.character-presence.characters` | `frontend/src/characters/LocalCharactersProvider.tsx`, `frontend/src/triggers/editor/TriggerEditorDialog.tsx` | Publishes local characters, active state, and zone information to the main window. |
 | `file-watcher.characters` | `frontend/src/shared/messages.ts` (`EndpointMessages`) | `frontend/src/worker/FileWatcher.ts` | `frontend/src/worker/CharacterPresenceService.ts` | Worker-local list of characters discovered from EverQuest log files and their active state. |
-| `matcher.match-found` | `frontend/src/shared/messages.ts` (`EndpointMessages`) | `frontend/src/worker/MatcherService.ts` as `client.matcher.match-found` | `frontend/src/triggers/alerts/AlertCoordinationService.tsx`; worker-local `client.matcher.match-found` is consumed by `frontend/src/worker/CharacterPresenceService.ts` | Publishes regex match results with captures and log metadata. |
-| `speech.preview-requested` | `frontend/src/shared/messages.ts` (`EndpointMessages`) | `frontend/src/triggers/editor/TriggerEditorDialog.tsx` | `frontend/src/triggers/alerts/TriggerSpeechService.tsx` | Requests speech synthesis preview from the trigger editor. |
+| `matcher.match-found` | `frontend/src/shared/messages.ts` (`EndpointMessages`) | `frontend/src/worker/MatcherService.ts` as `client.matcher.match-found` | `frontend/src/triggers/alerts/AlertCoordinationService.tsx`, `frontend/src/triggers/alerts/TriggerStopService.tsx`, `frontend/src/sharing/TriggerShareCoordinator.tsx`; worker-local `client.matcher.match-found` is consumed by `frontend/src/worker/CharacterPresenceService.ts` | Publishes regex match results with captures and log metadata. |
+| `speech.preview-requested` | `frontend/src/shared/messages.ts` (`EndpointMessages`) | `frontend/src/triggers/editor/TriggerEditorDialog.tsx`, `frontend/src/settings/SettingsView.tsx` | `frontend/src/triggers/alerts/TriggerSpeechService.tsx` | Requests speech synthesis preview from the trigger editor or settings view. |
 | `trigger-store.triggers-seen` | `frontend/src/shared/messages.ts` (`EndpointMessages`) | `frontend/src/triggers/model/TriggerStore.tsx` | `frontend/src/triggers/alerts/AlertCoordinationService.tsx` | Announces newly handled canonical triggers so alert patterns can be registered. |
-| `user-trigger-store.updated` | `frontend/src/shared/messages.ts` (`EndpointMessages`) | `backend/internal/usertriggerstore/service.go` | `frontend/src/triggers/model/UserTriggerManager.tsx` | Broadcasts per-user trigger updates to active browser sessions for the same user. |
+| `user-trigger-store.updated` | `frontend/src/shared/messages.ts` (`EndpointMessages`) | `backend/internal/usertriggerstore/service.go` through `backend/internal/userbridge/service.go` | `frontend/src/triggers/model/UserTriggerManager.tsx` | Broadcasts per-user trigger updates to active browser sessions for the same stable user. |
 | `worldwide-presence.nearby-characters` | `frontend/src/shared/messages.ts` (`EndpointMessages`) | `backend/internal/worldwidepresenceservice/service.go` | `frontend/src/characters/NearbyCharactersProvider.tsx` | Sends nearby characters in zones touched by the current websocket source. |
 | `server.character-presence.characters` | Transported worker-to-server topic; payload type is `CharacterPresenceCharactersMessage` in `frontend/src/shared/messages.ts` | `frontend/src/worker/CharacterPresenceService.ts` | `backend/internal/worldwidepresenceservice/service.go` after prefix stripping | Reports this browser's local character presence to the backend. |
+| `user.<stableUserId>.*` | Backend-only convention in `backend/internal/userbridge/service.go` | Backend services such as `backend/internal/usertriggerstore/service.go` | `backend/internal/userbridge/service.go` | Targets a message to every active websocket source associated with a stable user. |
 
 ### RPC Endpoints
 
@@ -186,7 +199,7 @@ The canonical typed frontend contract is `frontend/src/shared/messages.ts`. Work
 | `worker.character-presence` | `frontend/src/shared/messages.ts` (`RpcEndpoints`) | `frontend/src/worker/CharacterPresenceService.ts` registers `character-presence` | `getCharacters` | Returns the worker's current character presence snapshot. |
 | `server.auth` | `frontend/src/shared/messages.ts` (`RpcEndpoints`) | `backend/internal/authservice/service.go` registers `auth` | `getSession` | Returns logged-in session state, stable user identity, and startup user settings. |
 | `server.sharing` | `frontend/src/shared/messages.ts` (`RpcEndpoints`) | `backend/internal/sharingservice/service.go` registers `sharing` | `createSharePackage`, `resolveSharePackage` | Creates expiring trigger share codes and resolves share codes back to trigger IDs plus creator display name. |
-| `server.trigger-store` | `frontend/src/shared/messages.ts` (`RpcEndpoints`) | `backend/internal/triggerstore/service.go` registers `trigger-store` | `storeTriggers`, `fetchTriggers` | Stores canonical trigger JSON and fetches triggers by canonical ID. |
+| `server.trigger-store` | `frontend/src/shared/messages.ts` (`RpcEndpoints`) | `backend/internal/triggerstore/service.go` registers `trigger-store` | `checkTriggers`, `storeTriggers`, `fetchTriggers` | Checks which canonical trigger IDs are missing, stores canonical trigger JSON, and fetches triggers by canonical ID with a 100-trigger response limit. |
 | `server.user-settings` | `frontend/src/shared/messages.ts` (`RpcEndpoints`) | `backend/internal/usersettings/service.go` registers `user-settings` | `updateSettings` | Persists authenticated per-user settings such as display name. |
 | `server.user-trigger-store` | `frontend/src/shared/messages.ts` (`RpcEndpoints`) | `backend/internal/usertriggerstore/service.go` registers `user-trigger-store` | `upsertTriggers`, `deleteTriggers`, `toggleTriggers`, `setTriggerFlags`, `fetchTriggers`, `ping` | Manages per-user trigger records, enablement, publish/broadcast flags, revisions, and update polling. |
 
@@ -195,16 +208,27 @@ The canonical typed frontend contract is `frontend/src/shared/messages.ts`. Work
 | Endpoint | Source file | Purpose |
 | --- | --- | --- |
 | `GET /_jena/health` | `backend/cmd/jena-backend/main.go` | Backend health check that returns `204 No Content`. |
+| `GET /_jena/auth/discord/login` | `backend/cmd/jena-backend/main.go`, `backend/internal/authservice/service.go` | Starts Discord OAuth by creating state and redirecting to Discord. |
+| `GET /_jena/auth/discord/callback` | `backend/cmd/jena-backend/main.go`, `backend/internal/authservice/service.go` | Handles Discord OAuth callback, stores/updates the Discord user, creates an HTTP-only session cookie, and redirects to `/`. |
+| `POST /_jena/auth/logout` | `backend/cmd/jena-backend/main.go`, `backend/internal/authservice/service.go` | Deletes the auth session when present and clears the session cookie. |
 | `/_jena/ws` by default, configurable with `-websocket-path` | `backend/cmd/jena-backend/main.go`, `backend/internal/config/config.go`, `backend/internal/websocketbridge/bridge.go` | Browser/backend event bus websocket. |
-| `/` static app routes | `backend/internal/httpserver/server.go`, `backend/internal/staticfiles/static.go` | Serves frontend assets embedded into the Go binary. |
+| `/` static app routes | `backend/internal/httpserver/server.go`, `backend/internal/staticfiles/static.go` | Serves only frontend assets embedded into the Go binary and falls back to embedded `index.html` for app routes; if assets are not embedded, returns `404`. |
 
 ## Server Bridge
 
-`frontend/src/bridges/server/ServerBridge.tsx` connects the frontend bus to the backend websocket. It handles keepalives, reconnect status, message IDs, acknowledgements, deduplication, auth-token attachment, and routing for `server.*` destinations.
+`frontend/src/bridges/server/ServerBridge.tsx` connects the frontend bus to the backend websocket. It handles keepalives, reconnect status, message IDs, acknowledgements, deduplication, and routing for `server.*` destinations. It does not attach application-level auth tokens; browser cookies authenticate the websocket and RPC handlers on the backend.
 
 `ServerConnectionGlass` disables the app while the server bridge is unavailable.
 
-`frontend/src/auth/AuthContext.tsx` currently provides dummy login/logout state and an auth token for `ServerBridge`.
+`frontend/src/auth/AuthProvider.tsx` checks `server.auth.getSession` at startup, exposes logged-in Discord user/session state, redirects to `/_jena/auth/discord/login` for login, and posts to `/_jena/auth/logout` for logout.
+
+## Settings
+
+`frontend/src/settings/SettingsProvider.tsx` provides machine and user settings through `useSettings()`. Machine settings are stored locally in IndexedDB and user settings are saved remotely through `server.user-settings.updateSettings` when authenticated.
+
+Settings save without a save button: writes are debounced for 5 seconds after edits and flushed when `SettingsView` or `SettingsProvider` unmounts. User settings currently contain `displayName`, labeled in the UI as "Sharing name", and must be at least 2 characters.
+
+Machine settings currently include the trigger-match character-name prefix policy and TTS voice characteristics. `SpeechVoiceProvider` maintains the browser speech synthesis voice list and reacts to `voiceschanged` events.
 
 ## Worker Bridge And Worker Services
 
@@ -280,11 +304,11 @@ The model includes:
 - enablement changes
 - publish/broadcast flag changes
 
-`frontend/src/triggers/model/TriggerStore.tsx` is a write-through trigger cache. It stores canonical trigger objects in IndexedDB, writes novel triggers to the server trigger store, fetches missing triggers by ID, and publishes `trigger-store.triggers-seen` for services that need to react to any trigger the frontend has handled since startup.
+`frontend/src/triggers/model/TriggerStore.tsx` is a write-through trigger cache. It stores canonical trigger objects in IndexedDB, checks the server for missing trigger IDs, writes novel triggers to the server trigger store, fetches missing triggers by ID, and publishes `trigger-store.triggers-seen` for services that need to react to any trigger the frontend has handled since startup. Server writes and reads are chunked around the 100-trigger response budget and show a progress glass for large operations.
 
-`frontend/src/triggers/model/UserTriggerManager.tsx` manages the resolved trigger list for the current user. Logged-out state is local/IndexedDB-backed; logged-in state syncs with the server user trigger store and polls revision state with `server.user-trigger-store.ping`. It exposes `useTriggerManager()`.
+`frontend/src/triggers/model/UserTriggerManager.tsx` manages the resolved trigger list for the current user. Logged-out state is local/IndexedDB-backed; logged-in state syncs with the server user trigger store and polls revision state with `server.user-trigger-store.ping`. It applies authenticated mutations optimistically, rolls back and refreshes on failed server writes, and persists trigger tree collapsed/expanded state locally. It exposes `useTriggerManager()`.
 
-`frontend/src/triggers/views/UserTriggersEditor.tsx` is the trigger tree editor. It supports groups, empty UI-only groups, multi-select, context menus, import/export, add/edit/delete/rename/move, enablement, publish, and broadcast toggles. Double-clicking a trigger opens the trigger editor.
+`frontend/src/triggers/views/UserTriggersEditor.tsx` is the trigger tree editor. It supports groups, empty UI-only groups, multi-select, context menus, import/export/share, add/edit/delete/rename/move, enablement, publish, and broadcast-mode toggles. Broadcast mode is tri-state: private, my boxes, and my subscribers. Double-clicking a trigger opens the trigger editor.
 
 `frontend/src/triggers/editor/TriggerEditorDialog.tsx` is the modal trigger editor.
 
@@ -296,14 +320,22 @@ The model includes:
 
 `frontend/src/triggers/alerts/AlertCoordinationService.tsx` is a headless service mounted under `TriggerStoreProvider`.
 
-It listens for `trigger-store.triggers-seen`, compiles the main matcher and timer early enders through `alertPatternCompiler.ts`, registers regexes with `worker.matcher-service.add-patterns`, listens for `matcher.match-found`, performs post-validation for supported pattern syntax, substitutes display/speech/timer text, logs matches for now, and publishes:
+It listens for `trigger-store.triggers-seen`, compiles the main matcher and timer early enders through `alertPatternCompiler.ts`, debounces matcher registration through `worker.matcher-service.add-patterns`, listens for `matcher.match-found`, performs post-validation for supported pattern syntax, applies settings-driven character-name prefixes, substitutes display/speech/clipboard/timer text, and publishes:
 
 - `alert.trigger-matched`
 - `alert.timer-early-ended`
 
-`frontend/src/triggers/alerts/useTriggerAlerts.ts` gates trigger-match callbacks on the PiP runtime being open and on the trigger being enabled for the matched character. Timer early-ender callbacks are currently not gated there.
+`frontend/src/triggers/alerts/TriggerStopService.tsx` registers a case-insensitive RE2JS inline-flag pattern for `{JENA:STOP}` and `{GINA:STOP}` and publishes `alert.stop-requested`.
 
-`frontend/src/triggers/alerts/TriggerSpeechService.tsx` speaks trigger match speech text only while triggers are running, and also handles editor speech preview requests regardless of runtime state.
+`frontend/src/triggers/alerts/useTriggerAlerts.ts` gates trigger-match callbacks on the PiP runtime being open and on the trigger being enabled for the matched character. Timer early-ender and stop callbacks are currently not gated there.
+
+`frontend/src/triggers/alerts/TriggerSpeechService.tsx` speaks trigger match speech text only while triggers are running, stops all speech on `alert.stop-requested`, and handles editor/settings speech preview requests regardless of runtime state.
+
+## Sharing
+
+`frontend/src/sharing/TriggerShareCoordinator.tsx` wraps the app shell so share-code prompts can appear over any top-level view. It registers a matcher pattern for UUID-shaped `{JENA:share:<uuid>}` codes, resolves packages through `server.sharing.resolveSharePackage`, fetches the shared trigger objects through `TriggerStore`, queues multiple share codes, skips the dialog when every shared trigger is already present, and merges missing triggers through `UserTriggerManager`.
+
+`backend/internal/sharingservice/service.go` creates expiring share packages with random UUIDs, stores trigger IDs plus optional creator stable user ID, resolves creator display names at lookup time, and deletes expired packages on a ticker.
 
 ## Backend
 
@@ -317,8 +349,9 @@ The backend uses:
 - `internal/staticfiles`: embedded frontend assets served by the backend binary.
 - `internal/eventbus`: backend event bus with RPC semantics compatible with the frontend bus.
 - `internal/websocketbridge`: websocket bridge between frontend/server event buses.
+- `internal/userbridge`: maps stable user IDs to active websocket sources and forwards `user.<stableUserId>.*` messages to each source for that user.
 - `internal/database`: SQLite database setup using vendored `modernc.org/sqlite`, WAL mode, busy timeout, and retry handling for busy/locked database errors.
-- `internal/identityservice`: dummy identity lookup; non-empty auth tokens currently map to `test-user`.
+- `internal/authservice`: Discord OAuth login, HTTP-only session cookies, session lookup, and stable user identity resolution.
 - `internal/logging`: DI-installed structured logger with console, rotating JSONL file, and Elasticsearch targets.
 - `internal/sharingservice`: expiring trigger share package creation and resolution, with periodic cleanup.
 - `internal/triggerstore`: persistent canonical trigger JSON store.
@@ -347,12 +380,15 @@ From the repository root:
 ```sh
 make clean
 make dev
+make dist-clean
 make frontend
+make init
 make test
 make test-frontend
 make test-backend
 make vendor-backend
 make package
+make package-linux-x86_64
 ```
 
 From `frontend/`:
@@ -372,7 +408,7 @@ go test -mod=vendor ./...
 go run -mod=vendor ./cmd/jena-backend
 ```
 
-`make dev` runs the backend server. `make frontend` runs the Vite dev server. `npm run build` runs TypeScript project build first, then Vite build. `npm run test` runs Vitest once.
+The default `make` target is `help`, which lists available targets. `make dev` runs the backend server. `make frontend` runs the Vite dev server. `make init` runs `npm ci` and rebuilds backend vendor. `make clean` removes generated frontend, embedded static, package output directories, and Go build cache. `make dist-clean` also removes `frontend/node_modules` and `backend/vendor`. `make package` embeds the frontend, tests the backend, and builds `dist/jena-backend.exe`. `make package-linux-x86_64` cross-compiles a Linux amd64 backend binary. `npm run build` runs TypeScript project build first, then Vite build. `npm run test` runs Vitest once.
 
 Tests live in a `__tests__` directory under the major frontend subcomponent they cover:
 

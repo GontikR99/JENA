@@ -91,6 +91,42 @@ func TestStableIDForSessionTokenRejectsInvalidToken(t *testing.T) {
 	}
 }
 
+func TestStableIDForAuthTokenReturnsStoredDiscordUser(t *testing.T) {
+	service := newTestService(t)
+	ctx := context.Background()
+
+	user, err := service.upsertDiscordUser(ctx, discordUserResponse{
+		ID:       "123456789",
+		Username: "mesozoic",
+	})
+	if err != nil {
+		t.Fatalf("upsertDiscordUser returned error: %v", err)
+	}
+
+	token, err := service.createSession(ctx, user.ID)
+	if err != nil {
+		t.Fatalf("createSession returned error: %v", err)
+	}
+
+	stableID, err := service.StableIDForAuthToken(ctx, &token)
+	if err != nil {
+		t.Fatalf("StableIDForAuthToken returned error: %v", err)
+	}
+	if stableID != "discord:123456789" {
+		t.Fatalf("stableID %q, want discord:123456789", stableID)
+	}
+}
+
+func TestStableIDForAuthTokenRejectsEmptyToken(t *testing.T) {
+	service := newTestService(t)
+	authToken := " "
+
+	_, err := service.StableIDForAuthToken(context.Background(), &authToken)
+	if err == nil || !strings.Contains(err.Error(), "auth token is required") {
+		t.Fatalf("error %v, want required auth token error", err)
+	}
+}
+
 func TestUserIdentityForAuthTokenReturnsDiscordProfileAndDisplayName(t *testing.T) {
 	service := newTestService(t)
 	ctx := context.Background()

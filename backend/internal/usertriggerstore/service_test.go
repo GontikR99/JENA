@@ -11,7 +11,6 @@ import (
 	"jena/backend/internal/config"
 	"jena/backend/internal/database"
 	"jena/backend/internal/eventbus"
-	"jena/backend/internal/identityservice"
 	"jena/backend/internal/logging"
 	"jena/backend/internal/triggerstore"
 	"jena/backend/model"
@@ -375,14 +374,13 @@ func newTestService(t *testing.T, ctx context.Context) (*eventbus.Bus, *database
 
 	bus := eventbus.New()
 	db := newTestDatabase(t)
-	identity := identityservice.New(fakeSessionResolver{})
 	triggerStore, err := triggerstore.New(ctx, bus, db, logging.NewNop())
 	if err != nil {
 		t.Fatalf("triggerstore.New returned error: %v", err)
 	}
 	t.Cleanup(triggerStore.Dispose)
 
-	service, err := New(ctx, bus, db, identity, triggerStore, logging.NewNop())
+	service, err := New(ctx, bus, db, fakeIdentity{}, triggerStore, logging.NewNop())
 	if err != nil {
 		t.Fatalf("New returned error: %v", err)
 	}
@@ -390,10 +388,10 @@ func newTestService(t *testing.T, ctx context.Context) (*eventbus.Bus, *database
 	return bus, db, service
 }
 
-type fakeSessionResolver struct{}
+type fakeIdentity struct{}
 
-func (resolver fakeSessionResolver) StableIDForSessionToken(_ context.Context, token string) (string, error) {
-	if strings.TrimSpace(token) == "" {
+func (identity fakeIdentity) StableIDForAuthToken(_ context.Context, token *string) (string, error) {
+	if token == nil || strings.TrimSpace(*token) == "" {
 		return "", errors.New("auth token is required")
 	}
 

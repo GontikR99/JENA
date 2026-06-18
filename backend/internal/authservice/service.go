@@ -229,6 +229,14 @@ func (service *Service) StableIDForSessionToken(ctx context.Context, token strin
 	return user.ID, nil
 }
 
+func (service *Service) StableIDForAuthToken(ctx context.Context, authToken *string) (string, error) {
+	if authToken == nil || strings.TrimSpace(*authToken) == "" {
+		return "", errors.New("auth token is required")
+	}
+
+	return service.StableIDForSessionToken(ctx, *authToken)
+}
+
 func (service *Service) UserIdentityForAuthToken(ctx context.Context, authToken *string) (eventbus.UserIdentity, error) {
 	if authToken == nil || strings.TrimSpace(*authToken) == "" {
 		return eventbus.UserIdentity{}, errors.New("auth token is required")

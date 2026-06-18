@@ -11,7 +11,6 @@ import (
 
 	"jena/backend/internal/database"
 	"jena/backend/internal/eventbus"
-	"jena/backend/internal/identityservice"
 )
 
 const endpoint = "user-settings"
@@ -50,7 +49,7 @@ func NewStore(ctx context.Context, db *database.Database) (*Store, error) {
 	return store, nil
 }
 
-func NewService(bus *eventbus.Bus, identity *identityservice.Service, store *Store) *Service {
+func NewService(bus *eventbus.Bus, identity Identity, store *Store) *Service {
 	service := &Service{
 		identity: identity,
 		store:    store,
