@@ -229,6 +229,31 @@ func (service *Service) StableIDForSessionToken(ctx context.Context, token strin
 	return user.ID, nil
 }
 
+func (service *Service) UserIdentityForAuthToken(ctx context.Context, authToken *string) (eventbus.UserIdentity, error) {
+	if authToken == nil || strings.TrimSpace(*authToken) == "" {
+		return eventbus.UserIdentity{}, errors.New("auth token is required")
+	}
+
+	user, err := service.UserForSessionToken(ctx, *authToken)
+	if err != nil {
+		return eventbus.UserIdentity{}, err
+	}
+
+	settings, err := service.userSettings.GetOrDefault(ctx, user.ID, usersettings.Settings{
+		DisplayName: user.Username,
+	})
+	if err != nil {
+		return eventbus.UserIdentity{}, err
+	}
+
+	return eventbus.UserIdentity{
+		DisplayName:  settings.DisplayName,
+		Snowflake:    user.DiscordID,
+		StableUserID: user.ID,
+		Username:     user.Username,
+	}, nil
+}
+
 func (service *Service) UserForSessionToken(ctx context.Context, token string) (SessionUser, error) {
 	if strings.TrimSpace(token) == "" {
 		return SessionUser{}, errors.New("auth token is required")

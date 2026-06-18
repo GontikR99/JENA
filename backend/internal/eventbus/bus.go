@@ -20,6 +20,14 @@ type Envelope struct {
 	Destination   string          `json:"destination"`
 	CorrelationID string          `json:"correlationId,omitempty"`
 	Payload       json.RawMessage `json:"payload"`
+	UserIdentity  UserIdentity    `json:"-"`
+}
+
+type UserIdentity struct {
+	DisplayName  string
+	Snowflake    string
+	StableUserID string
+	Username     string
 }
 
 type SerializedError struct {
@@ -186,6 +194,10 @@ func (bus *Bus) logRPC(
 		logging.String("topic", endpoint),
 		logging.String("method", method),
 		logging.Bool("ok", ok),
+		logging.String("stableUserId", envelope.UserIdentity.StableUserID),
+		logging.String("username", envelope.UserIdentity.Username),
+		logging.String("snowflake", envelope.UserIdentity.Snowflake),
+		logging.String("displayName", envelope.UserIdentity.DisplayName),
 		logging.Int64("durationMs", duration.Milliseconds()),
 		logging.Int64("durationUs", duration.Microseconds()),
 	}

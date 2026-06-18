@@ -91,6 +91,41 @@ func TestStableIDForSessionTokenRejectsInvalidToken(t *testing.T) {
 	}
 }
 
+func TestUserIdentityForAuthTokenReturnsDiscordProfileAndDisplayName(t *testing.T) {
+	service := newTestService(t)
+	ctx := context.Background()
+
+	user, err := service.upsertDiscordUser(ctx, discordUserResponse{
+		ID:       "123456789",
+		Username: "mesozoic",
+	})
+	if err != nil {
+		t.Fatalf("upsertDiscordUser returned error: %v", err)
+	}
+
+	token, err := service.createSession(ctx, user.ID)
+	if err != nil {
+		t.Fatalf("createSession returned error: %v", err)
+	}
+
+	identity, err := service.UserIdentityForAuthToken(ctx, &token)
+	if err != nil {
+		t.Fatalf("UserIdentityForAuthToken returned error: %v", err)
+	}
+	if identity.StableUserID != "discord:123456789" {
+		t.Fatalf("StableUserID %q, want discord:123456789", identity.StableUserID)
+	}
+	if identity.Snowflake != "123456789" {
+		t.Fatalf("Snowflake %q, want 123456789", identity.Snowflake)
+	}
+	if identity.Username != "mesozoic" {
+		t.Fatalf("Username %q, want mesozoic", identity.Username)
+	}
+	if identity.DisplayName != "mesozoic" {
+		t.Fatalf("DisplayName %q, want mesozoic", identity.DisplayName)
+	}
+}
+
 func TestGetSessionDefaultsDisplayNameToDiscordUsername(t *testing.T) {
 	service := newTestService(t)
 	ctx := context.Background()

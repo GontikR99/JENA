@@ -53,6 +53,12 @@ func TestReceiveEnvelopeDeduplicatesBeforeSendingToBus(t *testing.T) {
 		bridge:      bridge,
 		deduper:     newMessageDeduper(dedupWindow),
 		name:        "ws.127_0_0_1_1",
+		userIdentity: eventbus.UserIdentity{
+			DisplayName:  "Display Name",
+			Snowflake:    "177935991334502400",
+			StableUserID: "discord:177935991334502400",
+			Username:     "discord-user",
+		},
 	}
 	received := 0
 
@@ -64,6 +70,9 @@ func TestReceiveEnvelopeDeduplicatesBeforeSendingToBus(t *testing.T) {
 		}
 		if envelope.Source == nil || *envelope.Source != "ws.127_0_0_1_1.test" {
 			t.Fatalf("Source %v, want ws.127_0_0_1_1.test", envelope.Source)
+		}
+		if envelope.UserIdentity.Username != "discord-user" {
+			t.Fatalf("UserIdentity %#v, want discord user identity", envelope.UserIdentity)
 		}
 	})
 	defer unlisten()

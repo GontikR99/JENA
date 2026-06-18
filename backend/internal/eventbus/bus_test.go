@@ -3,8 +3,11 @@ package eventbus
 import (
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"testing"
 
+	"jena/backend/internal/config"
 	"jena/backend/internal/logging"
 )
 
@@ -100,7 +103,15 @@ func TestRegisterRPCPassesAuthTokenToHandler(t *testing.T) {
 
 func TestRegisterRPCLogsHandledCall(t *testing.T) {
 	bus := New()
-	logger := &capturingLogger{}
+	path := filepath.Join(t.TempDir(), "jena.log")
+	logger, err := logging.New(config.Config{
+		LogFilePath: path,
+		LogLevel:    "debug",
+		LogTarget:   "file",
+	})
+	if err != nil {
+		t.Fatalf("logging.New returned error: %v", err)
+	}
 	bus.SetLogger(logger)
 	source := "ws.127_0_0_1_1.test"
 
@@ -120,25 +131,45 @@ func TestRegisterRPCLogsHandledCall(t *testing.T) {
 		Destination:   "service",
 		Payload:       payload,
 		Source:        &source,
+		UserIdentity: UserIdentity{
+			DisplayName:  "Display Name",
+			Snowflake:    "177935991334502400",
+			StableUserID: "discord:177935991334502400",
+			Username:     "discord-user",
+		},
 	}); err != nil {
 		t.Fatalf("Send returned error: %v", err)
 	}
 
-	if logger.debugMessage != "backend rpc handled" {
-		t.Fatalf("debug message %q, want backend rpc handled", logger.debugMessage)
+	if err := logger.Close(); err != nil {
+		t.Fatalf("logger.Close returned error: %v", err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile returned error: %v", err)
+	}
+
+	var record map[string]any
+	if err := json.Unmarshal(data, &record); err != nil {
+		t.Fatalf("Unmarshal returned error: %v", err)
+	}
+
+	expected := map[string]any{
+		"displayName":  "Display Name",
+		"destination":  "service",
+		"message":      "backend rpc handled",
+		"method":       "ping",
+		"ok":           true,
+		"snowflake":    "177935991334502400",
+		"source":       source,
+		"stableUserId": "discord:177935991334502400",
+		"topic":        "service",
+		"username":     "discord-user",
+	}
+	for key, value := range expected {
+		if record[key] != value {
+			t.Fatalf("%s %v, want %v in record %#v", key, record[key], value, record)
+		}
 	}
 }
-
-type capturingLogger struct {
-	debugMessage string
-}
-
-func (logger *capturingLogger) Trace(context.Context, string, ...logging.Field) {}
-func (logger *capturingLogger) Debug(_ context.Context, message string, _ ...logging.Field) {
-	logger.debugMessage = message
-}
-func (logger *capturingLogger) Info(context.Context, string, ...logging.Field)  {}
-func (logger *capturingLogger) Warn(context.Context, string, ...logging.Field)  {}
-func (logger *capturingLogger) Error(context.Context, string, ...logging.Field) {}
-func (logger *capturingLogger) Fatal(context.Context, string, ...logging.Field) {}
-func (logger *capturingLogger) Close() error                                    { return nil }

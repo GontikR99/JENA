@@ -39,6 +39,10 @@ type StableUserResolver interface {
 	StableIDForAuthToken(context.Context, *string) (string, error)
 }
 
+type UserIdentityResolver interface {
+	UserIdentityForAuthToken(context.Context, *string) (eventbus.UserIdentity, error)
+}
+
 type UserConnectionEvent struct {
 	Source       string `json:"source"`
 	StableUserID string `json:"stableUserId"`
@@ -50,6 +54,7 @@ type Bridge struct {
 	bus               *eventbus.Bus
 	connection        uint64
 	identity          StableUserResolver
+	identityDetails   UserIdentityResolver
 	logger            logging.Logger
 	stopActiveLog     chan struct{}
 	stopActiveLogOnce sync.Once
@@ -73,15 +78,22 @@ type connection struct {
 	authToken    string
 	deduper      *messageDeduper
 	stableUserID string
+	userIdentity eventbus.UserIdentity
 }
 
 func New(bus *eventbus.Bus, logger logging.Logger, authCookieName string, identity StableUserResolver) *Bridge {
+	var identityDetails UserIdentityResolver
+	if resolver, ok := identity.(UserIdentityResolver); ok {
+		identityDetails = resolver
+	}
+
 	return &Bridge{
-		authCookieName: authCookieName,
-		bus:            bus,
-		identity:       identity,
-		logger:         logger,
-		stopActiveLog:  make(chan struct{}),
+		authCookieName:  authCookieName,
+		bus:             bus,
+		identity:        identity,
+		identityDetails: identityDetails,
+		logger:          logger,
+		stopActiveLog:   make(chan struct{}),
 	}
 }
 
@@ -127,7 +139,7 @@ func (bridge *Bridge) ServeHTTP(response http.ResponseWriter, request *http.Requ
 			authToken = cookie.Value
 		}
 	}
-	stableUserID := bridge.resolveStableUserID(request.Context(), authToken)
+	userIdentity := bridge.resolveUserIdentity(request.Context(), authToken)
 
 	connectionID := atomic.AddUint64(&bridge.connection, 1)
 	connection := &connection{
@@ -140,10 +152,35 @@ func (bridge *Bridge) ServeHTTP(response http.ResponseWriter, request *http.Requ
 		ackReceived:  make(chan uint64, 16),
 		authToken:    authToken,
 		deduper:      newMessageDeduper(dedupWindow),
-		stableUserID: stableUserID,
+		stableUserID: userIdentity.StableUserID,
+		userIdentity: userIdentity,
 	}
 
 	connection.run(request.Context())
+}
+
+func (bridge *Bridge) resolveUserIdentity(ctx context.Context, authToken string) eventbus.UserIdentity {
+	if authToken == "" {
+		return eventbus.UserIdentity{}
+	}
+
+	if bridge.identityDetails != nil {
+		identity, err := bridge.identityDetails.UserIdentityForAuthToken(ctx, &authToken)
+		if err != nil {
+			bridge.logger.Debug(
+				ctx,
+				"websocket auth token did not resolve user identity",
+				logging.Error(err),
+			)
+			return eventbus.UserIdentity{}
+		}
+
+		return identity
+	}
+
+	return eventbus.UserIdentity{
+		StableUserID: bridge.resolveStableUserID(ctx, authToken),
+	}
 }
 
 func (bridge *Bridge) resolveStableUserID(ctx context.Context, authToken string) string {
@@ -340,6 +377,7 @@ func (connection *connection) receiveEnvelope(ctx context.Context, seq uint64, e
 		envelope.AuthToken = connection.authToken
 	}
 	envelope.Source = &source
+	envelope.UserIdentity = connection.userIdentity
 
 	if connection.deduper.markSeen(envelope.ID, time.Now()) {
 		if err := connection.bridge.bus.Send(ctx, envelope); err != nil {
