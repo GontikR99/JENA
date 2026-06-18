@@ -3,7 +3,7 @@ BACKEND_VENDOR_DIR ?= backend/vendor
 EMBEDDED_STATIC_DIR ?= backend/internal/staticfiles/app
 FRONTEND_NODE_MODULES_DIR ?= frontend/node_modules
 
-.PHONY: help clean dev dist-clean frontend init package test test-backend test-frontend vendor-backend
+.PHONY: help clean dev dist-clean frontend init package package-linux-x86_64 test test-backend test-frontend vendor-backend
 
 help:
 	@echo Available targets:
@@ -13,6 +13,7 @@ help:
 	@echo   frontend       Run the Vite frontend dev server
 	@echo   init           Install frontend node_modules and rebuild backend vendor
 	@echo   package        Embed the frontend, test the backend, and create dist/jena-backend.exe
+	@echo   package-linux-x86_64 Embed the frontend, test the backend, and create dist/jena-backend-linux-x86_64
 	@echo   test           Run frontend and backend tests
 	@echo   test-backend   Run backend Go tests
 	@echo   test-frontend  Run frontend Vitest tests
@@ -54,3 +55,10 @@ package:
 	cd backend && go test -mod=vendor ./...
 	powershell -NoProfile -ExecutionPolicy Bypass -Command "New-Item -ItemType Directory -Force dist | Out-Null"
 	cd backend && go build -mod=vendor -buildvcs=false -o ../dist/jena-backend.exe ./cmd/jena-backend
+
+package-linux-x86_64:
+	cd frontend && npm run build
+	powershell -NoProfile -ExecutionPolicy Bypass -Command "New-Item -ItemType Directory -Force '$(EMBEDDED_STATIC_DIR)' | Out-Null; Get-ChildItem -LiteralPath '$(EMBEDDED_STATIC_DIR)' -Force | Where-Object { $$_.Name -ne '.gitkeep' } | Remove-Item -Recurse -Force; Copy-Item -Recurse frontend/dist/* '$(EMBEDDED_STATIC_DIR)'"
+	cd backend && go test -mod=vendor ./...
+	powershell -NoProfile -ExecutionPolicy Bypass -Command "New-Item -ItemType Directory -Force dist | Out-Null"
+	powershell -NoProfile -ExecutionPolicy Bypass -Command "$$env:GOOS = 'linux'; $$env:GOARCH = 'amd64'; $$env:CGO_ENABLED = '0'; Push-Location backend; try { go build -mod=vendor -buildvcs=false -o ../dist/jena-backend-linux-x86_64 ./cmd/jena-backend } finally { Pop-Location }"
