@@ -7,6 +7,8 @@ import { useSpeechVoices } from './speechVoiceContext'
 import { isValidUserSettings } from './settingsTypes'
 import './SettingsView.css'
 
+const databaseName = 'jena'
+
 export function SettingsView() {
   const send = useSender('settings-view')
   const {
@@ -175,6 +177,24 @@ export function SettingsView() {
               value={machineSettings.tts.volume}
             />
           </div>
+
+          <div className="settings-subsection">
+            <h3>Cached information</h3>
+            <div className="settings-danger-zone">
+              <button
+                className="settings-danger-button"
+                onClick={() => {
+                  void wipeCachedInformation()
+                }}
+                type="button"
+              >
+                Wipe out cached information
+              </button>
+              <div className="settings-danger-note">
+                Removes local JENA browser storage on this machine.
+              </div>
+            </div>
+          </div>
         </section>
 
         <section
@@ -232,6 +252,32 @@ export function SettingsView() {
       </div>
     </div>
   )
+}
+
+async function wipeCachedInformation() {
+  const confirmed = confirm(
+    'Wipe out all cached JENA information stored in this browser on this machine? The page will reload.',
+  )
+
+  if (!confirmed) {
+    return
+  }
+
+  try {
+    await deleteIndexedDB(databaseName)
+  } finally {
+    window.location.reload()
+  }
+}
+
+function deleteIndexedDB(name: string) {
+  return new Promise<void>((resolve, reject) => {
+    const request = indexedDB.deleteDatabase(name)
+
+    request.onsuccess = () => resolve()
+    request.onerror = () => reject(request.error ?? new Error('IndexedDB delete failed.'))
+    request.onblocked = () => resolve()
+  })
 }
 
 function TtsRange({

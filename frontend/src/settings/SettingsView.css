@@ -104,9 +104,38 @@
   outline: 0;
 }
 
+.settings-danger-zone {
+  align-items: flex-start;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding-top: 0.75rem;
+}
+
+.settings-danger-button {
+  background: #dc2626;
+  border: 1px solid #991b1b;
+  border-radius: 6px;
+  color: #fff;
+  font-size: 0.875rem;
+  font-weight: 700;
+  min-height: 2rem;
+  padding: 0.25rem 0.75rem;
+}
+
+.settings-danger-button:hover {
+  background: #b91c1c;
+}
+
+.settings-danger-button:focus-visible {
+  box-shadow: 0 0 0 3px #fecaca;
+  outline: 0;
+}
+
 .settings-save-status,
 .settings-disabled-note,
-.settings-validation-note {
+.settings-validation-note,
+.settings-danger-note {
   color: #4b5563;
   font-size: 0.875rem;
 }

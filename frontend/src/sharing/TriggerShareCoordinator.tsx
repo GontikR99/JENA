@@ -8,6 +8,7 @@ import {
 } from 'react'
 import Button from 'react-bootstrap/Button'
 import Modal from 'react-bootstrap/Modal'
+import ProgressBar from 'react-bootstrap/ProgressBar'
 import toast from 'react-hot-toast'
 import type { RegexMatchFoundMessage } from '../shared/messages'
 import { useListen, useRpc } from '../shared/messageBrokerHooks'
@@ -19,11 +20,17 @@ import './TriggerShareCoordinator.css'
 
 const sharePattern =
   '\\{[Jj][Ee][Nn][Aa]:[Ss][Hh][Aa][Rr][Ee]:([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\\}'
+const mergeTriggerChunkSize = 100
 
 interface ShareDialogState {
   code: string
   creatorDisplayName: string
   sharedTriggers: JenaTrigger[]
+}
+
+interface MergeProgress {
+  processedCount: number
+  totalCount: number
 }
 
 export function TriggerShareCoordinator({
@@ -35,7 +42,9 @@ export function TriggerShareCoordinator({
   const triggerStore = useTriggerStore()
   const { triggers, upsertTriggers } = useTriggerManager()
   const [dialogState, setDialogState] = useState<ShareDialogState | null>(null)
+  const [mergeProgress, setMergeProgress] = useState<MergeProgress | null>(null)
   const dialogStateRef = useRef<ShareDialogState | null>(null)
+  const mergeProgressRef = useRef<MergeProgress | null>(null)
   const processQueueRef = useRef<() => Promise<void>>(async () => undefined)
   const processingRef = useRef(false)
   const queuedCodesRef = useRef<string[]>([])
@@ -53,6 +62,10 @@ export function TriggerShareCoordinator({
   useEffect(() => {
     dialogStateRef.current = dialogState
   }, [dialogState])
+
+  useEffect(() => {
+    mergeProgressRef.current = mergeProgress
+  }, [mergeProgress])
 
   useEffect(() => {
     void call('worker.matcher-service', 'add-patterns', {
@@ -99,6 +112,15 @@ export function TriggerShareCoordinator({
       const sharedTriggers = await triggerStoreRef.current.fetchTriggers(
         resolvedPackage.triggerIds,
       )
+      const knownTriggerIds = new Set(
+        triggersRef.current.map((resolvedTrigger) => resolvedTrigger.trigger.id),
+      )
+      const missingTriggers = getMissingTriggers(sharedTriggers, knownTriggerIds)
+
+      if (missingTriggers.length === 0) {
+        toast('All shared triggers are already present.')
+        return
+      }
 
       const nextDialogState = {
         code,
@@ -134,8 +156,14 @@ export function TriggerShareCoordinator({
   )
 
   const closeDialog = useCallback(() => {
+    if (mergeProgressRef.current) {
+      return
+    }
+
     dialogStateRef.current = null
+    mergeProgressRef.current = null
     setDialogState(null)
+    setMergeProgress(null)
     queueMicrotask(() => {
       void processQueueRef.current()
     })
@@ -149,8 +177,9 @@ export function TriggerShareCoordinator({
     const knownTriggerIds = new Set(
       triggersRef.current.map((resolvedTrigger) => resolvedTrigger.trigger.id),
     )
-    const missingTriggers = dialogState.sharedTriggers.filter(
-      (trigger) => !knownTriggerIds.has(trigger.id),
+    const missingTriggers = getMissingTriggers(
+      dialogState.sharedTriggers,
+      knownTriggerIds,
     )
 
     if (missingTriggers.length === 0) {
@@ -160,20 +189,54 @@ export function TriggerShareCoordinator({
     }
 
     try {
-      await upsertTriggers(
-        missingTriggers.map((trigger) => ({
-          enabledFor: [],
-          trigger,
-        })),
-      )
+      const chunks = chunkArray(missingTriggers, mergeTriggerChunkSize)
+      const initialProgress = {
+        processedCount: 0,
+        totalCount: missingTriggers.length,
+      }
+      mergeProgressRef.current = initialProgress
+      setMergeProgress(initialProgress)
+
+      for (const chunk of chunks) {
+        await upsertTriggers(
+          chunk.map((trigger) => ({
+            enabledFor: [],
+            trigger,
+          })),
+        )
+        mergeProgressRef.current = {
+          processedCount: Math.min(
+            missingTriggers.length,
+            (mergeProgressRef.current?.processedCount ?? 0) + chunk.length,
+          ),
+          totalCount: missingTriggers.length,
+        }
+        setMergeProgress((current) =>
+          current
+            ? {
+                ...current,
+                processedCount: Math.min(
+                  current.totalCount,
+                  current.processedCount + chunk.length,
+                ),
+              }
+            : current,
+        )
+        await yieldToEventLoop()
+      }
+
       toast.success(
         `Merged ${missingTriggers.length} shared trigger${
           missingTriggers.length === 1 ? '' : 's'
         }.`,
       )
+      mergeProgressRef.current = null
+      setMergeProgress(null)
       closeDialog()
     } catch (error) {
       console.warn('[TriggerShareCoordinator] failed to merge shared triggers', error)
+      mergeProgressRef.current = null
+      setMergeProgress(null)
       toast.error('Unable to merge shared triggers.')
     }
   }, [closeDialog, dialogState, upsertTriggers])
@@ -196,17 +259,21 @@ export function TriggerShareCoordinator({
     <>
       {children}
       <Modal
+        backdrop={mergeProgress ? 'static' : true}
         centered
         dialogClassName="trigger-share-modal"
+        keyboard={!mergeProgress}
         onHide={closeDialog}
         show={!!dialogState}
         size="xl"
       >
-        <Modal.Header closeButton>
+        <Modal.Header closeButton={!mergeProgress}>
           <Modal.Title>Shared triggers</Modal.Title>
         </Modal.Header>
         <Modal.Body>
-          {dialogState ? (
+          {mergeProgress ? (
+            <MergeProgressPanel progress={mergeProgress} />
+          ) : dialogState ? (
             <>
               <p className="trigger-share-prompt">
                 {dialogState.creatorDisplayName} is sharing triggers. Do you want
@@ -226,11 +293,15 @@ export function TriggerShareCoordinator({
           ) : null}
         </Modal.Body>
         <Modal.Footer>
-          <Button onClick={closeDialog} variant="outline-secondary">
+          <Button
+            disabled={!!mergeProgress}
+            onClick={closeDialog}
+            variant="outline-secondary"
+          >
             Cancel
           </Button>
           <Button
-            disabled={newSharedTriggers.length === 0}
+            disabled={newSharedTriggers.length === 0 || !!mergeProgress}
             onClick={() => {
               void mergeSharedTriggers()
             }}
@@ -242,4 +313,49 @@ export function TriggerShareCoordinator({
       </Modal>
     </>
   )
+}
+
+function MergeProgressPanel({ progress }: { progress: MergeProgress }) {
+  const progressPercent =
+    progress.totalCount > 0
+      ? Math.round((progress.processedCount / progress.totalCount) * 100)
+      : 0
+
+  return (
+    <div className="trigger-share-progress" role="status">
+      <div className="trigger-share-progress-title">Merging shared triggers</div>
+      <div className="trigger-share-progress-status">
+        {progress.processedCount} / {progress.totalCount} triggers
+      </div>
+      <ProgressBar
+        animated
+        now={progressPercent}
+        striped
+        variant="success"
+      />
+    </div>
+  )
+}
+
+function getMissingTriggers(
+  sharedTriggers: JenaTrigger[],
+  knownTriggerIds: Set<string>,
+) {
+  return sharedTriggers.filter((trigger) => !knownTriggerIds.has(trigger.id))
+}
+
+function chunkArray<TItem>(items: TItem[], chunkSize: number) {
+  const chunks: TItem[][] = []
+
+  for (let index = 0; index < items.length; index += chunkSize) {
+    chunks.push(items.slice(index, index + chunkSize))
+  }
+
+  return chunks
+}
+
+function yieldToEventLoop() {
+  return new Promise<void>((resolve) => {
+    setTimeout(resolve, 0)
+  })
 }
