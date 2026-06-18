@@ -24,6 +24,14 @@ vi.mock('../../shared/messageBrokerHooks', () => ({
   useSender: () => hookState.send,
 }))
 
+vi.mock('../../settings/settingsContext', () => ({
+  useSettings: () => ({
+    machineSettings: {
+      includeCharacterNameForTriggerMatches: 'never',
+    },
+  }),
+}))
+
 describe('AlertCoordinationService', () => {
   beforeEach(() => {
     hookState.listeners.clear()

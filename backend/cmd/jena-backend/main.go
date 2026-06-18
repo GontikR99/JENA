@@ -19,6 +19,7 @@ import (
 	"jena/backend/internal/logging"
 	"jena/backend/internal/triggerstore"
 	"jena/backend/internal/userbridge"
+	"jena/backend/internal/usersettings"
 	"jena/backend/internal/usertriggerstore"
 	"jena/backend/internal/websocketbridge"
 	"jena/backend/internal/worldwidepresenceservice"
@@ -65,7 +66,13 @@ func run(args []string) error {
 	server := httpserver.New(config, installedLogger)
 	app.Install(container, server)
 
-	authService, err := authservice.New(context.Background(), bus, db, config, installedLogger)
+	userSettingsStore, err := usersettings.NewStore(context.Background(), db)
+	if err != nil {
+		return err
+	}
+	app.Install(container, userSettingsStore)
+
+	authService, err := authservice.New(context.Background(), bus, db, config, installedLogger, userSettingsStore)
 	if err != nil {
 		return err
 	}
@@ -74,6 +81,10 @@ func run(args []string) error {
 
 	identityService := identityservice.New(authService)
 	app.Install(container, identityService)
+
+	userSettingsService := usersettings.NewService(bus, identityService, userSettingsStore)
+	defer userSettingsService.Dispose()
+	app.Install(container, userSettingsService)
 
 	bridge := websocketbridge.New(bus, installedLogger, config.AuthCookieName, identityService)
 	app.Install(container, bridge)

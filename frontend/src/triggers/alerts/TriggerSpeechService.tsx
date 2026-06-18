@@ -6,6 +6,8 @@ import {
   getSpeechSynthesis,
 } from '../../shared/speechSynthesis'
 import { useTriggerRuntime } from '../../runtime/TriggerRuntime'
+import { useSettings } from '../../settings/settingsContext'
+import { useSpeechVoices } from '../../settings/speechVoiceContext'
 import { useOnTriggerMatch, useOnTriggerStop } from './useTriggerAlerts'
 
 interface SpeechJob {
@@ -16,6 +18,8 @@ interface SpeechJob {
 
 export function TriggerSpeechService() {
   const { areTriggersRunning } = useTriggerRuntime()
+  const { machineSettings } = useSettings()
+  const { voiceByURI } = useSpeechVoices()
   const areTriggersRunningRef = useRef(areTriggersRunning)
   const currentUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null)
   const generationRef = useRef(0)
@@ -60,6 +64,13 @@ export function TriggerSpeechService() {
       return
     }
 
+    utterance.pitch = machineSettings.tts.pitch
+    utterance.rate = machineSettings.tts.rate
+    utterance.volume = machineSettings.tts.volume
+    if (machineSettings.tts.voiceURI) {
+      utterance.voice = voiceByURI.get(machineSettings.tts.voiceURI) ?? null
+    }
+
     const generation = generationRef.current
 
     utterance.onend = () => {
@@ -81,7 +92,14 @@ export function TriggerSpeechService() {
 
     currentUtteranceRef.current = utterance
     synthesis.speak(utterance)
-  }, [warnUnsupported])
+  }, [
+    machineSettings.tts.pitch,
+    machineSettings.tts.rate,
+    machineSettings.tts.voiceURI,
+    machineSettings.tts.volume,
+    voiceByURI,
+    warnUnsupported,
+  ])
 
   const enqueueSpeech = useCallback(
     (

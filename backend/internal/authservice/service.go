@@ -20,6 +20,7 @@ import (
 	"jena/backend/internal/database"
 	"jena/backend/internal/eventbus"
 	"jena/backend/internal/logging"
+	"jena/backend/internal/usersettings"
 )
 
 const (
@@ -47,6 +48,7 @@ type Service struct {
 	logger        logging.Logger
 	unregister    func()
 	sessionMaxAge time.Duration
+	userSettings  *usersettings.Store
 }
 
 type SessionUser struct {
@@ -58,8 +60,9 @@ type SessionUser struct {
 }
 
 type SessionResponse struct {
-	Status string       `json:"status"`
-	User   *SessionUser `json:"user,omitempty"`
+	Status       string                 `json:"status"`
+	User         *SessionUser           `json:"user,omitempty"`
+	UserSettings *usersettings.Settings `json:"userSettings,omitempty"`
 }
 
 type discordTokenResponse struct {
@@ -80,6 +83,7 @@ func New(
 	db *database.Database,
 	config config.Config,
 	logger logging.Logger,
+	userSettings *usersettings.Store,
 ) (*Service, error) {
 	service := &Service{
 		client:        http.DefaultClient,
@@ -87,6 +91,7 @@ func New(
 		db:            db,
 		logger:        logger,
 		sessionMaxAge: time.Duration(config.AuthSessionDays) * 24 * time.Hour,
+		userSettings:  userSettings,
 	}
 
 	if err := service.migrate(ctx); err != nil {
@@ -280,9 +285,17 @@ func (service *Service) getSession(ctx context.Context, metadata eventbus.RPCMet
 		return SessionResponse{Status: "anonymous"}, nil
 	}
 
+	settings, err := service.userSettings.GetOrDefault(ctx, user.ID, usersettings.Settings{
+		DisplayName: user.Username,
+	})
+	if err != nil {
+		return nil, err
+	}
+
 	return SessionResponse{
-		Status: "authenticated",
-		User:   &user,
+		Status:       "authenticated",
+		User:         &user,
+		UserSettings: &settings,
 	}, nil
 }
 

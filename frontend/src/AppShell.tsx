@@ -3,14 +3,17 @@ import Button from 'react-bootstrap/Button'
 import jenaBrandLockupUrl from './assets/jena-brand-lockup.png'
 import { useAuth } from './auth/authContext'
 import { StartupButton } from './runtime/StartupButton'
+import { SettingsView } from './settings/SettingsView'
+import { useSettings } from './settings/settingsContext'
 import { TriggersView } from './triggers/views/TriggersView'
 import './AppShell.css'
 
-type AppSection = 'triggers' | 'rolls' | 'search'
+type AppSection = 'triggers' | 'settings' | 'rolls' | 'search'
 
 export function AppShell() {
   const [activeSection, setActiveSection] = useState<AppSection>('triggers')
-  const { isAuthenticated, logIn, logOut, user } = useAuth()
+  const { isAuthenticated, logIn, logOut } = useAuth()
+  const { displayName } = useSettings()
 
   return (
     <div className="app-shell">
@@ -31,11 +34,19 @@ export function AppShell() {
         <nav className="app-nav" aria-label="Primary navigation">
           <button
             aria-current={activeSection === 'triggers' ? 'page' : undefined}
-            className="app-nav-link app-nav-link-active"
+            className={getNavLinkClassName(activeSection === 'triggers')}
             onClick={() => setActiveSection('triggers')}
             type="button"
           >
             Triggers
+          </button>
+          <button
+            aria-current={activeSection === 'settings' ? 'page' : undefined}
+            className={getNavLinkClassName(activeSection === 'settings')}
+            onClick={() => setActiveSection('settings')}
+            type="button"
+          >
+            Settings
           </button>
           <button className="app-nav-link" disabled type="button">
             Rolls
@@ -60,7 +71,7 @@ export function AppShell() {
               variant="outline-light"
             >
               <span className="app-account-username">
-                {user?.username ?? 'Discord'}
+                {displayName}
               </span>
               <span>log out</span>
             </Button>
@@ -79,9 +90,14 @@ export function AppShell() {
 
       <main className="app-main">
         {activeSection === 'triggers' ? <TriggersView /> : null}
+        {activeSection === 'settings' ? <SettingsView /> : null}
       </main>
     </div>
   )
+}
+
+function getNavLinkClassName(isActive: boolean) {
+  return isActive ? 'app-nav-link app-nav-link-active' : 'app-nav-link'
 }
 
 function DiscordIcon() {

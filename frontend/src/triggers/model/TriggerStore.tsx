@@ -47,10 +47,11 @@ interface TriggerCache {
 }
 
 const databaseName = 'jena'
-const databaseVersion = 3
+const databaseVersion = 4
 const handlesStoreName = 'handles'
 const triggerCacheStoreName = 'trigger-cache'
 const userTriggerCacheStoreName = 'user-trigger-cache'
+const settingsStoreName = 'settings'
 
 const TriggerStoreContext = createContext<TriggerStoreApi | null>(null)
 
@@ -540,6 +541,9 @@ function openDatabase() {
       }
       if (!database.objectStoreNames.contains(userTriggerCacheStoreName)) {
         database.createObjectStore(userTriggerCacheStoreName)
+      }
+      if (!database.objectStoreNames.contains(settingsStoreName)) {
+        database.createObjectStore(settingsStoreName)
       }
     }
 

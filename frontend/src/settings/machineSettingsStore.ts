@@ -1,43 +1,33 @@
-import type { FileSystemDirectoryHandleLike } from './fileSystemAccess'
+import {
+  normalizeMachineSettings,
+  type MachineSettings,
+} from './settingsTypes'
 
 const databaseName = 'jena'
 const databaseVersion = 4
-const storeName = 'handles'
+const handlesStoreName = 'handles'
 const triggerCacheStoreName = 'trigger-cache'
 const userTriggerCacheStoreName = 'user-trigger-cache'
 const settingsStoreName = 'settings'
-const everQuestDirectoryKey = 'everquest-directory'
+const machineSettingsKey = 'machine-settings'
 
-export async function getSavedEverQuestDirectoryHandle() {
+export async function readMachineSettings() {
   const database = await openDatabase()
 
   try {
-    return await getValue<FileSystemDirectoryHandleLike>(
-      database,
-      everQuestDirectoryKey,
+    return normalizeMachineSettings(
+      await getValue<Partial<MachineSettings>>(database, machineSettingsKey),
     )
   } finally {
     database.close()
   }
 }
 
-export async function saveEverQuestDirectoryHandle(
-  directoryHandle: FileSystemDirectoryHandleLike,
-) {
+export async function writeMachineSettings(settings: MachineSettings) {
   const database = await openDatabase()
 
   try {
-    await putValue(database, everQuestDirectoryKey, directoryHandle)
-  } finally {
-    database.close()
-  }
-}
-
-export async function forgetSavedEverQuestDirectoryHandle() {
-  const database = await openDatabase()
-
-  try {
-    await deleteValue(database, everQuestDirectoryKey)
+    await putValue(database, machineSettingsKey, settings)
   } finally {
     database.close()
   }
@@ -50,8 +40,8 @@ function openDatabase() {
     request.onupgradeneeded = () => {
       const database = request.result
 
-      if (!database.objectStoreNames.contains(storeName)) {
-        database.createObjectStore(storeName)
+      if (!database.objectStoreNames.contains(handlesStoreName)) {
+        database.createObjectStore(handlesStoreName)
       }
       if (!database.objectStoreNames.contains(triggerCacheStoreName)) {
         database.createObjectStore(triggerCacheStoreName)
@@ -71,8 +61,8 @@ function openDatabase() {
 
 function getValue<TValue>(database: IDBDatabase, key: IDBValidKey) {
   return new Promise<TValue | undefined>((resolve, reject) => {
-    const transaction = database.transaction(storeName, 'readonly')
-    const store = transaction.objectStore(storeName)
+    const transaction = database.transaction(settingsStoreName, 'readonly')
+    const store = transaction.objectStore(settingsStoreName)
     const request = store.get(key)
 
     request.onsuccess = () => resolve(request.result as TValue | undefined)
@@ -84,25 +74,10 @@ function getValue<TValue>(database: IDBDatabase, key: IDBValidKey) {
 
 function putValue(database: IDBDatabase, key: IDBValidKey, value: unknown) {
   return new Promise<void>((resolve, reject) => {
-    const transaction = database.transaction(storeName, 'readwrite')
-    const store = transaction.objectStore(storeName)
+    const transaction = database.transaction(settingsStoreName, 'readwrite')
+    const store = transaction.objectStore(settingsStoreName)
 
     store.put(value, key)
-
-    transaction.oncomplete = () => resolve()
-    transaction.onerror = () =>
-      reject(transaction.error ?? new Error('Transaction failed.'))
-    transaction.onabort = () =>
-      reject(transaction.error ?? new Error('Transaction aborted.'))
-  })
-}
-
-function deleteValue(database: IDBDatabase, key: IDBValidKey) {
-  return new Promise<void>((resolve, reject) => {
-    const transaction = database.transaction(storeName, 'readwrite')
-    const store = transaction.objectStore(storeName)
-
-    store.delete(key)
 
     transaction.oncomplete = () => resolve()
     transaction.onerror = () =>

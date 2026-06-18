@@ -7,6 +7,8 @@ import type {
 } from '../../shared/messages'
 import { useListen, useRpc, useSender } from '../../shared/messageBrokerHooks'
 import type { JenaTrigger } from '../../shared/triggers'
+import { useSettings } from '../../settings/settingsContext'
+import type { IncludeCharacterNameForTriggerMatches } from '../../settings/settingsTypes'
 import {
   compileAlertMatcher,
   createAlertMatchContext,
@@ -26,6 +28,7 @@ interface AlertPatternBinding {
 export function AlertCoordinationService() {
   const call = useRpc('alert-coordination-service')
   const send = useSender('alert-coordination-service')
+  const { machineSettings } = useSettings()
   const sessionIdRef = useRef(createAlertPatternSessionId())
   const indexedTriggerIdsRef = useRef(new Set<string>())
   const patternIndexRef = useRef(new Map<string, AlertPatternBinding[]>())
@@ -94,7 +97,12 @@ export function AlertCoordinationService() {
 
         if (binding.kind === 'trigger') {
           triggerCountersRef.current.set(binding.trigger.id, counter)
-          const payload = createTriggerAlertPayload(binding.trigger, match, context)
+          const payload = createTriggerAlertPayload(
+            binding.trigger,
+            match,
+            context,
+            machineSettings.includeCharacterNameForTriggerMatches,
+          )
 
           console.log('[AlertCoordinationService] trigger matched', payload)
           send('alert.trigger-matched', payload)
@@ -105,13 +113,14 @@ export function AlertCoordinationService() {
           binding.trigger,
           match,
           context,
+          machineSettings.includeCharacterNameForTriggerMatches,
         )
 
         console.log('[AlertCoordinationService] timer early ender matched', payload)
         send('alert.timer-early-ended', payload)
       })
     },
-    [send],
+    [machineSettings.includeCharacterNameForTriggerMatches, send],
   )
 
   useListen('trigger-store.triggers-seen', (message) => {
@@ -158,6 +167,7 @@ function createTriggerAlertPayload(
   trigger: JenaTrigger,
   match: RegexMatchFoundMessage,
   context: AlertMatchContext,
+  includeCharacterNameMode: IncludeCharacterNameForTriggerMatches,
 ): TriggerAlertMatchedMessage {
   return withoutUndefinedValues({
     characterName: match.characterName,
@@ -165,32 +175,65 @@ function createTriggerAlertPayload(
       ? substituteAlertTemplate(trigger.actions.clipboard.text, context)
       : undefined,
     displayText: trigger.actions.display.enabled
-      ? substituteAlertTemplate(trigger.actions.display.text, context)
+      ? substituteAlertTemplate(
+          withCharacterPrefix(
+            trigger.actions.display.text,
+            includeCharacterNameMode,
+          ),
+          context,
+        )
       : undefined,
     serverName: match.serverName,
     speechText: trigger.actions.speech.enabled
-      ? substituteAlertTemplate(trigger.actions.speech.text, context)
+      ? substituteAlertTemplate(
+          withCharacterPrefix(
+            trigger.actions.speech.text,
+            includeCharacterNameMode,
+          ),
+          context,
+        )
       : undefined,
     text: match.text,
     timerName: trigger.timer
-      ? substituteAlertTemplate(trigger.timer.name, context)
+      ? substituteAlertTemplate(
+          withCharacterPrefix(trigger.timer.name, includeCharacterNameMode),
+          context,
+        )
       : undefined,
     timestamp: match.timestamp,
     trigger,
   })
 }
 
+function withCharacterPrefix(
+  template: string,
+  mode: IncludeCharacterNameForTriggerMatches,
+) {
+  if (template.trim().length === 0 || mode === 'never') {
+    return template
+  }
+  if (mode === 'if-not-present' && template.includes('{C}')) {
+    return template
+  }
+
+  return `[{C}] ${template}`
+}
+
 function createTimerEarlyEnderPayload(
   trigger: JenaTrigger,
   match: RegexMatchFoundMessage,
   context: AlertMatchContext,
+  includeCharacterNameMode: IncludeCharacterNameForTriggerMatches,
 ): TriggerEarlyEnderMatchedMessage {
   return withoutUndefinedValues({
     characterName: match.characterName,
     serverName: match.serverName,
     text: match.text,
     timerName: trigger.timer
-      ? substituteAlertTemplate(trigger.timer.name, context)
+      ? substituteAlertTemplate(
+          withCharacterPrefix(trigger.timer.name, includeCharacterNameMode),
+          context,
+        )
       : undefined,
     timestamp: match.timestamp,
     trigger,

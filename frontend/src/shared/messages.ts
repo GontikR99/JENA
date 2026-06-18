@@ -118,6 +118,10 @@ export interface AuthenticatedUser {
   username: string
 }
 
+export interface UserSettings {
+  displayName: string
+}
+
 export type AuthSessionResponse =
   | {
       status: 'anonymous'
@@ -125,6 +129,7 @@ export type AuthSessionResponse =
   | {
       status: 'authenticated'
       user: AuthenticatedUser
+      userSettings: UserSettings
     }
 
 export interface NearbyCharacterPresenceMessage {
@@ -155,6 +160,14 @@ export interface RpcEndpoints {
     getSession: {
       request: Record<string, never>
       response: AuthSessionResponse
+    }
+  }
+  'server.user-settings': {
+    updateSettings: {
+      request: {
+        settings: UserSettings
+      }
+      response: UserSettings
     }
   }
   'worker.file-watcher': {

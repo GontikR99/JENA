@@ -14,6 +14,8 @@ import { NearbyCharactersProvider } from './characters/NearbyCharactersProvider'
 import { AuthProvider } from './auth/AuthProvider'
 import { useAuth } from './auth/authContext'
 import { AuthScreen } from './auth/AuthScreen'
+import { SettingsProvider } from './settings/SettingsProvider'
+import { SpeechVoiceProvider } from './settings/SpeechVoiceProvider'
 import {
   TriggerRuntimePortal,
   TriggerRuntimeProvider,
@@ -31,10 +33,14 @@ export function App() {
   return (
     <MessageBrokerProvider broker={messageBroker}>
       <AuthProvider>
-        <ServerBridge onStatusChange={setServerBridgeStatus} />
-        <AuthenticatedApp />
-        <ServerConnectionGlass status={serverBridgeStatus} />
-        <Toaster position="top-right" />
+        <SpeechVoiceProvider>
+          <SettingsProvider>
+            <ServerBridge onStatusChange={setServerBridgeStatus} />
+            <AuthenticatedApp />
+            <ServerConnectionGlass status={serverBridgeStatus} />
+            <Toaster position="top-right" />
+          </SettingsProvider>
+        </SpeechVoiceProvider>
       </AuthProvider>
     </MessageBrokerProvider>
   )

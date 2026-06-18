@@ -6,13 +6,14 @@ import {
   type ReactNode,
 } from 'react'
 import { useRpc } from '../shared/messageBrokerHooks'
-import type { AuthenticatedUser } from '../shared/messages'
+import type { AuthenticatedUser, UserSettings } from '../shared/messages'
 import { AuthContext, type AuthStatus } from './authContext'
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const call = useRpc('auth-provider')
   const [status, setStatus] = useState<AuthStatus>('checking')
   const [user, setUser] = useState<AuthenticatedUser | null>(null)
+  const [userSettings, setUserSettings] = useState<UserSettings | null>(null)
 
   const refreshSession = useCallback(async () => {
     const session = await call('server.auth', 'getSession', {})
@@ -20,11 +21,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (session.status === 'authenticated') {
       setStatus('authenticated')
       setUser(session.user)
+      setUserSettings(session.userSettings)
       return
     }
 
     setStatus('anonymous')
     setUser(null)
+    setUserSettings(null)
   }, [call])
 
   useEffect(() => {
@@ -39,11 +42,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (session.status === 'authenticated') {
           setStatus('authenticated')
           setUser(session.user)
+          setUserSettings(session.userSettings)
           return
         }
 
         setStatus('anonymous')
         setUser(null)
+        setUserSettings(null)
       })
       .catch((error: unknown) => {
         if (cancelled) {
@@ -53,6 +58,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         console.warn('[AuthProvider] session lookup failed', error)
         setStatus('anonymous')
         setUser(null)
+        setUserSettings(null)
       })
 
     return () => {
@@ -83,8 +89,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       refreshSession,
       status,
       user,
+      userSettings,
     }),
-    [logIn, logOut, refreshSession, status, user],
+    [logIn, logOut, refreshSession, status, user, userSettings],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

@@ -35,6 +35,25 @@ vi.mock('../../runtime/TriggerRuntime', () => ({
   }),
 }))
 
+vi.mock('../../settings/settingsContext', () => ({
+  useSettings: () => ({
+    machineSettings: {
+      tts: {
+        pitch: 1,
+        rate: 1,
+        voiceURI: null,
+        volume: 1,
+      },
+    },
+  }),
+}))
+
+vi.mock('../../settings/speechVoiceContext', () => ({
+  useSpeechVoices: () => ({
+    voiceByURI: new Map(),
+  }),
+}))
+
 vi.mock('../alerts/useTriggerAlerts', () => ({
   useOnTriggerMatch: (callback: (event: TriggerMatchEvent) => void) => {
     hookState.triggerMatchCallback = callback

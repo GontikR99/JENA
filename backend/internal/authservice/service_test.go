@@ -12,6 +12,7 @@ import (
 	"jena/backend/internal/database"
 	"jena/backend/internal/eventbus"
 	"jena/backend/internal/logging"
+	"jena/backend/internal/usersettings"
 )
 
 func TestServeLoginBuildsDiscordRedirectFromRequestHost(t *testing.T) {
@@ -90,6 +91,37 @@ func TestStableIDForSessionTokenRejectsInvalidToken(t *testing.T) {
 	}
 }
 
+func TestGetSessionDefaultsDisplayNameToDiscordUsername(t *testing.T) {
+	service := newTestService(t)
+	ctx := context.Background()
+
+	user, err := service.upsertDiscordUser(ctx, discordUserResponse{
+		ID:       "123456789",
+		Username: "mesozoic",
+	})
+	if err != nil {
+		t.Fatalf("upsertDiscordUser returned error: %v", err)
+	}
+
+	token, err := service.createSession(ctx, user.ID)
+	if err != nil {
+		t.Fatalf("createSession returned error: %v", err)
+	}
+
+	response, err := service.getSession(ctx, eventbus.RPCMetadata{AuthToken: token}, nil)
+	if err != nil {
+		t.Fatalf("getSession returned error: %v", err)
+	}
+
+	session := response.(SessionResponse)
+	if session.Status != "authenticated" {
+		t.Fatalf("Status %q, want authenticated", session.Status)
+	}
+	if session.UserSettings == nil || session.UserSettings.DisplayName != "mesozoic" {
+		t.Fatalf("UserSettings %#v, want Discord username display name", session.UserSettings)
+	}
+}
+
 func newTestService(t *testing.T) *Service {
 	t.Helper()
 
@@ -114,7 +146,12 @@ func newTestService(t *testing.T) *Service {
 		}
 	})
 
-	service, err := New(context.Background(), eventbus.New(), db, cfg, logging.NewNop())
+	userSettings, err := usersettings.NewStore(context.Background(), db)
+	if err != nil {
+		t.Fatalf("usersettings.NewStore returned error: %v", err)
+	}
+
+	service, err := New(context.Background(), eventbus.New(), db, cfg, logging.NewNop(), userSettings)
 	if err != nil {
 		t.Fatalf("New returned error: %v", err)
 	}

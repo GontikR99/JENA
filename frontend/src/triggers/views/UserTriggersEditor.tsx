@@ -33,10 +33,11 @@ import { useTriggerManager } from '../model/UserTriggerManager'
 import './UserTriggersEditor.css'
 
 const databaseName = 'jena'
-const databaseVersion = 3
+const databaseVersion = 4
 const handlesStoreName = 'handles'
 const triggerCacheStoreName = 'trigger-cache'
 const userTriggerCacheStoreName = 'user-trigger-cache'
+const settingsStoreName = 'settings'
 const emptyGroupsCacheKey = 'user-trigger-editor-empty-groups'
 const triggerMutationChunkSize = 100
 
@@ -2493,6 +2494,9 @@ function openDatabase() {
       }
       if (!database.objectStoreNames.contains(userTriggerCacheStoreName)) {
         database.createObjectStore(userTriggerCacheStoreName)
+      }
+      if (!database.objectStoreNames.contains(settingsStoreName)) {
+        database.createObjectStore(settingsStoreName)
       }
     }
 

@@ -1,0 +1,131 @@
+.settings-view {
+  background: #f3f4f6;
+  color: #111827;
+  height: 100%;
+  min-height: 0;
+  overflow: auto;
+}
+
+.settings-content {
+  margin: 0 auto;
+  max-width: 64rem;
+  padding: 1.5rem;
+}
+
+.settings-section {
+  border-bottom: 1px solid #d1d5db;
+  margin-bottom: 1rem;
+  padding: 0 0 1.25rem;
+}
+
+.settings-section h1,
+.settings-section h2,
+.settings-section h3 {
+  letter-spacing: 0;
+  margin: 0;
+}
+
+.settings-section h1 {
+  font-size: 1.5rem;
+  font-weight: 700;
+}
+
+.settings-section h2 {
+  font-size: 1.125rem;
+  font-weight: 700;
+}
+
+.settings-section h3 {
+  font-size: 0.9375rem;
+  font-weight: 700;
+}
+
+.settings-section-disabled {
+  opacity: 0.62;
+}
+
+.settings-section-header,
+.settings-subsection-header {
+  align-items: center;
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+}
+
+.settings-subsection {
+  border-top: 1px solid #e5e7eb;
+  margin-top: 1rem;
+  padding-top: 1rem;
+}
+
+.settings-field {
+  max-width: 34rem;
+  padding-top: 0.75rem;
+}
+
+.settings-range-field {
+  align-items: center;
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: 5rem minmax(12rem, 1fr) 3rem;
+  max-width: 36rem;
+}
+
+.settings-range-field .form-label {
+  margin-bottom: 0;
+}
+
+.settings-range-field output {
+  color: #374151;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.settings-icon-button {
+  align-items: center;
+  background: #fff;
+  border: 1px solid #9ca3af;
+  border-radius: 6px;
+  color: #111827;
+  display: inline-flex;
+  font-size: 0.875rem;
+  font-weight: 600;
+  gap: 0.4rem;
+  min-height: 2rem;
+  padding: 0.25rem 0.65rem;
+}
+
+.settings-icon-button:hover {
+  background: #f3f4f6;
+}
+
+.settings-icon-button:focus-visible {
+  box-shadow: 0 0 0 3px #bfdbfe;
+  outline: 0;
+}
+
+.settings-save-status,
+.settings-disabled-note,
+.settings-validation-note {
+  color: #4b5563;
+  font-size: 0.875rem;
+}
+
+.settings-disabled-note,
+.settings-validation-note {
+  margin-top: 0.75rem;
+}
+
+@media (max-width: 640px) {
+  .settings-content {
+    padding: 0.75rem;
+  }
+
+  .settings-range-field {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-range-field output {
+    text-align: left;
+  }
+}

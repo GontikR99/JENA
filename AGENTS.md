@@ -386,6 +386,7 @@ Use `frontend/src/worker/di.ts`'s `installInstance` helper when a worker test ne
 
 - Keep shared frontend message and RPC payloads type-safe by updating `frontend/src/shared/messages.ts` before wiring new bus or RPC behavior.
 - Keep frontend/backend trigger models and canonicalization aligned when changing trigger JSON shape.
+- Use stable user IDs for identity, routing, persistence, and authorization decisions. User-facing display components should use the configured display name from settings when available, falling back to Discord profile names and finally the stable ID.
 - Prefer `MessageBroker` and the React hooks in `shared/messageBrokerHooks.ts` over direct `postMessage` or direct bus access.
 - Worker services should be installed through `worker/di.ts` and should obtain `MessageBroker` or other worker services with `getDependency`.
 - Backend services should use the backend event bus and container patterns already present under `backend/internal`.
