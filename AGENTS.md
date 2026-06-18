@@ -184,7 +184,10 @@ The canonical typed frontend contract is `frontend/src/shared/messages.ts`. Work
 | `worker.file-watcher` | `frontend/src/shared/messages.ts` (`RpcEndpoints`) | `frontend/src/worker/FileWatcher.ts` registers `file-watcher` | `setFileHandle`, `getCharacters` | Sets or clears the EverQuest directory handle and reports discovered log-file characters. |
 | `worker.matcher-service` | `frontend/src/shared/messages.ts` (`RpcEndpoints`) | `frontend/src/worker/MatcherService.ts` registers `matcher-service` | `add-patterns`, `flush` | Registers regex patterns, compiles them in batches, and optionally flushes pending compilation. |
 | `worker.character-presence` | `frontend/src/shared/messages.ts` (`RpcEndpoints`) | `frontend/src/worker/CharacterPresenceService.ts` registers `character-presence` | `getCharacters` | Returns the worker's current character presence snapshot. |
+| `server.auth` | `frontend/src/shared/messages.ts` (`RpcEndpoints`) | `backend/internal/authservice/service.go` registers `auth` | `getSession` | Returns logged-in session state, stable user identity, and startup user settings. |
+| `server.sharing` | `frontend/src/shared/messages.ts` (`RpcEndpoints`) | `backend/internal/sharingservice/service.go` registers `sharing` | `createSharePackage`, `resolveSharePackage` | Creates expiring trigger share codes and resolves share codes back to trigger IDs plus creator display name. |
 | `server.trigger-store` | `frontend/src/shared/messages.ts` (`RpcEndpoints`) | `backend/internal/triggerstore/service.go` registers `trigger-store` | `storeTriggers`, `fetchTriggers` | Stores canonical trigger JSON and fetches triggers by canonical ID. |
+| `server.user-settings` | `frontend/src/shared/messages.ts` (`RpcEndpoints`) | `backend/internal/usersettings/service.go` registers `user-settings` | `updateSettings` | Persists authenticated per-user settings such as display name. |
 | `server.user-trigger-store` | `frontend/src/shared/messages.ts` (`RpcEndpoints`) | `backend/internal/usertriggerstore/service.go` registers `user-trigger-store` | `upsertTriggers`, `deleteTriggers`, `toggleTriggers`, `setTriggerFlags`, `fetchTriggers`, `ping` | Manages per-user trigger records, enablement, publish/broadcast flags, revisions, and update polling. |
 
 ### HTTP And WebSocket Endpoints
@@ -317,7 +320,9 @@ The backend uses:
 - `internal/database`: SQLite database setup using vendored `modernc.org/sqlite`, WAL mode, busy timeout, and retry handling for busy/locked database errors.
 - `internal/identityservice`: dummy identity lookup; non-empty auth tokens currently map to `test-user`.
 - `internal/logging`: DI-installed structured logger with console, rotating JSONL file, and Elasticsearch targets.
+- `internal/sharingservice`: expiring trigger share package creation and resolution, with periodic cleanup.
 - `internal/triggerstore`: persistent canonical trigger JSON store.
+- `internal/usersettings`: user settings persistence and current display-name lookup.
 - `internal/usertriggerstore`: per-user trigger records, enablement, publish/broadcast flags, revision/update RPCs, and broadcasts.
 - `internal/worldwidepresenceservice`: aggregates character presence across websocket sources and broadcasts nearby characters.
 

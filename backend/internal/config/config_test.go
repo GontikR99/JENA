@@ -56,6 +56,12 @@ func TestParseDefaults(t *testing.T) {
 	if config.LogTarget != "console" {
 		t.Fatalf("unexpected LogTarget %q", config.LogTarget)
 	}
+	if config.SharePackageCleanupMinutes != 5 {
+		t.Fatalf("unexpected SharePackageCleanupMinutes %d", config.SharePackageCleanupMinutes)
+	}
+	if config.SharePackageTTLMins != 240 {
+		t.Fatalf("unexpected SharePackageTTLMins %d", config.SharePackageTTLMins)
+	}
 	if config.WebSocketPath != "/_jena/ws" {
 		t.Fatalf("unexpected WebSocketPath %q", config.WebSocketPath)
 	}
@@ -100,6 +106,8 @@ func TestParseRejectsInvalidDatabasePoolSettings(t *testing.T) {
 		{"-database-retry-delay-ms", "-1"},
 		{"-auth-cookie-name", ""},
 		{"-auth-session-days", "0"},
+		{"-share-package-cleanup-minutes", "0"},
+		{"-share-package-ttl-minutes", "0"},
 	}
 
 	for _, args := range cases {

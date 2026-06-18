@@ -14,6 +14,7 @@ import { NearbyCharactersProvider } from './characters/NearbyCharactersProvider'
 import { AuthProvider } from './auth/AuthProvider'
 import { useAuth } from './auth/authContext'
 import { AuthScreen } from './auth/AuthScreen'
+import { TriggerShareCoordinator } from './sharing/TriggerShareCoordinator'
 import { SettingsProvider } from './settings/SettingsProvider'
 import { SpeechVoiceProvider } from './settings/SpeechVoiceProvider'
 import {
@@ -64,7 +65,9 @@ function AuthenticatedApp() {
             <LocalCharactersProvider>
               <TriggerRuntimeProvider>
                 <TriggerSpeechService />
-                <AppShell />
+                <TriggerShareCoordinator>
+                  <AppShell />
+                </TriggerShareCoordinator>
                 <TriggerRuntimePortal />
               </TriggerRuntimeProvider>
             </LocalCharactersProvider>

@@ -93,6 +93,28 @@ func (store *Store) GetOrDefault(ctx context.Context, userID string, defaults Se
 	return settings, nil
 }
 
+func (store *Store) DisplayNameForUser(ctx context.Context, userID string) (string, error) {
+	var displayName string
+	err := store.db.QueryRowContext(
+		ctx,
+		`
+			SELECT COALESCE(NULLIF(TRIM(us.display_name), ''), NULLIF(TRIM(au.username), ''), au.id)
+			FROM auth_users au
+			LEFT JOIN user_settings us ON us.user_id = au.id
+			WHERE au.id = ?
+		`,
+		userID,
+	).Scan(&displayName)
+	if errors.Is(err, sql.ErrNoRows) {
+		return userID, nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("lookup user display name: %w", err)
+	}
+
+	return displayName, nil
+}
+
 func (store *Store) Update(ctx context.Context, userID string, settings Settings) (Settings, error) {
 	normalizedSettings, err := Normalize(settings)
 	if err != nil {

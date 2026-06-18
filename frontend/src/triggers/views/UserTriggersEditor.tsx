@@ -10,6 +10,7 @@ import ProgressBar from 'react-bootstrap/ProgressBar'
 import toast from 'react-hot-toast'
 import { useAuth } from '../../auth/authContext'
 import type { CharacterPresence } from '../../shared/messages'
+import { useRpc } from '../../shared/messageBrokerHooks'
 import {
   createEmptyTrigger,
   getJenaCharacterServerKey,
@@ -140,6 +141,7 @@ export function UserTriggersEditor({
     upsertTrigger,
     upsertTriggers,
   } = useTriggerManager()
+  const call = useRpc('user-triggers-editor')
   const { isAuthenticated } = useAuth()
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const [emptyGroups, setEmptyGroups] = useState<string[][]>([])
@@ -986,6 +988,32 @@ export function UserTriggersEditor({
     )
   }
 
+  async function handleShareTriggerIds(triggerIds: JenaTriggerId[]) {
+    const uniqueTriggerIds = [...new Set(triggerIds)]
+
+    if (uniqueTriggerIds.length === 0) {
+      toast.error('No triggers selected for sharing.')
+      return
+    }
+
+    try {
+      const response = await call('server.sharing', 'createSharePackage', {
+        triggerIds: uniqueTriggerIds,
+      })
+
+      try {
+        await navigator.clipboard.writeText(response.code)
+        toast.success(`${response.code} copied to clipboard.`)
+      } catch (error) {
+        console.warn('[UserTriggersEditor] failed to copy share code', error)
+        toast.error(`Unable to copy share code: ${response.code}`)
+      }
+    } catch (error) {
+      console.warn('[UserTriggersEditor] failed to create share package', error)
+      toast.error(getErrorMessage(error))
+    }
+  }
+
   async function exportTriggers(
     title: string,
     fileName: string,
@@ -1225,6 +1253,16 @@ export function UserTriggersEditor({
                 ? 'export selected triggers'
                 : 'export trigger'}
             </MenuItem>
+            <MenuItem
+              disabled={effectiveMenuSelection.length === 0}
+              onClick={() => {
+                void handleShareTriggerIds(effectiveMenuSelection)
+              }}
+            >
+              {effectiveMenuSelection.length > 1
+                ? 'share selected triggers'
+                : 'share trigger'}
+            </MenuItem>
           </>
         ) : null}
         {menuGroup ? (
@@ -1252,16 +1290,36 @@ export function UserTriggersEditor({
             >
               export this group
             </MenuItem>
+            <MenuItem
+              disabled={menuGroupExportCount === 0}
+              onClick={() => {
+                void handleShareTriggerIds(getTriggerIdsUnderPath(triggers, menuGroup.path))
+              }}
+            >
+              share this group
+            </MenuItem>
             {selectedGroupPath &&
             !areStringArraysEqual(selectedGroupPath, menuGroup.path) ? (
-              <MenuItem
-                disabled={selectedGroupExportCount === 0}
-                onClick={() => {
-                  void handleExportSelectedGroup(selectedGroupPath)
-                }}
-              >
-                export selected group
-              </MenuItem>
+              <>
+                <MenuItem
+                  disabled={selectedGroupExportCount === 0}
+                  onClick={() => {
+                    void handleExportSelectedGroup(selectedGroupPath)
+                  }}
+                >
+                  export selected group
+                </MenuItem>
+                <MenuItem
+                  disabled={selectedGroupExportCount === 0}
+                  onClick={() => {
+                    void handleShareTriggerIds(
+                      getTriggerIdsUnderPath(triggers, selectedGroupPath),
+                    )
+                  }}
+                >
+                  share selected group
+                </MenuItem>
+              </>
             ) : null}
             <MenuItem
               disabled={
@@ -1288,28 +1346,49 @@ export function UserTriggersEditor({
             <MenuItem onClick={handleAddRootGroup}>add group</MenuItem>
             <MenuItem onClick={handleImportClick}>import GINA</MenuItem>
             {selection.type === 'triggers' ? (
-              <MenuItem
-                disabled={selection.ids.size === 0}
-                onClick={() => {
-                  void handleExportSelectedTriggers([...selection.ids])
-                }}
-              >
-                export selected triggers
-              </MenuItem>
+              <>
+                <MenuItem
+                  disabled={selection.ids.size === 0}
+                  onClick={() => {
+                    void handleExportSelectedTriggers([...selection.ids])
+                  }}
+                >
+                  export selected triggers
+                </MenuItem>
+                <MenuItem
+                  disabled={selection.ids.size === 0}
+                  onClick={() => {
+                    void handleShareTriggerIds([...selection.ids])
+                  }}
+                >
+                  share selected triggers
+                </MenuItem>
+              </>
             ) : null}
             {selectedGroupPath ? (
-              <MenuItem
-                disabled={selectedGroupExportCount === 0}
-                onClick={() => {
-                  void handleExportSelectedGroup(selectedGroupPath)
-                }}
-              >
-                export selected group
-              </MenuItem>
+              <>
+                <MenuItem
+                  disabled={selectedGroupExportCount === 0}
+                  onClick={() => {
+                    void handleExportSelectedGroup(selectedGroupPath)
+                  }}
+                >
+                  export selected group
+                </MenuItem>
+                <MenuItem
+                  disabled={selectedGroupExportCount === 0}
+                  onClick={() => {
+                    void handleShareTriggerIds(
+                      getTriggerIdsUnderPath(triggers, selectedGroupPath),
+                    )
+                  }}
+                >
+                  share selected group
+                </MenuItem>
+              </>
             ) : null}
           </>
         ) : null}
-        <MenuItem disabled>share</MenuItem>
         <MenuDivider />
         {menuGroup ? (
           <MenuItem

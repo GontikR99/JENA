@@ -17,6 +17,7 @@ import (
 	"jena/backend/internal/httpserver"
 	"jena/backend/internal/identityservice"
 	"jena/backend/internal/logging"
+	"jena/backend/internal/sharingservice"
 	"jena/backend/internal/triggerstore"
 	"jena/backend/internal/userbridge"
 	"jena/backend/internal/usersettings"
@@ -103,6 +104,13 @@ func run(args []string) error {
 	defer triggerStore.Dispose()
 	app.Install(container, triggerStore)
 
+	sharingService, err := sharingservice.New(context.Background(), bus, db, identityService, triggerStore, userSettingsStore, config)
+	if err != nil {
+		return err
+	}
+	defer sharingService.Dispose()
+	app.Install(container, sharingService)
+
 	userTriggerStore, err := usertriggerstore.New(context.Background(), bus, db, identityService, triggerStore)
 	if err != nil {
 		return err
@@ -132,6 +140,7 @@ func run(args []string) error {
 	)
 
 	go bridge.StartActiveConnectionLogging(ctx)
+	go sharingService.StartCleanup(ctx)
 
 	return server.Run(ctx)
 }

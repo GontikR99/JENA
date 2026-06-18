@@ -170,6 +170,29 @@ export interface RpcEndpoints {
       response: UserSettings
     }
   }
+  'server.sharing': {
+    createSharePackage: {
+      request: {
+        triggerIds: JenaTriggerId[]
+      }
+      response: {
+        code: string
+        expiresAt: string
+        id: string
+        triggerIds: JenaTriggerId[]
+      }
+    }
+    resolveSharePackage: {
+      request: {
+        code: string
+      }
+      response: {
+        creatorDisplayName: string
+        expiresAt: string
+        triggerIds: JenaTriggerId[]
+      }
+    }
+  }
   'worker.file-watcher': {
     setFileHandle: {
       request: {

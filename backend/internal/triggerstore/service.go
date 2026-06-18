@@ -167,6 +167,38 @@ func (service *Service) GetTriggers(ctx context.Context, ids []model.TriggerID) 
 	return triggers, nil
 }
 
+func (service *Service) FilterStoredTriggerIDs(ctx context.Context, ids []model.TriggerID) ([]model.TriggerID, error) {
+	filteredIDs := make([]model.TriggerID, 0, len(ids))
+	seenIDs := make(map[model.TriggerID]struct{}, len(ids))
+
+	for _, id := range ids {
+		if id == "" {
+			continue
+		}
+		if _, ok := seenIDs[id]; ok {
+			continue
+		}
+
+		var storedID string
+		err := service.db.QueryRowContext(
+			ctx,
+			"SELECT id FROM triggers WHERE id = ?",
+			string(id),
+		).Scan(&storedID)
+		if errors.Is(err, sql.ErrNoRows) {
+			continue
+		}
+		if err != nil {
+			return nil, fmt.Errorf("lookup stored trigger id: %w", err)
+		}
+
+		seenIDs[id] = struct{}{}
+		filteredIDs = append(filteredIDs, model.TriggerID(storedID))
+	}
+
+	return filteredIDs, nil
+}
+
 func (service *Service) GetTriggersPartial(ctx context.Context, ids []model.TriggerID, limit int) ([]model.Trigger, bool, error) {
 	if limit <= 0 {
 		return nil, false, errors.New("trigger fetch limit must be greater than zero")
