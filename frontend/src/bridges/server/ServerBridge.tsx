@@ -2,7 +2,6 @@ import { useEffect } from 'react'
 import type { MessageBroker } from '../../shared/messageBroker'
 import { useMessageBroker } from '../../shared/messageBrokerHooks'
 import { ServerEndpointPrefix, type BusMessage } from '../../shared/messages'
-import { useSettings } from '../../settings/settingsContext'
 import {
   ExpiringMessageDeduper,
   getDefaultServerBridgeUrl,
@@ -32,20 +31,17 @@ interface QueuedMessage {
 
 const outboundQueueLimit = 1024
 const keepaliveIntervalMs = 1_000
-const staleConnectionMs = 10_000
-const headlessStaleConnectionMs = staleConnectionMs * 2
+const staleConnectionMs = 20_000
 const dedupWindowMs = 10 * 60_000
 const reconnectDelayMs = 250
 const maxReconnectDelayMs = 2_000
 
 export function ServerBridge({ onStatusChange }: ServerBridgeProps) {
   const broker = useMessageBroker()
-  const { machineSettings } = useSettings()
 
   useEffect(() => {
     const controller = new ServerBridgeController({
       broker,
-      headlessMode: machineSettings.headlessMode,
       onStatusChange,
       url: getDefaultServerBridgeUrl(window.location),
     })
@@ -55,7 +51,7 @@ export function ServerBridge({ onStatusChange }: ServerBridgeProps) {
     return () => {
       controller.dispose()
     }
-  }, [broker, machineSettings.headlessMode, onStatusChange])
+  }, [broker, onStatusChange])
 
   return null
 }
@@ -104,7 +100,6 @@ class ServerBridgeController {
   private readonly queuedMessages: BusMessage[] = []
   private readonly unackedMessages = new Map<string, QueuedMessage>()
   private readonly url: string
-  private readonly headlessMode: boolean
   private keepaliveIntervalId: ReturnType<typeof globalThis.setInterval> | null =
     null
   private lastFrameReceivedAt = 0
@@ -121,17 +116,14 @@ class ServerBridgeController {
 
   constructor({
     broker,
-    headlessMode,
     onStatusChange,
     url,
   }: {
     broker: MessageBroker
-    headlessMode: boolean
     onStatusChange: (status: ServerBridgeStatus) => void
     url: string
   }) {
     this.broker = broker
-    this.headlessMode = headlessMode
     this.onStatusChange = onStatusChange
     this.url = url
   }
@@ -183,10 +175,6 @@ class ServerBridgeController {
       this.lastFrameReceivedAt = Date.now()
       this.nextReconnectDelayMs = reconnectDelayMs
       this.setStatus('open')
-      this.writeFrame({
-        headlessMode: this.headlessMode,
-        type: 'config',
-      })
       this.startTimers()
       this.flushOutboundMessages()
     })
@@ -343,7 +331,7 @@ class ServerBridgeController {
       const socket = this.socket
       if (
         socket?.readyState === WebSocket.OPEN &&
-        Date.now() - this.lastFrameReceivedAt > this.getStaleConnectionMs()
+        Date.now() - this.lastFrameReceivedAt > staleConnectionMs
       ) {
         this.setStatus('stale')
         socket.close()
@@ -389,10 +377,6 @@ class ServerBridgeController {
 
   private setStatus(status: ServerBridgeStatus) {
     this.onStatusChange(status)
-  }
-
-  private getStaleConnectionMs() {
-    return this.headlessMode ? headlessStaleConnectionMs : staleConnectionMs
   }
 
   private becomeIncompatible() {

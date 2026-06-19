@@ -23,19 +23,17 @@ const (
 	UserDisconnectedEndpoint = "websocket.user-disconnected"
 
 	frameTypeAck     = "ack"
-	frameTypeConfig  = "config"
 	frameTypeMessage = "message"
 	frameTypePing    = "ping"
 	frameTypePong    = "pong"
 
-	outboundQueueSize   = 1024
-	writeTimeout        = 5 * time.Second
-	keepaliveInterval   = 1 * time.Second
-	readTimeout         = 10 * time.Second
-	headlessReadTimeout = readTimeout * 2
-	dedupWindow         = 10 * time.Minute
-	readLimitBytes      = 1024 * 1024
-	activeLogInterval   = time.Minute
+	outboundQueueSize = 1024
+	writeTimeout      = 5 * time.Second
+	keepaliveInterval = 1 * time.Second
+	readTimeout       = 20 * time.Second
+	dedupWindow       = 10 * time.Minute
+	readLimitBytes    = 1024 * 1024
+	activeLogInterval = time.Minute
 )
 
 type StableUserResolver interface {
@@ -64,11 +62,10 @@ type Bridge struct {
 }
 
 type frame struct {
-	Type         string             `json:"type"`
-	Seq          uint64             `json:"seq,omitempty"`
-	Ack          uint64             `json:"ack,omitempty"`
-	Envelope     *eventbus.Envelope `json:"envelope,omitempty"`
-	HeadlessMode bool               `json:"headlessMode,omitempty"`
+	Type     string             `json:"type"`
+	Seq      uint64             `json:"seq,omitempty"`
+	Ack      uint64             `json:"ack,omitempty"`
+	Envelope *eventbus.Envelope `json:"envelope,omitempty"`
 }
 
 type connection struct {
@@ -83,7 +80,6 @@ type connection struct {
 	deduper      *messageDeduper
 	stableUserID string
 	userIdentity eventbus.UserIdentity
-	headlessMode atomic.Bool
 }
 
 func New(bus *eventbus.Bus, logger logging.Logger, authCookieName string, identity StableUserResolver) *Bridge {
@@ -315,7 +311,7 @@ func (bridge *Bridge) logActiveConnections(ctx context.Context) {
 
 func (connection *connection) readLoop(ctx context.Context) error {
 	for {
-		readCtx, cancel := context.WithTimeout(ctx, connection.readTimeout())
+		readCtx, cancel := context.WithTimeout(ctx, readTimeout)
 		_, data, err := connection.conn.Read(readCtx)
 		cancel()
 
@@ -344,8 +340,6 @@ func (connection *connection) readLoop(ctx context.Context) error {
 		}
 
 		switch incoming.Type {
-		case frameTypeConfig:
-			connection.headlessMode.Store(incoming.HeadlessMode)
 		case frameTypeMessage:
 			if incoming.Envelope == nil {
 				continue
@@ -370,14 +364,6 @@ func (connection *connection) readLoop(ctx context.Context) error {
 			)
 		}
 	}
-}
-
-func (connection *connection) readTimeout() time.Duration {
-	if connection.headlessMode.Load() {
-		return headlessReadTimeout
-	}
-
-	return readTimeout
 }
 
 func (connection *connection) receiveEnvelope(ctx context.Context, seq uint64, envelope eventbus.Envelope) {
