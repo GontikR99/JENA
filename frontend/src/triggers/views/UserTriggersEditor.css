@@ -76,7 +76,8 @@
   border: 0;
   color: #495057;
   flex: 0 0 1rem;
-  font-size: 0.75rem;
+  font-family: "Cascadia Mono", Consolas, "Liberation Mono", monospace;
+  font-size: 0.9rem;
   height: 1.5rem;
   line-height: 1;
   padding: 0;

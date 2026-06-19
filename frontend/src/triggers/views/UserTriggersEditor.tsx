@@ -46,6 +46,10 @@ const userTriggerCacheStoreName = 'user-trigger-cache'
 const settingsStoreName = 'settings'
 const emptyGroupsCacheKey = 'user-trigger-editor-empty-groups'
 const triggerMutationChunkSize = 100
+const triggerTreeIndentRem = 1.15
+const triggerTreeLeafIndentNudgeRem = 0.8
+const collapsedGroupSymbol = '\u229e'
+const expandedGroupSymbol = '\u229f'
 
 interface UserTriggersEditorProps {
   selectedCharacter: CharacterPresence | null
@@ -1763,7 +1767,9 @@ function GroupRow({
       <span className="user-triggers-row-main">
         <span
           className="user-triggers-indent"
-          style={{ width: `${Math.max(0, item.path.length - 1) * 1.15}rem` }}
+          style={{
+            width: `${Math.max(0, item.path.length - 1) * triggerTreeIndentRem}rem`,
+          }}
         />
         <button
           aria-label={collapsed ? `Expand ${item.name}` : `Collapse ${item.name}`}
@@ -1775,7 +1781,7 @@ function GroupRow({
           }}
           type="button"
         >
-          {item.childCount > 0 ? (collapsed ? '>' : 'v') : ''}
+          {item.childCount > 0 ? (collapsed ? collapsedGroupSymbol : expandedGroupSymbol) : ''}
         </button>
         {showEnableColumn ? (
           <FourStateCheckbox
@@ -1888,7 +1894,9 @@ function TriggerRow({
       <span className="user-triggers-row-main">
         <span
           className="user-triggers-indent"
-          style={{ width: `${item.path.length * 1.15}rem` }}
+          style={{
+            width: `${item.path.length * triggerTreeIndentRem + triggerTreeLeafIndentNudgeRem}rem`,
+          }}
         />
         {showEnableColumn ? (
           <FourStateCheckbox

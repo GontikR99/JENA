@@ -39,6 +39,8 @@ const triggerCacheStoreName = 'trigger-cache'
 const userTriggerCacheStoreName = 'user-trigger-cache'
 const expandedGroupsCacheKey = 'subscribed-triggers-expanded-groups'
 const adoptTriggerChunkSize = 100
+const collapsedGroupSymbol = '\u229e'
+const expandedGroupSymbol = '\u229f'
 
 interface SubscribedTriggersViewProps {
   selectedCharacter: CharacterPresence | null
@@ -749,7 +751,7 @@ function SubscribedGroupRow({
           }}
           type="button"
         >
-          {item.childCount > 0 ? (collapsed ? '>' : 'v') : ''}
+          {item.childCount > 0 ? (collapsed ? collapsedGroupSymbol : expandedGroupSymbol) : ''}
         </button>
         <FourStateCheckbox
           ariaLabel={`Enable triggers in ${item.name}`}
