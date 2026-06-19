@@ -16,6 +16,7 @@ import {
   type FileSystemDirectoryHandleLike,
 } from '../shared/fileSystemAccess'
 import { useRpc } from '../shared/messageBrokerHooks'
+import { useSettings } from '../settings/settingsContext'
 import { useTriggerRuntime } from './TriggerRuntime'
 
 type LogStatus = 'idle' | 'reading' | 'ready'
@@ -26,6 +27,7 @@ interface StartupButtonProps {
 
 export function StartupButton({ onDirectoryOpened }: StartupButtonProps) {
   const callWorker = useRpc('startup-button')
+  const { machineSettings } = useSettings()
   const {
     areTriggersRunning,
     canUseTriggerRuntime,
@@ -47,6 +49,8 @@ export function StartupButton({ onDirectoryOpened }: StartupButtonProps) {
   const isReadingLogs = logStatus === 'reading'
   const primaryButtonLabel = getPrimaryButtonLabel({
     areTriggersRunning,
+    headlessMode: machineSettings.headlessMode,
+    isStartingTriggers,
     isStoppingTriggers,
     hasActiveDirectoryHandle,
     hasSavedDirectoryHandle: savedDirectoryHandle !== null,
@@ -266,25 +270,33 @@ export function StartupButton({ onDirectoryOpened }: StartupButtonProps) {
 
 function getPrimaryButtonLabel({
   areTriggersRunning,
+  headlessMode,
+  isStartingTriggers,
   isStoppingTriggers,
   hasActiveDirectoryHandle,
   hasSavedDirectoryHandle,
 }: {
   areTriggersRunning: boolean
+  headlessMode: boolean
+  isStartingTriggers: boolean
   isStoppingTriggers: boolean
   hasActiveDirectoryHandle: boolean
   hasSavedDirectoryHandle: boolean
 }) {
+  if (isStartingTriggers) {
+    return headlessMode ? 'Showing Overlay' : 'Starting Triggers'
+  }
+
   if (isStoppingTriggers) {
-    return 'Stopping Triggers'
+    return headlessMode ? 'Hiding Overlay' : 'Stopping Triggers'
   }
 
   if (areTriggersRunning) {
-    return 'Stop Triggers'
+    return headlessMode ? 'Hide Overlay' : 'Stop Triggers'
   }
 
   if (hasActiveDirectoryHandle) {
-    return 'Start Triggers'
+    return headlessMode ? 'Show Overlay' : 'Start Triggers'
   }
 
   if (hasSavedDirectoryHandle) {

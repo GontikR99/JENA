@@ -13,6 +13,7 @@ import type {
   TriggerMatchEvent,
   TriggerStopEvent,
 } from '../../triggers/alerts/useTriggerAlerts'
+import { TriggerTimerRuntimeProvider } from '../../runtime/TriggerTimerRuntime'
 import { Pip } from '../pip'
 
 const hookState = vi.hoisted(() => ({
@@ -50,6 +51,7 @@ vi.mock('../../triggers/alerts/useTriggerAlerts', () => ({
 vi.mock('../../settings/settingsContext', () => ({
   useSettings: () => ({
     machineSettings: {
+      headlessMode: false,
       pip: {
         alerts: {
           backgroundColor: '#000000',
@@ -67,13 +69,23 @@ vi.mock('../../settings/settingsContext', () => ({
   }),
 }))
 
+vi.mock('../../runtime/TriggerRuntime', () => ({
+  useTriggerRuntime: () => ({
+    areTriggersRunning: true,
+  }),
+}))
+
 describe('Pip', () => {
   let animationFrames: Map<number, FrameRequestCallback>
+  let currentTimeMs: number
   let nextFrameId: number
   let nowSpy: ReturnType<typeof vi.spyOn>
 
   beforeEach(() => {
+    vi.useFakeTimers()
+    vi.setSystemTime(0)
     animationFrames = new Map()
+    currentTimeMs = 0
     nextFrameId = 1
     hookState.earlyEnderListeners = []
     hookState.stopListeners = []
@@ -99,11 +111,12 @@ describe('Pip', () => {
 
   afterEach(() => {
     nowSpy.mockRestore()
+    vi.useRealTimers()
     vi.unstubAllGlobals()
   })
 
   it('renders trigger display text on opaque bottom rows', () => {
-    render(<Pip />)
+    renderPip()
 
     act(() => {
       emitTriggerMatch({
@@ -115,7 +128,7 @@ describe('Pip', () => {
   })
 
   it('restarts matching timers without adding a new row', () => {
-    render(<Pip />)
+    renderPip()
 
     act(() => {
       emitTriggerMatch({
@@ -138,7 +151,7 @@ describe('Pip', () => {
   })
 
   it('removes countdown timers when they complete', () => {
-    render(<Pip />)
+    renderPip()
 
     act(() => {
       emitTriggerMatch({
@@ -153,14 +166,14 @@ describe('Pip', () => {
     expect(screen.getByText('Short Timer')).toBeInTheDocument()
 
     act(() => {
-      runAnimationFrames(1000)
+      advanceTo(1000)
     })
 
     expect(screen.queryByText('Short Timer')).not.toBeInTheDocument()
   })
 
   it('shows timer warning and ended display text', () => {
-    render(<Pip />)
+    renderPip()
 
     act(() => {
       emitTriggerMatch({
@@ -188,13 +201,13 @@ describe('Pip', () => {
     expect(screen.queryByText('Timer warning')).not.toBeInTheDocument()
 
     act(() => {
-      runAnimationFrames(8000)
+      advanceTo(8000)
     })
 
     expect(screen.getByText('Timer warning')).toBeInTheDocument()
 
     act(() => {
-      runAnimationFrames(10_000)
+      advanceTo(10_000)
     })
 
     expect(screen.getByText('Timer ended')).toBeInTheDocument()
@@ -202,7 +215,7 @@ describe('Pip', () => {
   })
 
   it('removes timers when a matching early ender arrives', () => {
-    render(<Pip />)
+    renderPip()
 
     act(() => {
       emitTriggerMatch({
@@ -223,7 +236,7 @@ describe('Pip', () => {
   })
 
   it('removes timers when their cancel button is clicked', () => {
-    render(<Pip />)
+    renderPip()
 
     act(() => {
       emitTriggerMatch({
@@ -242,7 +255,7 @@ describe('Pip', () => {
   })
 
   it('removes timers when the early ender has a different computed timer name', () => {
-    render(<Pip />)
+    renderPip()
 
     act(() => {
       emitTriggerMatch({
@@ -263,7 +276,7 @@ describe('Pip', () => {
   })
 
   it('clears timers and text when a stop request arrives', () => {
-    render(<Pip />)
+    renderPip()
 
     act(() => {
       emitTriggerMatch({
@@ -283,6 +296,25 @@ describe('Pip', () => {
     expect(screen.queryByText('Stop visible text')).not.toBeInTheDocument()
     expect(screen.queryByText('Stop Timer')).not.toBeInTheDocument()
   })
+
+  function renderPip() {
+    render(
+      <TriggerTimerRuntimeProvider>
+        <Pip />
+      </TriggerTimerRuntimeProvider>,
+    )
+  }
+
+  function advanceTo(nowMs: number) {
+    const deltaMs = nowMs - currentTimeMs
+    if (deltaMs < 0) {
+      throw new Error('Cannot move test time backwards.')
+    }
+
+    vi.advanceTimersByTime(deltaMs)
+    currentTimeMs = nowMs
+    runAnimationFrames(nowMs)
+  }
 
   function runAnimationFrames(nowMs: number) {
     const callbacks = [...animationFrames.values()]

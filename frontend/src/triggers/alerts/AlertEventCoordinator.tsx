@@ -16,6 +16,7 @@ import type { JenaResolvedTrigger } from '../../shared/triggers'
 import { useLocalCharacters } from '../../characters/LocalCharactersProvider'
 import { useListen } from '../../shared/messageBrokerHooks'
 import { useTriggerRuntime } from '../../runtime/TriggerRuntime'
+import { useSettings } from '../../settings/settingsContext'
 import {
   useSubscribedTriggerManager,
   type SubscribedTriggerAlertRegistration,
@@ -69,6 +70,9 @@ export function AlertEventCoordinatorProvider({
   children: ReactNode
 }) {
   const { areTriggersRunning, lastStartedAtMs } = useTriggerRuntime()
+  const { machineSettings } = useSettings()
+  const areTriggerActionsActive =
+    areTriggersRunning || machineSettings.headlessMode
   const localCharacters = useLocalCharacters()
   const {
     getTimerEarlyEnderBroadcastRegistration,
@@ -129,7 +133,7 @@ export function AlertEventCoordinatorProvider({
 
   const handleLocalTriggerMatch = useCallback(
     (alert: TriggerAlertMatchedMessage) => {
-      if (!areTriggersRunning) {
+      if (!areTriggerActionsActive) {
         return
       }
 
@@ -160,7 +164,7 @@ export function AlertEventCoordinatorProvider({
       )
     },
     [
-      areTriggersRunning,
+      areTriggerActionsActive,
       emitTriggerMatch,
       getTriggerAlertRegistration,
       getTriggerAlertRegistrations,
@@ -197,7 +201,7 @@ export function AlertEventCoordinatorProvider({
   const handleBroadcastAlert = useCallback(
     (broadcast: BroadcastAlertMessage) => {
       if (broadcast.kind === 'triggerMatched') {
-        if (!areTriggersRunning) {
+        if (!areTriggerActionsActive) {
           return
         }
 
@@ -254,7 +258,7 @@ export function AlertEventCoordinatorProvider({
       })
     },
     [
-      areTriggersRunning,
+      areTriggerActionsActive,
       emitTimerEarlyEnder,
       emitTriggerMatch,
       hasSubscriptionTrigger,

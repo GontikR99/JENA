@@ -75,6 +75,17 @@
   margin-top: 0.25rem;
 }
 
+.settings-field-warning {
+  color: #92400e;
+  font-size: 0.8125rem;
+  margin-top: 0.35rem;
+}
+
+.settings-field-warning a {
+  color: #7c2d12;
+  font-weight: 600;
+}
+
 .settings-range-field {
   align-items: center;
   display: grid;

@@ -26,6 +26,10 @@ export type ServerBridgeFrame =
       ack: number
       type: 'pong'
     }
+  | {
+      headlessMode: boolean
+      type: 'config'
+    }
 
 export function getDefaultServerBridgeUrl(location: Location) {
   const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
@@ -107,6 +111,10 @@ export function parseServerBridgeFrame(data: unknown): ServerBridgeFrame | null 
           : null
       case 'pong':
         return typeof parsed.ack === 'number'
+          ? (parsed as ServerBridgeFrame)
+          : null
+      case 'config':
+        return typeof parsed.headlessMode === 'boolean'
           ? (parsed as ServerBridgeFrame)
           : null
       default:

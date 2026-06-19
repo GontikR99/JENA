@@ -20,6 +20,7 @@ import {
   TriggerRuntimePortal,
   TriggerRuntimeProvider,
 } from './runtime/TriggerRuntime'
+import { TriggerTimerRuntimeProvider } from './runtime/TriggerTimerRuntime'
 import { AlertCoordinationService } from './triggers/alerts/AlertCoordinationService'
 import { AlertEventCoordinatorProvider } from './triggers/alerts/AlertEventCoordinator'
 import { BroadcastReflector } from './triggers/alerts/BroadcastReflector'
@@ -67,12 +68,14 @@ function AuthenticatedApp() {
             <LocalCharactersProvider>
               <TriggerRuntimeProvider>
                 <AlertEventCoordinatorProvider>
-                  <BroadcastReflector />
-                  <TriggerSpeechService />
-                  <TriggerShareCoordinator>
-                    <AppShell />
-                  </TriggerShareCoordinator>
-                  <TriggerRuntimePortal />
+                  <TriggerTimerRuntimeProvider>
+                    <BroadcastReflector />
+                    <TriggerSpeechService />
+                    <TriggerShareCoordinator>
+                      <AppShell />
+                    </TriggerShareCoordinator>
+                    <TriggerRuntimePortal />
+                  </TriggerTimerRuntimeProvider>
                 </AlertEventCoordinatorProvider>
               </TriggerRuntimeProvider>
             </LocalCharactersProvider>

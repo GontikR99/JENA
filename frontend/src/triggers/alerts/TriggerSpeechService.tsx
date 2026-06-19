@@ -28,7 +28,9 @@ export function TriggerSpeechService() {
   const { areTriggersRunning } = useTriggerRuntime()
   const { machineSettings } = useSettings()
   const { voiceByURI } = useSpeechVoices()
-  const areTriggersRunningRef = useRef(areTriggersRunning)
+  const areTriggerActionsActive =
+    areTriggersRunning || machineSettings.headlessMode
+  const areTriggerActionsActiveRef = useRef(areTriggerActionsActive)
   const currentUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null)
   const generationRef = useRef(0)
   const queueRef = useRef<SpeechJob[]>([])
@@ -60,7 +62,7 @@ export function TriggerSpeechService() {
       return
     }
 
-    if (nextJob.requireRunning && !areTriggersRunningRef.current) {
+    if (nextJob.requireRunning && !areTriggerActionsActiveRef.current) {
       return
     }
 
@@ -121,7 +123,7 @@ export function TriggerSpeechService() {
         requireRunning: boolean
       },
     ) => {
-      if (options.requireRunning && !areTriggersRunningRef.current) {
+      if (options.requireRunning && !areTriggerActionsActiveRef.current) {
         return
       }
 
@@ -142,12 +144,12 @@ export function TriggerSpeechService() {
   )
 
   useEffect(() => {
-    areTriggersRunningRef.current = areTriggersRunning
+    areTriggerActionsActiveRef.current = areTriggerActionsActive
 
-    if (!areTriggersRunning) {
+    if (!areTriggerActionsActive) {
       cancelSpeech()
     }
-  }, [areTriggersRunning, cancelSpeech])
+  }, [areTriggerActionsActive, cancelSpeech])
 
   useEffect(() => {
     return () => {

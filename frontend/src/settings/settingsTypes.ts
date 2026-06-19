@@ -29,12 +29,14 @@ export interface PipSettings {
 }
 
 export interface MachineSettings {
+  headlessMode: boolean
   includeCharacterNameForTriggerMatches: IncludeCharacterNameForTriggerMatches
   pip: PipSettings
   tts: TtsSettings
 }
 
 export const defaultMachineSettings: MachineSettings = {
+  headlessMode: false,
   includeCharacterNameForTriggerMatches: 'never',
   pip: {
     alerts: {
@@ -64,6 +66,10 @@ export function normalizeMachineSettings(
   return {
     ...defaultMachineSettings,
     ...value,
+    headlessMode:
+      typeof value?.headlessMode === 'boolean'
+        ? value.headlessMode
+        : defaultMachineSettings.headlessMode,
     pip: {
       ...defaultMachineSettings.pip,
       ...value?.pip,

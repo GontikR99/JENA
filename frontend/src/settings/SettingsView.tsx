@@ -51,6 +51,48 @@ export function SettingsView() {
           <h2>Machine settings</h2>
 
           <div className="settings-subsection">
+            <h3>Runtime</h3>
+            <div className="settings-field">
+              <FourStateCheckbox
+                id="headless-mode"
+                label="Headless mode"
+                mode={BINARY}
+                onChange={(nextState) => {
+                  updateMachineSettings((settings) => ({
+                    ...settings,
+                    headlessMode: nextState === 'enabled',
+                  }))
+                }}
+                state={machineSettings.headlessMode ? 'enabled' : 'disabled'}
+              />
+              <div className="settings-field-note">
+                Keep JENA monitoring triggers even when the overlay is hidden.
+              </div>
+              <div className="settings-field-warning">
+                When the overlay is hidden, the browser may slow JENA down or
+                stop it from processing triggers. Add this site to your
+                browser&apos;s keep-active list for best results. See{' '}
+                <a
+                  href="https://support.google.com/chrome/answer/12929150"
+                  rel="noreferrer"
+                  target="_blank"
+                >
+                  Chrome Performance settings
+                </a>{' '}
+                or{' '}
+                <a
+                  href="https://support.microsoft.com/en-us/edge/learn-about-performance-features-in-microsoft-edge"
+                  rel="noreferrer"
+                  target="_blank"
+                >
+                  Edge performance features
+                </a>
+                .
+              </div>
+            </div>
+          </div>
+
+          <div className="settings-subsection">
             <h3>Trigger match alerts</h3>
             <Form.Group
               className="settings-field"
