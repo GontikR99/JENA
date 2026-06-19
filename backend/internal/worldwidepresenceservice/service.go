@@ -12,46 +12,31 @@ import (
 )
 
 const (
-	defaultPresenceTTL           = time.Minute
-	defaultNotifyDebounce        = 5 * time.Second
-	defaultCleanupInterval       = 10 * time.Second
-	defaultFullBroadcastInterval = 30 * time.Second
-	presenceSourceEndpoint       = "character-presence.characters"
-	nearbyPresenceEndpoint       = "worldwide-presence.nearby-characters"
-	worldwidePresenceSource      = "worldwide-presence"
+	defaultPresenceTTL     = time.Minute
+	defaultCleanupInterval = 10 * time.Second
+	presenceSourceEndpoint = "character-presence.characters"
 )
 
 type Options struct {
-	CleanupInterval       time.Duration
-	FullBroadcastInterval time.Duration
-	Logger                logging.Logger
-	NotifyDebounce        time.Duration
-	Now                   func() time.Time
-	PresenceTTL           time.Duration
+	CleanupInterval time.Duration
+	Logger          logging.Logger
+	Now             func() time.Time
+	PresenceTTL     time.Duration
 }
 
 type Service struct {
-	bus                   *eventbus.Bus
-	cleanupInterval       time.Duration
-	fullBroadcastInterval time.Duration
-	logger                logging.Logger
-	mu                    sync.Mutex
-	notifyDebounce        time.Duration
-	now                   func() time.Time
-	presenceTTL           time.Duration
-	records               map[presenceKey]presenceRecord
-	unlisten              func()
-
-	changedZones map[zoneKey]struct{}
-	notifyTimer  *time.Timer
-	stop         chan struct{}
+	bus             *eventbus.Bus
+	cleanupInterval time.Duration
+	logger          logging.Logger
+	mu              sync.Mutex
+	now             func() time.Time
+	presenceTTL     time.Duration
+	records         map[presenceKey]presenceRecord
+	stop            chan struct{}
+	unlisten        func()
 }
 
 type CharacterPresenceMessage struct {
-	Characters []CharacterPresence `json:"characters"`
-}
-
-type NearbyPresenceMessage struct {
 	Characters []CharacterPresence `json:"characters"`
 }
 
@@ -65,11 +50,6 @@ type CharacterPresence struct {
 type presenceKey struct {
 	CharacterName string
 	ServerName    string
-}
-
-type zoneKey struct {
-	ServerName string
-	Zone       string
 }
 
 type presenceRecord struct {
@@ -95,21 +75,17 @@ func NewWithOptions(bus *eventbus.Bus, options Options) *Service {
 	}
 
 	service := &Service{
-		bus:                   bus,
-		cleanupInterval:       defaultDuration(options.CleanupInterval, defaultCleanupInterval),
-		changedZones:          make(map[zoneKey]struct{}),
-		fullBroadcastInterval: defaultDuration(options.FullBroadcastInterval, defaultFullBroadcastInterval),
-		logger:                logger,
-		notifyDebounce:        defaultDuration(options.NotifyDebounce, defaultNotifyDebounce),
-		now:                   now,
-		presenceTTL:           defaultDuration(options.PresenceTTL, defaultPresenceTTL),
-		records:               make(map[presenceKey]presenceRecord),
-		stop:                  make(chan struct{}),
+		bus:             bus,
+		cleanupInterval: defaultDuration(options.CleanupInterval, defaultCleanupInterval),
+		logger:          logger,
+		now:             now,
+		presenceTTL:     defaultDuration(options.PresenceTTL, defaultPresenceTTL),
+		records:         make(map[presenceKey]presenceRecord),
+		stop:            make(chan struct{}),
 	}
 
 	service.unlisten = bus.Listen(presenceSourceEndpoint, service.handlePresenceMessage)
 	go service.runCleanupLoop()
-	go service.runFullBroadcastLoop()
 
 	return service
 }
@@ -120,14 +96,6 @@ func (service *Service) Dispose() {
 	}
 
 	close(service.stop)
-
-	service.mu.Lock()
-	defer service.mu.Unlock()
-
-	if service.notifyTimer != nil {
-		service.notifyTimer.Stop()
-		service.notifyTimer = nil
-	}
 }
 
 func (service *Service) handlePresenceMessage(ctx context.Context, envelope eventbus.Envelope) {
@@ -156,7 +124,6 @@ func (service *Service) handlePresenceMessage(ctx context.Context, envelope even
 	now := service.now()
 	service.expireStaleLocked(now)
 	service.applyPresenceMessageLocked(websocketSource, message, now)
-	service.scheduleNotifyLocked()
 }
 
 func (service *Service) applyPresenceMessageLocked(websocketSource string, message CharacterPresenceMessage, now time.Time) {
@@ -166,10 +133,8 @@ func (service *Service) applyPresenceMessageLocked(websocketSource string, messa
 		key := getPresenceKey(character)
 
 		if isPresenceDelete(character) {
-			existingRecord, exists := service.records[key]
-			if exists {
+			if _, exists := service.records[key]; exists {
 				delete(service.records, key)
-				service.markChangedZoneLocked(getZoneKey(existingRecord.Character))
 			}
 			continue
 		}
@@ -180,14 +145,6 @@ func (service *Service) applyPresenceMessageLocked(websocketSource string, messa
 			Character:       character,
 			LastSeen:        now,
 			WebsocketSource: websocketSource,
-		}
-
-		existingRecord, exists := service.records[key]
-		if !exists || !recordsEqual(existingRecord, nextRecord) {
-			if exists {
-				service.markChangedZoneLocked(getZoneKey(existingRecord.Character))
-			}
-			service.markChangedZoneLocked(getZoneKey(nextRecord.Character))
 		}
 
 		service.records[key] = nextRecord
@@ -203,7 +160,6 @@ func (service *Service) applyPresenceMessageLocked(websocketSource string, messa
 		}
 
 		delete(service.records, key)
-		service.markChangedZoneLocked(getZoneKey(record.Character))
 	}
 }
 
@@ -217,170 +173,20 @@ func (service *Service) runCleanupLoop() {
 			return
 		case <-ticker.C:
 			service.mu.Lock()
-			removed := service.expireStaleLocked(service.now())
-			if removed {
-				service.scheduleNotifyLocked()
-			}
+			service.expireStaleLocked(service.now())
 			service.mu.Unlock()
 		}
 	}
 }
 
-func (service *Service) runFullBroadcastLoop() {
-	ticker := time.NewTicker(service.fullBroadcastInterval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-service.stop:
-			return
-		case <-ticker.C:
-			service.sendAllNearbyPresence(context.Background())
-		}
-	}
-}
-
-func (service *Service) expireStaleLocked(now time.Time) bool {
-	removed := false
-
+func (service *Service) expireStaleLocked(now time.Time) {
 	for key, record := range service.records {
 		if now.Sub(record.LastSeen) <= service.presenceTTL {
 			continue
 		}
 
 		delete(service.records, key)
-		service.markChangedZoneLocked(getZoneKey(record.Character))
-		removed = true
 	}
-
-	return removed
-}
-
-func (service *Service) markChangedZoneLocked(zone zoneKey) {
-	service.changedZones[zone] = struct{}{}
-}
-
-func (service *Service) scheduleNotifyLocked() {
-	if len(service.changedZones) == 0 || service.notifyTimer != nil {
-		return
-	}
-
-	service.notifyTimer = time.AfterFunc(service.notifyDebounce, func() {
-		service.sendNearbyPresence(context.Background())
-	})
-}
-
-func (service *Service) sendNearbyPresence(ctx context.Context) {
-	service.mu.Lock()
-	changedZones := service.changedZones
-	service.changedZones = make(map[zoneKey]struct{})
-	service.notifyTimer = nil
-
-	recordsByZone := service.getRecordsByZoneLocked()
-	recordsBySource := service.getRecordsBySourceLocked()
-	messages := service.getNearbyMessagesLocked(changedZones, recordsByZone, recordsBySource)
-	service.mu.Unlock()
-
-	service.sendNearbyMessages(ctx, messages)
-}
-
-func (service *Service) sendAllNearbyPresence(ctx context.Context) {
-	service.mu.Lock()
-	recordsByZone := service.getRecordsByZoneLocked()
-	recordsBySource := service.getRecordsBySourceLocked()
-	allZones := make(map[zoneKey]struct{}, len(recordsByZone))
-	for zone := range recordsByZone {
-		allZones[zone] = struct{}{}
-	}
-	messages := service.getNearbyMessagesLocked(allZones, recordsByZone, recordsBySource)
-	service.mu.Unlock()
-
-	service.sendNearbyMessages(ctx, messages)
-}
-
-func (service *Service) sendNearbyMessages(ctx context.Context, messages map[string]NearbyPresenceMessage) {
-	source := worldwidePresenceSource
-	for websocketSource, message := range messages {
-		payload, err := json.Marshal(message)
-		if err != nil {
-			service.logger.Warn(
-				ctx,
-				"failed to marshal nearby presence message",
-				logging.Error(err),
-			)
-			continue
-		}
-
-		if err := service.bus.Send(ctx, eventbus.Envelope{
-			Destination: websocketSource + "." + nearbyPresenceEndpoint,
-			Payload:     payload,
-			Source:      &source,
-		}); err != nil {
-			service.logger.Warn(
-				ctx,
-				"failed to send nearby presence message",
-				logging.Error(err),
-			)
-		}
-	}
-}
-
-func (service *Service) getRecordsByZoneLocked() map[zoneKey][]CharacterPresence {
-	recordsByZone := make(map[zoneKey][]CharacterPresence)
-
-	for _, record := range service.records {
-		zone := getZoneKey(record.Character)
-		recordsByZone[zone] = append(recordsByZone[zone], record.Character)
-	}
-
-	return recordsByZone
-}
-
-func (service *Service) getRecordsBySourceLocked() map[string][]presenceRecord {
-	recordsBySource := make(map[string][]presenceRecord)
-
-	for _, record := range service.records {
-		recordsBySource[record.WebsocketSource] = append(
-			recordsBySource[record.WebsocketSource],
-			record,
-		)
-	}
-
-	return recordsBySource
-}
-
-func (service *Service) getNearbyMessagesLocked(
-	changedZones map[zoneKey]struct{},
-	recordsByZone map[zoneKey][]CharacterPresence,
-	recordsBySource map[string][]presenceRecord,
-) map[string]NearbyPresenceMessage {
-	messages := make(map[string]NearbyPresenceMessage)
-
-	for websocketSource, sourceRecords := range recordsBySource {
-		sourceTouchesChangedZone := false
-		nearbyByKey := make(map[presenceKey]CharacterPresence)
-
-		for _, sourceRecord := range sourceRecords {
-			zone := getZoneKey(sourceRecord.Character)
-			if _, ok := changedZones[zone]; ok {
-				sourceTouchesChangedZone = true
-			}
-
-			for _, nearbyCharacter := range recordsByZone[zone] {
-				nearbyByKey[getPresenceKey(nearbyCharacter)] = nearbyCharacter
-			}
-		}
-
-		if !sourceTouchesChangedZone {
-			continue
-		}
-
-		messages[websocketSource] = NearbyPresenceMessage{
-			Characters: sortCharacters(nearbyByKey),
-		}
-	}
-
-	return messages
 }
 
 func getWebsocketSource(source string) (string, bool) {
@@ -403,20 +209,8 @@ func getPresenceKey(character CharacterPresence) presenceKey {
 	}
 }
 
-func getZoneKey(character CharacterPresence) zoneKey {
-	return zoneKey{
-		ServerName: strings.ToLower(character.ServerName),
-		Zone:       strings.ToLower(character.Zone),
-	}
-}
-
 func isPresenceDelete(character CharacterPresence) bool {
 	return !character.Active || strings.TrimSpace(character.Zone) == ""
-}
-
-func recordsEqual(left presenceRecord, right presenceRecord) bool {
-	return left.Character == right.Character &&
-		left.WebsocketSource == right.WebsocketSource
 }
 
 func defaultDuration(value time.Duration, fallback time.Duration) time.Duration {
@@ -425,51 +219,4 @@ func defaultDuration(value time.Duration, fallback time.Duration) time.Duration 
 	}
 
 	return fallback
-}
-
-func sortCharacters(characters map[presenceKey]CharacterPresence) []CharacterPresence {
-	keys := make([]presenceKey, 0, len(characters))
-	for key := range characters {
-		keys = append(keys, key)
-	}
-
-	sortPresenceKeys(keys)
-
-	result := make([]CharacterPresence, 0, len(keys))
-	for _, key := range keys {
-		result = append(result, characters[key])
-	}
-
-	return result
-}
-
-func sortPresenceKeys(keys []presenceKey) {
-	for i := 1; i < len(keys); i++ {
-		key := keys[i]
-		j := i - 1
-
-		for j >= 0 && comparePresenceKeys(keys[j], key) > 0 {
-			keys[j+1] = keys[j]
-			j--
-		}
-
-		keys[j+1] = key
-	}
-}
-
-func comparePresenceKeys(left presenceKey, right presenceKey) int {
-	if left.ServerName < right.ServerName {
-		return -1
-	}
-	if left.ServerName > right.ServerName {
-		return 1
-	}
-	if left.CharacterName < right.CharacterName {
-		return -1
-	}
-	if left.CharacterName > right.CharacterName {
-		return 1
-	}
-
-	return 0
 }

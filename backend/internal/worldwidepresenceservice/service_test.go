@@ -3,76 +3,135 @@ package worldwidepresenceservice
 import (
 	"context"
 	"encoding/json"
-	"sync"
 	"testing"
 	"time"
 
 	"jena/backend/internal/eventbus"
 )
 
-func TestServiceSendsNearbyPresenceGroupedByServerAndZone(t *testing.T) {
+func TestServiceMaintainsCharacterPresenceByWebsocketSource(t *testing.T) {
 	bus := eventbus.New()
 	service := NewWithOptions(bus, Options{
 		CleanupInterval: time.Hour,
-		NotifyDebounce:  time.Millisecond,
 		PresenceTTL:     time.Minute,
 	})
 	defer service.Dispose()
 
-	var mu sync.Mutex
-	received := make(map[string]NearbyPresenceMessage)
-	unlisten := bus.Listen("ws.*.worldwide-presence.nearby-characters", func(_ context.Context, envelope eventbus.Envelope) {
-		var message NearbyPresenceMessage
-		if err := json.Unmarshal(envelope.Payload, &message); err != nil {
-			t.Errorf("Unmarshal returned error: %v", err)
-			return
-		}
-
-		mu.Lock()
-		defer mu.Unlock()
-		received[envelope.Destination] = message
-	})
-	defer unlisten()
+	arias := CharacterPresence{
+		Active:        true,
+		CharacterName: "Arias",
+		ServerName:    "bertox",
+		Zone:          "The Nexus",
+	}
+	brell := CharacterPresence{
+		Active:        true,
+		CharacterName: "Brell",
+		ServerName:    "bertox",
+		Zone:          "The Nexus",
+	}
 
 	sendPresence(t, bus, "ws.127_0_0_1_1.worker.character-presence", []CharacterPresence{
-		{Active: true, CharacterName: "Arias", ServerName: "bertox", Zone: "The Nexus"},
-	})
-	sendPresence(t, bus, "ws.127_0_0_1_2.worker.character-presence", []CharacterPresence{
-		{Active: true, CharacterName: "Brell", ServerName: "bertox", Zone: "The Nexus"},
-	})
-	sendPresence(t, bus, "ws.127_0_0_1_3.worker.character-presence", []CharacterPresence{
-		{Active: true, CharacterName: "Cazic", ServerName: "bertox", Zone: "Plane of Knowledge"},
+		arias,
+		brell,
 	})
 
-	waitFor(t, func() bool {
-		mu.Lock()
-		defer mu.Unlock()
-		return len(received) == 3
-	})
-
-	mu.Lock()
-	snapshot := cloneNearbyMessages(received)
-	mu.Unlock()
-
-	expectCharacters(t, snapshot["ws.127_0_0_1_1.worldwide-presence.nearby-characters"], []CharacterPresence{
-		{Active: true, CharacterName: "Arias", ServerName: "bertox", Zone: "The Nexus"},
-		{Active: true, CharacterName: "Brell", ServerName: "bertox", Zone: "The Nexus"},
-	})
-	expectCharacters(t, snapshot["ws.127_0_0_1_2.worldwide-presence.nearby-characters"], []CharacterPresence{
-		{Active: true, CharacterName: "Arias", ServerName: "bertox", Zone: "The Nexus"},
-		{Active: true, CharacterName: "Brell", ServerName: "bertox", Zone: "The Nexus"},
-	})
-	expectCharacters(t, snapshot["ws.127_0_0_1_3.worldwide-presence.nearby-characters"], []CharacterPresence{
-		{Active: true, CharacterName: "Cazic", ServerName: "bertox", Zone: "Plane of Knowledge"},
+	expectPresenceRecords(t, service, map[presenceKey]presenceRecord{
+		getPresenceKey(arias): {
+			Character:       arias,
+			WebsocketSource: "ws.127_0_0_1_1",
+		},
+		getPresenceKey(brell): {
+			Character:       brell,
+			WebsocketSource: "ws.127_0_0_1_1",
+		},
 	})
 }
 
-func TestServiceExpiresStalePresenceAndNotifiesAffectedSources(t *testing.T) {
-	now := time.Date(2026, 6, 14, 12, 0, 0, 0, time.UTC)
+func TestServiceReplacesCharactersMissingFromSameSource(t *testing.T) {
 	bus := eventbus.New()
 	service := NewWithOptions(bus, Options{
-		CleanupInterval: time.Millisecond,
-		NotifyDebounce:  time.Millisecond,
+		CleanupInterval: time.Hour,
+		PresenceTTL:     time.Minute,
+	})
+	defer service.Dispose()
+
+	arias := CharacterPresence{
+		Active:        true,
+		CharacterName: "Arias",
+		ServerName:    "bertox",
+		Zone:          "The Nexus",
+	}
+	brell := CharacterPresence{
+		Active:        true,
+		CharacterName: "Brell",
+		ServerName:    "bertox",
+		Zone:          "The Nexus",
+	}
+
+	sendPresence(t, bus, "ws.127_0_0_1_1.worker.character-presence", []CharacterPresence{
+		arias,
+		brell,
+	})
+	sendPresence(t, bus, "ws.127_0_0_1_1.worker.character-presence", []CharacterPresence{
+		arias,
+	})
+
+	expectPresenceRecords(t, service, map[presenceKey]presenceRecord{
+		getPresenceKey(arias): {
+			Character:       arias,
+			WebsocketSource: "ws.127_0_0_1_1",
+		},
+	})
+}
+
+func TestServiceTreatsInactiveOrEmptyZonePresenceAsDelete(t *testing.T) {
+	bus := eventbus.New()
+	service := NewWithOptions(bus, Options{
+		CleanupInterval: time.Hour,
+		PresenceTTL:     time.Minute,
+	})
+	defer service.Dispose()
+
+	arias := CharacterPresence{
+		Active:        true,
+		CharacterName: "Arias",
+		ServerName:    "bertox",
+		Zone:          "The Nexus",
+	}
+	brell := CharacterPresence{
+		Active:        true,
+		CharacterName: "Brell",
+		ServerName:    "bertox",
+		Zone:          "The Nexus",
+	}
+
+	sendPresence(t, bus, "ws.127_0_0_1_1.worker.character-presence", []CharacterPresence{
+		arias,
+		brell,
+	})
+	sendPresence(t, bus, "ws.127_0_0_1_1.worker.character-presence", []CharacterPresence{
+		arias,
+		{
+			Active:        false,
+			CharacterName: "Brell",
+			ServerName:    "bertox",
+			Zone:          "The Nexus",
+		},
+	})
+
+	expectPresenceRecords(t, service, map[presenceKey]presenceRecord{
+		getPresenceKey(arias): {
+			Character:       arias,
+			WebsocketSource: "ws.127_0_0_1_1",
+		},
+	})
+}
+
+func TestServiceExpiresStalePresence(t *testing.T) {
+	now := time.Date(2026, 6, 19, 12, 0, 0, 0, time.UTC)
+	bus := eventbus.New()
+	service := NewWithOptions(bus, Options{
+		CleanupInterval: time.Hour,
 		Now: func() time.Time {
 			return now
 		},
@@ -80,200 +139,30 @@ func TestServiceExpiresStalePresenceAndNotifiesAffectedSources(t *testing.T) {
 	})
 	defer service.Dispose()
 
-	var mu sync.Mutex
-	var ariasMessages []NearbyPresenceMessage
-	unlisten := bus.Listen("ws.127_0_0_1_1.worldwide-presence.nearby-characters", func(_ context.Context, envelope eventbus.Envelope) {
-		var message NearbyPresenceMessage
-		if err := json.Unmarshal(envelope.Payload, &message); err != nil {
-			t.Errorf("Unmarshal returned error: %v", err)
-			return
-		}
-
-		mu.Lock()
-		defer mu.Unlock()
-		ariasMessages = append(ariasMessages, message)
-	})
-	defer unlisten()
+	arias := CharacterPresence{
+		Active:        true,
+		CharacterName: "Arias",
+		ServerName:    "bertox",
+		Zone:          "The Nexus",
+	}
 
 	sendPresence(t, bus, "ws.127_0_0_1_1.worker.character-presence", []CharacterPresence{
-		{Active: true, CharacterName: "Arias", ServerName: "bertox", Zone: "The Nexus"},
+		arias,
 	})
-	sendPresence(t, bus, "ws.127_0_0_1_2.worker.character-presence", []CharacterPresence{
-		{Active: true, CharacterName: "Brell", ServerName: "bertox", Zone: "The Nexus"},
-	})
+	now = now.Add(61 * time.Second)
+	service.mu.Lock()
+	service.expireStaleLocked(now)
+	service.mu.Unlock()
 
-	waitFor(t, func() bool {
-		mu.Lock()
-		defer mu.Unlock()
-		return len(ariasMessages) == 1
-	})
-
-	now = now.Add(30 * time.Second)
-	sendPresence(t, bus, "ws.127_0_0_1_1.worker.character-presence", []CharacterPresence{
-		{Active: true, CharacterName: "Arias", ServerName: "bertox", Zone: "The Nexus"},
-	})
-
-	now = now.Add(31 * time.Second)
-
-	waitFor(t, func() bool {
-		mu.Lock()
-		defer mu.Unlock()
-		return len(ariasMessages) == 2
-	})
-
-	mu.Lock()
-	message := ariasMessages[1]
-	mu.Unlock()
-
-	expectCharacters(t, message, []CharacterPresence{
-		{Active: true, CharacterName: "Arias", ServerName: "bertox", Zone: "The Nexus"},
-	})
+	expectPresenceRecords(t, service, map[presenceKey]presenceRecord{})
 }
 
-func TestServiceTreatsInactiveOrEmptyZonePresenceAsDelete(t *testing.T) {
-	bus := eventbus.New()
-	service := NewWithOptions(bus, Options{
-		CleanupInterval:       time.Hour,
-		FullBroadcastInterval: time.Hour,
-		NotifyDebounce:        time.Millisecond,
-		PresenceTTL:           time.Minute,
-	})
-	defer service.Dispose()
-
-	var mu sync.Mutex
-	var ariasMessages []NearbyPresenceMessage
-	unlisten := bus.Listen("ws.127_0_0_1_1.worldwide-presence.nearby-characters", func(_ context.Context, envelope eventbus.Envelope) {
-		var message NearbyPresenceMessage
-		if err := json.Unmarshal(envelope.Payload, &message); err != nil {
-			t.Errorf("Unmarshal returned error: %v", err)
-			return
-		}
-
-		mu.Lock()
-		defer mu.Unlock()
-		ariasMessages = append(ariasMessages, message)
-	})
-	defer unlisten()
-
-	sendPresence(t, bus, "ws.127_0_0_1_1.worker.character-presence", []CharacterPresence{
-		{Active: true, CharacterName: "Arias", ServerName: "bertox", Zone: "The Nexus"},
-	})
-	sendPresence(t, bus, "ws.127_0_0_1_2.worker.character-presence", []CharacterPresence{
-		{Active: true, CharacterName: "Brell", ServerName: "bertox", Zone: "The Nexus"},
-	})
-	sendPresence(t, bus, "ws.127_0_0_1_3.worker.character-presence", []CharacterPresence{
-		{Active: true, CharacterName: "Cazic", ServerName: "bertox", Zone: "The Nexus"},
-	})
-
-	waitFor(t, func() bool {
-		mu.Lock()
-		defer mu.Unlock()
-
-		if len(ariasMessages) == 0 {
-			return false
-		}
-
-		return len(ariasMessages[len(ariasMessages)-1].Characters) == 3
-	})
-
-	sendPresence(t, bus, "ws.127_0_0_1_2.worker.character-presence", []CharacterPresence{
-		{Active: false, CharacterName: "Brell", ServerName: "bertox", Zone: "The Nexus"},
-	})
-	sendPresence(t, bus, "ws.127_0_0_1_3.worker.character-presence", []CharacterPresence{
-		{Active: true, CharacterName: "Cazic", ServerName: "bertox", Zone: "   "},
-	})
-
-	waitFor(t, func() bool {
-		mu.Lock()
-		defer mu.Unlock()
-
-		if len(ariasMessages) == 0 {
-			return false
-		}
-
-		lastMessage := ariasMessages[len(ariasMessages)-1]
-		return len(lastMessage.Characters) == 1 &&
-			lastMessage.Characters[0].CharacterName == "Arias"
-	})
-
-	mu.Lock()
-	message := ariasMessages[len(ariasMessages)-1]
-	mu.Unlock()
-
-	expectCharacters(t, message, []CharacterPresence{
-		{Active: true, CharacterName: "Arias", ServerName: "bertox", Zone: "The Nexus"},
-	})
-}
-
-func TestServicePeriodicallySendsFullNearbyPresence(t *testing.T) {
-	bus := eventbus.New()
-	service := NewWithOptions(bus, Options{
-		CleanupInterval:       time.Hour,
-		FullBroadcastInterval: 5 * time.Millisecond,
-		NotifyDebounce:        time.Millisecond,
-		PresenceTTL:           time.Minute,
-	})
-	defer service.Dispose()
-
-	var mu sync.Mutex
-	received := make(map[string]NearbyPresenceMessage)
-	unlisten := bus.Listen("ws.*.worldwide-presence.nearby-characters", func(_ context.Context, envelope eventbus.Envelope) {
-		var message NearbyPresenceMessage
-		if err := json.Unmarshal(envelope.Payload, &message); err != nil {
-			t.Errorf("Unmarshal returned error: %v", err)
-			return
-		}
-
-		mu.Lock()
-		defer mu.Unlock()
-		received[envelope.Destination] = message
-	})
-	defer unlisten()
-
-	sendPresence(t, bus, "ws.127_0_0_1_1.worker.character-presence", []CharacterPresence{
-		{Active: true, CharacterName: "Arias", ServerName: "bertox", Zone: "The Nexus"},
-	})
-	sendPresence(t, bus, "ws.127_0_0_1_2.worker.character-presence", []CharacterPresence{
-		{Active: true, CharacterName: "Brell", ServerName: "bertox", Zone: "The Nexus"},
-	})
-	sendPresence(t, bus, "ws.127_0_0_1_3.worker.character-presence", []CharacterPresence{
-		{Active: true, CharacterName: "Cazic", ServerName: "bertox", Zone: "Plane of Knowledge"},
-	})
-
-	waitFor(t, func() bool {
-		mu.Lock()
-		defer mu.Unlock()
-		return len(received) == 3
-	})
-
-	mu.Lock()
-	received = make(map[string]NearbyPresenceMessage)
-	mu.Unlock()
-
-	waitFor(t, func() bool {
-		mu.Lock()
-		defer mu.Unlock()
-		return len(received) == 3
-	})
-
-	mu.Lock()
-	snapshot := cloneNearbyMessages(received)
-	mu.Unlock()
-
-	expectCharacters(t, snapshot["ws.127_0_0_1_1.worldwide-presence.nearby-characters"], []CharacterPresence{
-		{Active: true, CharacterName: "Arias", ServerName: "bertox", Zone: "The Nexus"},
-		{Active: true, CharacterName: "Brell", ServerName: "bertox", Zone: "The Nexus"},
-	})
-	expectCharacters(t, snapshot["ws.127_0_0_1_2.worldwide-presence.nearby-characters"], []CharacterPresence{
-		{Active: true, CharacterName: "Arias", ServerName: "bertox", Zone: "The Nexus"},
-		{Active: true, CharacterName: "Brell", ServerName: "bertox", Zone: "The Nexus"},
-	})
-	expectCharacters(t, snapshot["ws.127_0_0_1_3.worldwide-presence.nearby-characters"], []CharacterPresence{
-		{Active: true, CharacterName: "Cazic", ServerName: "bertox", Zone: "Plane of Knowledge"},
-	})
-}
-
-func sendPresence(t *testing.T, bus *eventbus.Bus, source string, characters []CharacterPresence) {
+func sendPresence(
+	t *testing.T,
+	bus *eventbus.Bus,
+	source string,
+	characters []CharacterPresence,
+) {
 	t.Helper()
 
 	payload, err := json.Marshal(CharacterPresenceMessage{
@@ -292,38 +181,34 @@ func sendPresence(t *testing.T, bus *eventbus.Bus, source string, characters []C
 	}
 }
 
-func expectCharacters(t *testing.T, message NearbyPresenceMessage, expected []CharacterPresence) {
+func expectPresenceRecords(
+	t *testing.T,
+	service *Service,
+	expected map[presenceKey]presenceRecord,
+) {
 	t.Helper()
 
-	if len(message.Characters) != len(expected) {
-		t.Fatalf("characters %#v, want %#v", message.Characters, expected)
+	service.mu.Lock()
+	defer service.mu.Unlock()
+
+	if len(service.records) != len(expected) {
+		t.Fatalf("records %#v, want %#v", service.records, expected)
 	}
 
-	for index, expectedCharacter := range expected {
-		if message.Characters[index] != expectedCharacter {
-			t.Fatalf("character %d %#v, want %#v", index, message.Characters[index], expectedCharacter)
+	for key, expectedRecord := range expected {
+		record, ok := service.records[key]
+		if !ok {
+			t.Fatalf("missing record for key %#v", key)
 		}
-	}
-}
-
-func cloneNearbyMessages(messages map[string]NearbyPresenceMessage) map[string]NearbyPresenceMessage {
-	clone := make(map[string]NearbyPresenceMessage, len(messages))
-	for key, message := range messages {
-		clone[key] = message
-	}
-
-	return clone
-}
-
-func waitFor(t *testing.T, predicate func() bool) {
-	t.Helper()
-
-	startedAt := time.Now()
-	for !predicate() {
-		if time.Since(startedAt) > time.Second {
-			t.Fatal("timed out waiting for predicate")
+		if record.Character != expectedRecord.Character {
+			t.Fatalf("record character %#v, want %#v", record.Character, expectedRecord.Character)
 		}
-
-		time.Sleep(time.Millisecond)
+		if record.WebsocketSource != expectedRecord.WebsocketSource {
+			t.Fatalf(
+				"record websocket source %q, want %q",
+				record.WebsocketSource,
+				expectedRecord.WebsocketSource,
+			)
+		}
 	}
 }

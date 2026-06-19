@@ -224,10 +224,6 @@ export type AuthSessionResponse =
       userSettings: UserSettings
     }
 
-export interface NearbyCharacterPresenceMessage {
-  characters: CharacterPresence[]
-}
-
 export interface EndpointMessages {
   'alert.broadcast': BroadcastAlertMessage
   'alert.timer-action': TriggerTimerActionMessage
@@ -241,7 +237,6 @@ export interface EndpointMessages {
   'subscriptions.updated': SubscriptionUpdatedMessage
   'trigger-store.triggers-seen': TriggerStoreTriggersSeenMessage
   'user-trigger-store.updated': JenaUserTriggerUpdate
-  'worldwide-presence.nearby-characters': NearbyCharacterPresenceMessage
 }
 
 export interface EverQuestLogFile {

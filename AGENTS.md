@@ -18,7 +18,7 @@ The frontend is built with Vite, React 19, TypeScript, Bootstrap, React Bootstra
 - `frontend/src/assets/`: Frontend image assets such as the JENA lockup and character activity indicators.
 - `frontend/src/bridges/server/`: Browser websocket bridge to the Go backend.
 - `frontend/src/bridges/worker/`: Browser-to-worker bridge.
-- `frontend/src/characters/`: Local and nearby character presence providers.
+- `frontend/src/characters/`: Local character presence provider.
 - `frontend/src/pip/`: Components rendered into the Document Picture-in-Picture runtime window.
 - `frontend/src/runtime/`: Trigger runtime and EverQuest-directory startup workflow.
 - `frontend/src/settings/`: Local machine settings, remote user settings, and browser speech voice provider.
@@ -54,7 +54,6 @@ The main app is mounted from `frontend/src/main.tsx`. It imports Bootstrap, `fro
 - `AlertCoordinationService`
 - `TriggerStopService`
 - `UserTriggerManagerProvider`
-- `NearbyCharactersProvider`
 - `LocalCharactersProvider`
 - `TriggerRuntimeProvider`
 - `TriggerSpeechService`
@@ -91,6 +90,7 @@ const {
   canUseTriggerRuntime,
   isStartingTriggers,
   isStoppingTriggers,
+  lastStartedAtMs,
   startTriggers,
   stopTriggers,
 } = useTriggerRuntime()
@@ -186,7 +186,6 @@ The canonical typed frontend contract is `frontend/src/shared/messages.ts`. Work
 | `speech.preview-requested` | `frontend/src/shared/messages.ts` (`EndpointMessages`) | `frontend/src/triggers/editor/TriggerEditorDialog.tsx`, `frontend/src/settings/SettingsView.tsx` | `frontend/src/triggers/alerts/TriggerSpeechService.tsx` | Requests speech synthesis preview from the trigger editor or settings view. |
 | `trigger-store.triggers-seen` | `frontend/src/shared/messages.ts` (`EndpointMessages`) | `frontend/src/triggers/model/TriggerStore.tsx` | `frontend/src/triggers/alerts/AlertCoordinationService.tsx` | Announces newly handled canonical triggers so alert patterns can be registered. |
 | `user-trigger-store.updated` | `frontend/src/shared/messages.ts` (`EndpointMessages`) | `backend/internal/usertriggerstore/service.go` through `backend/internal/userbridge/service.go` | `frontend/src/triggers/model/UserTriggerManager.tsx` | Broadcasts per-user trigger updates to active browser sessions for the same stable user. |
-| `worldwide-presence.nearby-characters` | `frontend/src/shared/messages.ts` (`EndpointMessages`) | `backend/internal/worldwidepresenceservice/service.go` | `frontend/src/characters/NearbyCharactersProvider.tsx` | Sends nearby characters in zones touched by the current websocket source. |
 | `server.character-presence.characters` | Transported worker-to-server topic; payload type is `CharacterPresenceCharactersMessage` in `frontend/src/shared/messages.ts` | `frontend/src/worker/CharacterPresenceService.ts` | `backend/internal/worldwidepresenceservice/service.go` after prefix stripping | Reports this browser's local character presence to the backend. |
 | `user.<stableUserId>.*` | Backend-only convention in `backend/internal/userbridge/service.go` | Backend services such as `backend/internal/usertriggerstore/service.go` | `backend/internal/userbridge/service.go` | Targets a message to every active websocket source associated with a stable user. |
 
@@ -283,9 +282,7 @@ const unobserve = watcher.observe({
 
 `frontend/src/characters/LocalCharactersProvider.tsx` loads and listens for local worker character presence.
 
-`frontend/src/characters/NearbyCharactersProvider.tsx` listens for backend `worldwide-presence.nearby-characters` messages and maintains a nearby-character snapshot grouped by zone.
-
-The worker presence service registers matcher patterns for zone entry and `/who` zone output. The backend worldwide presence service treats inactive characters or characters with empty zones as presence removals.
+The worker presence service registers matcher patterns for zone entry and `/who` zone output. The backend worldwide presence service maintains character presence records and treats inactive characters or characters with empty zones as presence removals. It does not broadcast nearby-character snapshots.
 
 ## Trigger Model And Trigger Data
 

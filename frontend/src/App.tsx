@@ -10,7 +10,6 @@ import {
   type ServerBridgeStatus,
 } from './bridges/server/ServerBridge'
 import { LocalCharactersProvider } from './characters/LocalCharactersProvider'
-import { NearbyCharactersProvider } from './characters/NearbyCharactersProvider'
 import { AuthProvider } from './auth/AuthProvider'
 import { useAuth } from './auth/authContext'
 import { AuthScreen } from './auth/AuthScreen'
@@ -65,20 +64,18 @@ function AuthenticatedApp() {
         <TriggerStopService />
         <SubscribedTriggerManagerProvider>
           <UserTriggerManagerProvider>
-            <NearbyCharactersProvider>
-              <LocalCharactersProvider>
-                <TriggerRuntimeProvider>
-                  <AlertEventCoordinatorProvider>
-                    <BroadcastReflector />
-                    <TriggerSpeechService />
-                    <TriggerShareCoordinator>
-                      <AppShell />
-                    </TriggerShareCoordinator>
-                    <TriggerRuntimePortal />
-                  </AlertEventCoordinatorProvider>
-                </TriggerRuntimeProvider>
-              </LocalCharactersProvider>
-            </NearbyCharactersProvider>
+            <LocalCharactersProvider>
+              <TriggerRuntimeProvider>
+                <AlertEventCoordinatorProvider>
+                  <BroadcastReflector />
+                  <TriggerSpeechService />
+                  <TriggerShareCoordinator>
+                    <AppShell />
+                  </TriggerShareCoordinator>
+                  <TriggerRuntimePortal />
+                </AlertEventCoordinatorProvider>
+              </TriggerRuntimeProvider>
+            </LocalCharactersProvider>
           </UserTriggerManagerProvider>
         </SubscribedTriggerManagerProvider>
       </TriggerStoreProvider>
