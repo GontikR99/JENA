@@ -1,6 +1,7 @@
 import Col from 'react-bootstrap/Col'
 import Form from 'react-bootstrap/Form'
 import Row from 'react-bootstrap/Row'
+import { BINARY, FourStateCheckbox } from '../../shared/widgets/FourStateCheckbox'
 import { Section } from './Section'
 import type { TriggerEditorDraft } from './triggerEditorModel'
 
@@ -56,26 +57,28 @@ export function GeneralSettingsSection({
       <Row className="trigger-editor-row">
         <Col sm={{ offset: 3, span: 9 }}>
           <div className="trigger-editor-inline-checks">
-            <Form.Check
-              checked={draft.match.isRegex}
+            <FourStateCheckbox
               id="trigger-editor-use-regex"
               label="Use Regular Expressions"
-              onChange={(event) =>
+              mode={BINARY}
+              onChange={(nextState) =>
                 onChange({
                   ...draft,
                   match: {
                     ...draft.match,
-                    isRegex: event.currentTarget.checked,
+                    isRegex: nextState === 'enabled',
                   },
                 })
               }
-              type="checkbox"
+              state={draft.match.isRegex ? 'enabled' : 'disabled'}
             />
-            <Form.Check
+            <FourStateCheckbox
               disabled
               id="trigger-editor-use-fast-check"
               label="Use Fast Check"
-              type="checkbox"
+              mode={BINARY}
+              onChange={() => undefined}
+              state="disabled"
             />
           </div>
         </Col>

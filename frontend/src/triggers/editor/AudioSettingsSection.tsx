@@ -3,6 +3,7 @@ import Button from 'react-bootstrap/Button'
 import Form from 'react-bootstrap/Form'
 import type { JenaSpeechAction } from '../../shared/triggers'
 import type { CharacterPresence } from '../../shared/messages'
+import { BINARY, FourStateCheckbox } from '../../shared/widgets/FourStateCheckbox'
 import { Section } from './Section'
 import type { TriggerEditorAudioMode } from './triggerEditorModel'
 
@@ -118,15 +119,15 @@ export function AudioSettingsSection({
           </div>
         </div>
 
-        <Form.Check
-          checked={state.speech.interrupt}
+        <FourStateCheckbox
           disabled={disabled || !isTtsSelected}
           id="trigger-editor-interrupt-speech"
           label="Interrupt Speech"
-          onChange={(event) =>
-            updateSpeech({ interrupt: event.currentTarget.checked })
+          mode={BINARY}
+          onChange={(nextState) =>
+            updateSpeech({ interrupt: nextState === 'enabled' })
           }
-          type="checkbox"
+          state={state.speech.interrupt ? 'enabled' : 'disabled'}
         />
       </div>
 

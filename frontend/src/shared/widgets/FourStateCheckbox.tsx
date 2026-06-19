@@ -6,27 +6,49 @@ export type FourStateCheckboxState =
   | 'inherit'
   | 'mixed'
 
-export interface FourStateCheckboxProps {
-  ariaLabel: string
-  className?: string
-  disabled?: boolean
-  onChange: (nextState: FourStateCheckboxState) => void
-  state: FourStateCheckboxState
-  title?: string
+export interface FourStateCheckboxMode {
+  cycleOrder: readonly FourStateCheckboxState[]
+  mixedNextState: FourStateCheckboxState
 }
 
-const cycleOrder: FourStateCheckboxState[] = [
-  'inherit',
-  'enabled',
-  'disabled',
-]
+export const BINARY = {
+  cycleOrder: ['disabled', 'enabled'],
+  mixedNextState: 'enabled',
+} satisfies FourStateCheckboxMode
+
+export const TERNARY = {
+  cycleOrder: ['disabled', 'enabled'],
+  mixedNextState: 'enabled',
+} satisfies FourStateCheckboxMode
+
+export const QUATERNARY = {
+  cycleOrder: ['inherit', 'enabled', 'disabled'],
+  mixedNextState: 'inherit',
+} satisfies FourStateCheckboxMode
+
+export interface FourStateCheckboxProps {
+  ariaLabel?: string
+  className?: string
+  disabled?: boolean
+  id?: string
+  label?: string
+  mode?: FourStateCheckboxMode
+  onChange: (nextState: FourStateCheckboxState) => void
+  state: FourStateCheckboxState
+  stopPropagation?: boolean
+  title?: string
+}
 
 export function FourStateCheckbox({
   ariaLabel,
   className = '',
   disabled = false,
+  id,
+  label,
+  mode = QUATERNARY,
   onChange,
   state,
+  stopPropagation = true,
   title,
 }: FourStateCheckboxProps) {
   const resolvedTitle = title ?? getStateTitle(state)
@@ -34,13 +56,17 @@ export function FourStateCheckbox({
   return (
     <button
       aria-checked={getAriaChecked(state)}
-      aria-label={ariaLabel}
+      aria-label={ariaLabel ?? label}
       className={`four-state-checkbox ${className}`.trim()}
+      data-has-label={label ? 'true' : 'false'}
       data-state={state}
       disabled={disabled}
+      id={id}
       onClick={(event) => {
-        event.stopPropagation()
-        onChange(getNextState(state))
+        if (stopPropagation) {
+          event.stopPropagation()
+        }
+        onChange(getNextState(state, mode))
       }}
       onKeyDown={(event) => {
         if (event.key !== ' ' && event.key !== 'Enter') {
@@ -48,25 +74,35 @@ export function FourStateCheckbox({
         }
 
         event.preventDefault()
-        event.stopPropagation()
-        onChange(getNextState(state))
+        if (stopPropagation) {
+          event.stopPropagation()
+        }
+        onChange(getNextState(state, mode))
       }}
       role="checkbox"
       title={resolvedTitle}
       type="button"
     >
       <span className="four-state-checkbox-mark" aria-hidden="true" />
+      {label ? <span className="four-state-checkbox-label">{label}</span> : null}
     </button>
   )
 }
 
-function getNextState(state: FourStateCheckboxState): FourStateCheckboxState {
+function getNextState(
+  state: FourStateCheckboxState,
+  mode: FourStateCheckboxMode,
+): FourStateCheckboxState {
   if (state === 'mixed') {
-    return 'inherit'
+    return mode.mixedNextState
   }
 
-  const index = cycleOrder.indexOf(state)
-  return cycleOrder[(index + 1) % cycleOrder.length]
+  const index = mode.cycleOrder.indexOf(state)
+  if (index < 0) {
+    return mode.cycleOrder[0] ?? state
+  }
+
+  return mode.cycleOrder[(index + 1) % mode.cycleOrder.length]
 }
 
 function getAriaChecked(state: FourStateCheckboxState) {

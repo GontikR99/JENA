@@ -3,6 +3,7 @@ import type {
   JenaClipboardAction,
   JenaTextAction,
 } from '../../shared/triggers'
+import { BINARY, FourStateCheckbox } from '../../shared/widgets/FourStateCheckbox'
 import { Section } from './Section'
 
 interface TextSettingsSectionProps {
@@ -49,15 +50,15 @@ export function TextSettingsSection({
   return (
     <Section title="Text Settings">
       <div className="trigger-editor-checkbox-row">
-        <Form.Check
-          checked={displayTextEnabled}
+        <FourStateCheckbox
           disabled={disabled}
           id="trigger-editor-display-text-enabled"
           label="Display Text"
-          onChange={(event) =>
-            updateDisplay({ enabled: event.currentTarget.checked })
+          mode={BINARY}
+          onChange={(nextState) =>
+            updateDisplay({ enabled: nextState === 'enabled' })
           }
-          type="checkbox"
+          state={displayTextEnabled ? 'enabled' : 'disabled'}
         />
         <Form.Control
           disabled={disabled || !displayTextEnabled}
@@ -69,15 +70,15 @@ export function TextSettingsSection({
       </div>
 
       <div className="trigger-editor-checkbox-row">
-        <Form.Check
-          checked={clipboardTextEnabled}
+        <FourStateCheckbox
           disabled={disabled}
           id="trigger-editor-clipboard-text-enabled"
           label="Clipboard Text"
-          onChange={(event) =>
-            updateClipboard({ enabled: event.currentTarget.checked })
+          mode={BINARY}
+          onChange={(nextState) =>
+            updateClipboard({ enabled: nextState === 'enabled' })
           }
-          type="checkbox"
+          state={clipboardTextEnabled ? 'enabled' : 'disabled'}
         />
         <Form.Control
           disabled={disabled || !clipboardTextEnabled}

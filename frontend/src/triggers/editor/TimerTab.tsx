@@ -8,6 +8,7 @@ import {
   type TriggerEditorTimerState,
 } from './triggerEditorModel'
 import type { JenaTimerEarlyEnder } from '../../shared/triggers'
+import { BINARY, FourStateCheckbox } from '../../shared/widgets/FourStateCheckbox'
 
 interface TimerTabProps {
   onChange: (timer: TriggerEditorTimerState) => void
@@ -133,15 +134,16 @@ export function TimerTab({ onChange, timer }: TimerTabProps) {
                   />
                 </td>
                 <td className="text-center">
-                  <Form.Check
-                    checked={earlyEnder.isRegex}
+                  <FourStateCheckbox
+                    ariaLabel={`Use regex for early ender ${index + 1}`}
                     disabled={timer.type === 'none'}
-                    onChange={(event) =>
+                    mode={BINARY}
+                    onChange={(nextState) =>
                       updateEarlyEnder(index, {
-                        isRegex: event.currentTarget.checked,
+                        isRegex: nextState === 'enabled',
                       })
                     }
-                    type="checkbox"
+                    state={earlyEnder.isRegex ? 'enabled' : 'disabled'}
                   />
                 </td>
               </tr>

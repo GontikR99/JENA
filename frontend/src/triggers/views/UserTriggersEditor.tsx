@@ -25,10 +25,12 @@ import {
   type JenaTriggerUpsert,
 } from '../../shared/triggers'
 import {
-  TriStateCheckbox,
-  type TriStateCheckboxState,
-} from '../../shared/widgets/TriStateCheckbox'
+  FourStateCheckbox,
+  TERNARY,
+  type FourStateCheckboxState,
+} from '../../shared/widgets/FourStateCheckbox'
 import { IconTriStateToggle } from '../../shared/widgets/IconTriStateToggle'
+import type { IconTriStateToggleState } from '../../shared/widgets/IconTriStateToggle'
 import { TriggerEditorDialog } from '../editor/TriggerEditorDialog'
 import { exportGinaPackageFile } from '../gina/ginaPackageExporter'
 import { parseGinaPackageFile } from '../gina/ginaPackageParser'
@@ -80,6 +82,7 @@ type ImportPhase = 'reading' | 'saving' | 'complete' | 'error'
 type OperationPhase = 'complete' | 'error' | 'running'
 type ExportPhase = 'complete' | 'error' | 'writing'
 type BroadcastModeState = JenaBroadcastMode | 'mixed'
+type UserTriggerCheckboxState = Exclude<FourStateCheckboxState, 'inherit'>
 
 interface ImportSession {
   elapsedMs: number
@@ -1190,7 +1193,7 @@ export function UserTriggersEditor({
               <GroupRow
                 collapsed={collapsedGroupIds.has(item.id)}
                 checkboxState={
-                  groupStatesById.get(item.id)?.state ?? 'unchecked'
+                  groupStatesById.get(item.id)?.state ?? 'disabled'
                 }
                 checkboxDisabled={
                   !selectedCharacterRecord ||
@@ -1719,7 +1722,7 @@ function GroupRow({
   broadcastDisabled: boolean
   broadcastState: BroadcastModeState
   checkboxDisabled: boolean
-  checkboxState: TriStateCheckboxState
+  checkboxState: UserTriggerCheckboxState
   collapsed: boolean
   item: TreeGroupItem
   onAddGroup: (path: string[]) => void
@@ -1731,7 +1734,7 @@ function GroupRow({
   onToggleChecked: (enabled: boolean) => void
   onTogglePublish: (publish: boolean) => void
   publishDisabled: boolean
-  publishState: TriStateCheckboxState
+  publishState: IconTriStateToggleState
   selected: boolean
   showEnableColumn: boolean
 }) {
@@ -1771,11 +1774,12 @@ function GroupRow({
           {item.childCount > 0 ? (collapsed ? '>' : 'v') : ''}
         </button>
         {showEnableColumn ? (
-          <TriStateCheckbox
+          <FourStateCheckbox
             ariaLabel={`Enable triggers in ${item.name}`}
-            className="form-check-input user-triggers-checkbox"
+            className="user-triggers-checkbox"
             disabled={checkboxDisabled}
-            onChange={onToggleChecked}
+            mode={TERNARY}
+            onChange={(state) => onToggleChecked(state === 'enabled')}
             state={checkboxState}
           />
         ) : null}
@@ -1844,7 +1848,7 @@ function TriggerRow({
   showEnableColumn,
 }: {
   checkboxDisabled: boolean
-  checkboxState: TriStateCheckboxState
+  checkboxState: FourStateCheckboxState
   item: TreeTriggerItem
   onBroadcastModeToggle: (broadcastMode: JenaBroadcastMode) => void
   onClick: (event: MouseEvent, item: TreeTriggerItem) => void
@@ -1883,11 +1887,12 @@ function TriggerRow({
           style={{ width: `${item.path.length * 1.15}rem` }}
         />
         {showEnableColumn ? (
-          <TriStateCheckbox
+          <FourStateCheckbox
             ariaLabel={`Enable ${item.resolved.trigger.name || 'unnamed trigger'}`}
-            className="form-check-input user-triggers-checkbox"
+            className="user-triggers-checkbox"
             disabled={checkboxDisabled}
-            onChange={onToggle}
+            mode={TERNARY}
+            onChange={(state) => onToggle(state === 'enabled')}
             state={checkboxState}
           />
         ) : null}
@@ -2168,8 +2173,8 @@ function getGroupStatesById(
       broadcastState: BroadcastModeState
       enabledCount: number
       publishCount: number
-      publishState: TriStateCheckboxState
-      state: TriStateCheckboxState
+      publishState: IconTriStateToggleState
+      state: UserTriggerCheckboxState
       totalCount: number
     }
   >()
@@ -2201,8 +2206,8 @@ function getGroupStatesById(
       broadcastState,
       enabledCount,
       publishCount,
-      publishState: getTriState(publishCount, descendantTriggers.length),
-      state: getTriState(enabledCount, descendantTriggers.length),
+      publishState: getIconTriState(publishCount, descendantTriggers.length),
+      state: getUserTriggerCheckboxState(enabledCount, descendantTriggers.length),
       totalCount: descendantTriggers.length,
     })
   })
@@ -2213,17 +2218,17 @@ function getGroupStatesById(
 function getTriggerCheckboxState(
   resolved: JenaResolvedTrigger,
   selectedCharacterKey: string | null,
-): TriStateCheckboxState {
+): UserTriggerCheckboxState {
   if (
     selectedCharacterKey &&
     resolved.enabledFor.some(
       (character) => getJenaCharacterServerKey(character) === selectedCharacterKey,
     )
   ) {
-    return 'checked'
+    return 'enabled'
   }
 
-  return 'unchecked'
+  return 'disabled'
 }
 
 function getBroadcastModeState(
@@ -2269,10 +2274,25 @@ function getBroadcastModeLabel(mode: JenaBroadcastMode) {
   }
 }
 
-function getTriState(
+function getUserTriggerCheckboxState(
   enabledCount: number,
   totalCount: number,
-): TriStateCheckboxState {
+): UserTriggerCheckboxState {
+  if (totalCount > 0 && enabledCount === totalCount) {
+    return 'enabled'
+  }
+
+  if (enabledCount > 0) {
+    return 'mixed'
+  }
+
+  return 'disabled'
+}
+
+function getIconTriState(
+  enabledCount: number,
+  totalCount: number,
+): IconTriStateToggleState {
   if (totalCount > 0 && enabledCount === totalCount) {
     return 'checked'
   }

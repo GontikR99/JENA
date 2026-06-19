@@ -1,15 +1,17 @@
-import Form from 'react-bootstrap/Form'
+import { BINARY, FourStateCheckbox } from '../../shared/widgets/FourStateCheckbox'
 import { DurationInput } from './DurationInput'
 
 export function CounterTab() {
   return (
     <div className="trigger-editor-tab-panel">
       <div className="trigger-editor-notify-row">
-        <Form.Check
+        <FourStateCheckbox
           disabled
           id="trigger-editor-counter-reset"
           label="Reset counter if unmatched for"
-          type="checkbox"
+          mode={BINARY}
+          onChange={() => undefined}
+          state="disabled"
         />
         <DurationInput
           disabled

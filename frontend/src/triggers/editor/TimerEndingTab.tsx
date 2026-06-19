@@ -1,5 +1,5 @@
-import Form from 'react-bootstrap/Form'
 import type { CharacterPresence } from '../../shared/messages'
+import { BINARY, FourStateCheckbox } from '../../shared/widgets/FourStateCheckbox'
 import { AudioSettingsSection } from './AudioSettingsSection'
 import { DurationInput } from './DurationInput'
 import { TextSettingsSection } from './TextSettingsSection'
@@ -55,19 +55,17 @@ export function TimerEndingTab({
   return (
     <div className="trigger-editor-tab-panel">
       <div className="trigger-editor-notify-row">
-        <Form.Check
-          checked={isEnabled}
+        <FourStateCheckbox
           id="trigger-editor-timer-ending-enabled"
           label="Notify when timer is is down to"
-          onChange={(event) =>
+          mode={BINARY}
+          onChange={(nextState) =>
             onChange({
               ...timer,
-              warningAction: event.currentTarget.checked
-                ? createTimerAction()
-                : null,
+              warningAction: nextState === 'enabled' ? createTimerAction() : null,
             })
           }
-          type="checkbox"
+          state={isEnabled ? 'enabled' : 'disabled'}
         />
         <DurationInput
           defaultSeconds={1}

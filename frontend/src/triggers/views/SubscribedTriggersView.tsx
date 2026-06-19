@@ -10,7 +10,9 @@ import ProgressBar from 'react-bootstrap/ProgressBar'
 import toast from 'react-hot-toast'
 import type { CharacterPresence } from '../../shared/messages'
 import {
+  BINARY,
   FourStateCheckbox,
+  QUATERNARY,
   type FourStateCheckboxState,
 } from '../../shared/widgets/FourStateCheckbox'
 import {
@@ -537,24 +539,21 @@ export function SubscribedTriggersView({
             return (
               <Card className="subscribed-triggers-card" key={subscription.id}>
                 <Card.Header className="subscribed-triggers-card-header">
-                  <input
-                    aria-label={`Enable ${subscription.ownerDisplayName} by default`}
-                    checked={defaultEnabled}
-                    className="form-check-input subscribed-triggers-default-checkbox"
+                  <FourStateCheckbox
+                    ariaLabel={`Enable ${subscription.ownerDisplayName} by default`}
+                    className="subscribed-triggers-default-checkbox"
                     disabled={!selectedCharacterRecord}
-                    onChange={(event) => {
-                      void handleDefaultToggle(
-                        subscription,
-                        event.currentTarget.checked,
-                      )
+                    mode={BINARY}
+                    onChange={(nextState) => {
+                      void handleDefaultToggle(subscription, nextState === 'enabled')
                     }}
-                    onClick={(event) => event.stopPropagation()}
+                    state={defaultEnabled ? 'enabled' : 'disabled'}
+                    stopPropagation
                     title={
                       selectedCharacterRecord
                         ? 'Enable by default'
                         : 'Select a character to change enablement'
                     }
-                    type="checkbox"
                   />
                   <span className="subscribed-triggers-publisher-name">
                     {subscription.ownerDisplayName || 'Anonymous publisher'}
@@ -739,6 +738,7 @@ function SubscribedGroupRow({
         <FourStateCheckbox
           ariaLabel={`Enable triggers in ${item.name}`}
           disabled={checkboxDisabled || item.triggerCount === 0}
+          mode={QUATERNARY}
           onChange={onToggleChecked}
           state={checkboxState}
         />
@@ -797,6 +797,7 @@ function SubscribedTriggerRow({
         <FourStateCheckbox
           ariaLabel={`Enable ${item.trigger.trigger.name || 'unnamed trigger'}`}
           disabled={checkboxDisabled}
+          mode={QUATERNARY}
           onChange={onToggleChecked}
           state={checkboxState}
         />
