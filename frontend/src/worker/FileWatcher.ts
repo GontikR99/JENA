@@ -8,7 +8,7 @@ import { MessageBroker } from './MessageBroker'
 
 const directoryScanIntervalMs = 100
 const tailIntervalMs = 10
-const characterActiveWindowMs = 5 * 60 * 1000
+const characterActiveWindowMs = 30 * 60 * 1000
 
 interface TailTask {
   logFile: EverQuestLogFile
