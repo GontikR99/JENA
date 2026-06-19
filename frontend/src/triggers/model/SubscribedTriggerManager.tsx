@@ -445,6 +445,10 @@ export function SubscribedTriggerManagerProvider({
     void addSubscription(subscriptionId)
   })
 
+  useListen('subscriptions.updated', () => {
+    void syncSubscriptionsRef.current()
+  })
+
   const value = useMemo(
     () => ({
       ...state,

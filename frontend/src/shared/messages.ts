@@ -128,6 +128,10 @@ export interface SubscriptionTriggerRecord {
   triggerId: JenaTriggerId
 }
 
+export interface SubscriptionUpdatedMessage {
+  publisherUserId: string
+}
+
 export interface SubscriptionSyncRequestItem {
   digest: string
   id: string
@@ -193,6 +197,7 @@ export interface EndpointMessages {
   'file-watcher.characters': FileWatcherCharactersMessage
   'matcher.match-found': RegexMatchFoundMessage
   'speech.preview-requested': TriggerSpeechPreviewRequestedMessage
+  'subscriptions.updated': SubscriptionUpdatedMessage
   'trigger-store.triggers-seen': TriggerStoreTriggersSeenMessage
   'user-trigger-store.updated': JenaUserTriggerUpdate
   'worldwide-presence.nearby-characters': NearbyCharacterPresenceMessage

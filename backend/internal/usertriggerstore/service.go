@@ -65,6 +65,10 @@ type PingResponse struct {
 	Revision string `json:"revision"`
 }
 
+type SubscriptionUpdatedMessage struct {
+	PublisherUserID string `json:"publisherUserId"`
+}
+
 func New(
 	ctx context.Context,
 	bus *eventbus.Bus,
@@ -273,6 +277,18 @@ func (service *Service) broadcastUpdate(ctx context.Context, userID string, upda
 	_ = service.bus.Send(ctx, eventbus.Envelope{
 		Destination: "user." + userID + ".user-trigger-store.updated",
 		Payload:     payload,
+		Source:      &source,
+	})
+
+	subscriptionPayload, err := json.Marshal(SubscriptionUpdatedMessage{
+		PublisherUserID: userID,
+	})
+	if err != nil {
+		return
+	}
+	_ = service.bus.Send(ctx, eventbus.Envelope{
+		Destination: "sub." + userID + ".subscriptions.updated",
+		Payload:     subscriptionPayload,
 		Source:      &source,
 	})
 }

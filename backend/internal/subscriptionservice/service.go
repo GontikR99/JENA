@@ -29,6 +29,8 @@ const (
 	defaultEnablementEnabled  = "enabled"
 	defaultEnablementDisabled = "disabled"
 
+	subscriberSourceTTL = 2 * time.Minute
+
 	triggerEnablementEnabled  = "enabled"
 	triggerEnablementDisabled = "disabled"
 	triggerEnablementInherit  = "inherit"
@@ -43,6 +45,8 @@ type Service struct {
 	db              *database.Database
 	identity        Identity
 	logger          logging.Logger
+	subscriberMu    sync.Mutex
+	subscribers     map[string]map[string]time.Time
 	snapshotMu      sync.Mutex
 	snapshots       map[string]publishedSnapshot
 	unregister      func()
@@ -140,6 +144,7 @@ func New(
 		db:              db,
 		identity:        identity,
 		logger:          logger,
+		subscribers:     make(map[string]map[string]time.Time),
 		snapshots:       make(map[string]publishedSnapshot),
 		userSettings:    userSettings,
 	}
@@ -159,9 +164,11 @@ func New(
 		"syncSubscriptions":                service.syncSubscriptions,
 	})
 	unregisterUserUpdates := bus.Listen("user.*", service.handleUserMessage)
+	unregisterSubscriberMessages := bus.Listen("sub.*", service.handleSubscriberMessage(bus))
 	service.unregister = func() {
 		unregisterRPC()
 		unregisterUserUpdates()
+		unregisterSubscriberMessages()
 	}
 
 	return service, nil
@@ -331,7 +338,7 @@ func (service *Service) revokePublishedSubscriptionCode(ctx context.Context, met
 	return struct{}{}, nil
 }
 
-func (service *Service) syncSubscriptions(ctx context.Context, _ eventbus.RPCMetadata, params json.RawMessage) (any, error) {
+func (service *Service) syncSubscriptions(ctx context.Context, metadata eventbus.RPCMetadata, params json.RawMessage) (any, error) {
 	var request SyncSubscriptionsRequest
 	if err := json.Unmarshal(params, &request); err != nil {
 		return nil, fmt.Errorf("decode sync subscriptions request: %w", err)
@@ -376,6 +383,8 @@ func (service *Service) syncSubscriptions(ctx context.Context, _ eventbus.RPCMet
 			})
 			continue
 		}
+
+		service.rememberSubscriberSource(publisherUserID, metadata.Sender, time.Now())
 
 		snapshot, err := service.publishedSnapshotForUser(ctx, publisherUserID)
 		if err != nil {
@@ -932,6 +941,76 @@ func (service *Service) handleUserMessage(ctx context.Context, envelope eventbus
 	service.invalidatePublisherSnapshot(ctx, userID, "user-targeted update")
 }
 
+func (service *Service) handleSubscriberMessage(bus *eventbus.Bus) eventbus.Listener {
+	return func(ctx context.Context, envelope eventbus.Envelope) {
+		userID, destination, ok := parseSubscriberDestination(envelope.Destination)
+		if !ok {
+			return
+		}
+
+		for _, source := range service.activeSubscriberSources(userID, time.Now()) {
+			outbound := envelope
+			outbound.Destination = source + "." + destination
+			_ = bus.Send(ctx, outbound)
+		}
+	}
+}
+
+func (service *Service) rememberSubscriberSource(userID string, sender string, now time.Time) {
+	source, ok := websocketSourcePrefix(sender)
+	if !ok || userID == "" {
+		return
+	}
+
+	service.subscriberMu.Lock()
+	defer service.subscriberMu.Unlock()
+
+	sources := service.subscribers[userID]
+	if sources == nil {
+		sources = make(map[string]time.Time)
+		service.subscribers[userID] = sources
+	}
+	sources[source] = now
+	service.pruneSubscriberSourcesLocked(userID, now)
+}
+
+func (service *Service) activeSubscriberSources(userID string, now time.Time) []string {
+	service.subscriberMu.Lock()
+	defer service.subscriberMu.Unlock()
+
+	service.pruneSubscriberSourcesLocked(userID, now)
+	sourcesByLastSeen := service.subscribers[userID]
+	if len(sourcesByLastSeen) == 0 {
+		return nil
+	}
+
+	sources := make([]string, 0, len(sourcesByLastSeen))
+	for source := range sourcesByLastSeen {
+		sources = append(sources, source)
+	}
+	sort.Strings(sources)
+
+	return sources
+}
+
+func (service *Service) pruneSubscriberSourcesLocked(userID string, now time.Time) {
+	sources := service.subscribers[userID]
+	if len(sources) == 0 {
+		delete(service.subscribers, userID)
+		return
+	}
+
+	expiresBefore := now.Add(-subscriberSourceTTL)
+	for source, lastSeen := range sources {
+		if lastSeen.Before(expiresBefore) {
+			delete(sources, source)
+		}
+	}
+	if len(sources) == 0 {
+		delete(service.subscribers, userID)
+	}
+}
+
 func (service *Service) invalidatePublisherSnapshot(ctx context.Context, userID string, reason string) {
 	service.snapshotMu.Lock()
 	_, hadCachedSnapshot := service.snapshots[userID]
@@ -1003,4 +1082,34 @@ func userIDFromUserDestination(destination string) string {
 	}
 
 	return userID
+}
+
+func parseSubscriberDestination(destination string) (string, string, bool) {
+	remainder, ok := strings.CutPrefix(destination, "sub.")
+	if !ok {
+		return "", "", false
+	}
+
+	userID, forwardedDestination, ok := strings.Cut(remainder, ".")
+	userID = strings.TrimSpace(userID)
+	forwardedDestination = strings.TrimSpace(forwardedDestination)
+	if !ok || userID == "" || forwardedDestination == "" {
+		return "", "", false
+	}
+
+	return userID, forwardedDestination, true
+}
+
+func websocketSourcePrefix(source string) (string, bool) {
+	remainder, ok := strings.CutPrefix(source, "ws.")
+	if !ok {
+		return "", false
+	}
+
+	connection, _, ok := strings.Cut(remainder, ".")
+	if !ok || connection == "" {
+		return "", false
+	}
+
+	return "ws." + connection, true
 }

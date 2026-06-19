@@ -322,6 +322,35 @@ func TestServiceBroadcastsUpdatesToStableUserDestination(t *testing.T) {
 	}
 }
 
+func TestServiceBroadcastsSubscriptionRefreshHint(t *testing.T) {
+	ctx := context.Background()
+	bus, _, service := newTestService(t, ctx)
+	defer service.Dispose()
+
+	source := "ws.127_0_0_1_1.user-trigger-manager"
+	var event SubscriptionUpdatedMessage
+	received := false
+	unlisten := bus.Listen("sub.test-user.subscriptions.updated", func(_ context.Context, envelope eventbus.Envelope) {
+		if err := json.Unmarshal(envelope.Payload, &event); err != nil {
+			t.Fatalf("Unmarshal update returned error: %v", err)
+		}
+		received = true
+	})
+	defer unlisten()
+
+	trigger := createCanonicalTestTrigger(t, "Subscription Hint Trigger", []string{"Raid"})
+	callRPCWithSource[model.UserTriggerUpdate](t, bus, "upsertTriggers", "token", source, UpsertTriggersRequest{
+		Triggers: []model.TriggerUpsert{{Trigger: trigger}},
+	})
+
+	if !received {
+		t.Fatal("subscription update event was not received")
+	}
+	if event.PublisherUserID != "test-user" {
+		t.Fatalf("PublisherUserID %q, want test-user", event.PublisherUserID)
+	}
+}
+
 func TestServiceBroadcastsToggleUpdatesToStableUserDestination(t *testing.T) {
 	ctx := context.Background()
 	bus, _, service := newTestService(t, ctx)

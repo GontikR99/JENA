@@ -6,6 +6,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"jena/backend/internal/config"
 	"jena/backend/internal/database"
@@ -156,6 +157,84 @@ func TestSyncSubscriptionsRefreshesCachedDisplayName(t *testing.T) {
 	}
 }
 
+func TestSubscriberBridgeFansOutToRecentSubscriberSockets(t *testing.T) {
+	fixture := newTestService(t, testIdentity{userID: "discord:456"})
+	ctx := context.Background()
+	subscriptionID := insertPublisherSubscription(t, fixture.db, "discord:123", "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
+
+	params, err := json.Marshal(SyncSubscriptionsRequest{
+		Subscriptions: []SyncSubscriptionsRequestItem{{ID: subscriptionID}},
+	})
+	if err != nil {
+		t.Fatalf("json.Marshal returned error: %v", err)
+	}
+	if _, err := fixture.service.syncSubscriptions(ctx, eventbus.RPCMetadata{
+		Sender: "ws.127_0_0_1_9.subscribed-trigger-manager",
+	}, params); err != nil {
+		t.Fatalf("syncSubscriptions returned error: %v", err)
+	}
+
+	var received eventbus.Envelope
+	receivedCount := 0
+	unlisten := fixture.bus.Listen("ws.127_0_0_1_9.subscriptions.updated", func(_ context.Context, envelope eventbus.Envelope) {
+		received = envelope
+		receivedCount++
+	})
+	defer unlisten()
+
+	source := "user-trigger-store"
+	payload := json.RawMessage(`{"publisherUserId":"discord:123"}`)
+	if err := fixture.bus.Send(ctx, eventbus.Envelope{
+		Destination: "sub.discord:123.subscriptions.updated",
+		Payload:     payload,
+		Source:      &source,
+	}); err != nil {
+		t.Fatalf("Send returned error: %v", err)
+	}
+
+	if receivedCount != 1 {
+		t.Fatalf("received %d bridged messages, want 1", receivedCount)
+	}
+	if received.Destination != "ws.127_0_0_1_9.subscriptions.updated" {
+		t.Fatalf("Destination %q, want websocket subscription update", received.Destination)
+	}
+	if string(received.Payload) != string(payload) {
+		t.Fatalf("Payload %s, want %s", received.Payload, payload)
+	}
+}
+
+func TestSubscriberBridgeExpiresStaleSubscriberSockets(t *testing.T) {
+	fixture := newTestService(t, testIdentity{userID: "discord:456"})
+	ctx := context.Background()
+
+	fixture.service.rememberSubscriberSource(
+		"discord:123",
+		"ws.127_0_0_1_9.subscribed-trigger-manager",
+		time.Now().Add(-subscriberSourceTTL-time.Second),
+	)
+	if sources := fixture.service.activeSubscriberSources("discord:123", time.Now()); len(sources) != 0 {
+		t.Fatalf("active sources %#v, want expired source removed", sources)
+	}
+
+	receivedCount := 0
+	unlisten := fixture.bus.Listen("ws.127_0_0_1_9.subscriptions.updated", func(context.Context, eventbus.Envelope) {
+		receivedCount++
+	})
+	defer unlisten()
+
+	source := "user-trigger-store"
+	if err := fixture.bus.Send(ctx, eventbus.Envelope{
+		Destination: "sub.discord:123.subscriptions.updated",
+		Payload:     json.RawMessage(`{"publisherUserId":"discord:123"}`),
+		Source:      &source,
+	}); err != nil {
+		t.Fatalf("Send returned error: %v", err)
+	}
+	if receivedCount != 0 {
+		t.Fatalf("received %d bridged messages, want none", receivedCount)
+	}
+}
+
 func TestUserSubscriptionStorageAndEnablement(t *testing.T) {
 	fixture := newTestService(t, testIdentity{userID: "discord:456"})
 	ctx := context.Background()
@@ -257,6 +336,7 @@ func TestCleanupRemovesExpiredSubscriptionsAndStaleTriggerOverrides(t *testing.T
 }
 
 type serviceFixture struct {
+	bus          *eventbus.Bus
 	db           *database.Database
 	service      *Service
 	userSettings *usersettings.Store
@@ -288,7 +368,8 @@ func newTestService(t *testing.T, identity Identity) serviceFixture {
 	if err != nil {
 		t.Fatalf("usersettings.NewStore returned error: %v", err)
 	}
-	service, err := New(context.Background(), eventbus.New(), db, identity, userSettingsStore, config.Config{
+	bus := eventbus.New()
+	service, err := New(context.Background(), bus, db, identity, userSettingsStore, config.Config{
 		SubscriptionCleanupHours: 24,
 	}, logging.NewNop())
 	if err != nil {
@@ -297,6 +378,7 @@ func newTestService(t *testing.T, identity Identity) serviceFixture {
 	t.Cleanup(service.Dispose)
 
 	return serviceFixture{
+		bus:          bus,
 		db:           db,
 		service:      service,
 		userSettings: userSettingsStore,
