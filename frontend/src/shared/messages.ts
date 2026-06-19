@@ -14,6 +14,7 @@ export type Endpoint = string
 
 export interface BusMessage<TPayload = unknown> {
   id: string
+  version?: number
   source: Endpoint | null
   destination: Endpoint
   correlationId?: string
@@ -549,6 +550,7 @@ export function isBusMessage(value: unknown): value is BusMessage {
 
   return (
     typeof candidate.id === 'string' &&
+    (candidate.version === undefined || typeof candidate.version === 'number') &&
     (candidate.source === null || typeof candidate.source === 'string') &&
     typeof candidate.destination === 'string' &&
     (candidate.correlationId === undefined ||

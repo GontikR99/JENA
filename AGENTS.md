@@ -381,6 +381,7 @@ From the repository root:
 ```sh
 make clean
 make dev
+make bump-protocol-version
 make dist-clean
 make frontend
 make init
@@ -409,7 +410,7 @@ go test -mod=vendor ./...
 go run -mod=vendor ./cmd/jena-backend
 ```
 
-The default `make` target is `help`, which lists available targets. `make dev` runs the backend server. `make frontend` runs the Vite dev server. `make init` runs `npm ci` and rebuilds backend vendor. `make clean` removes generated frontend, embedded static, package output directories, and Go build cache. `make dist-clean` also removes `frontend/node_modules` and `backend/vendor`. `make package` embeds the frontend, tests the backend, and builds `dist/jena-backend.exe`. `make package-linux-x86_64` cross-compiles a Linux amd64 backend binary. `npm run build` runs TypeScript project build first, then Vite build. `npm run test` runs Vitest once.
+The default `make` target is `help`, which lists available targets. `make dev` runs the backend server. `make frontend` runs the Vite dev server. `make init` runs `npm ci` and rebuilds backend vendor. `make clean` removes generated frontend, embedded static, package output directories, and Go build cache. `make dist-clean` also removes `frontend/node_modules` and `backend/vendor`. `make bump-protocol-version` increments the checked-in frontend/backend protocol compatibility version in `protocol-version.txt` and regenerates `frontend/src/generated/protocolVersion.ts` and `backend/internal/generated/protocolversion/protocol_version.go`; use it when an incompatible message or RPC contract change requires old tabs to reload. `make generate-protocol-version` regenerates those source files without bumping the version, and Make build/dev/test/package targets run it automatically. The generated files are checked in so raw `npm run build` and `go run` still use the current committed protocol version. `make package` embeds the frontend, tests the backend, and builds `dist/jena-backend.exe`. `make package-linux-x86_64` cross-compiles a Linux amd64 backend binary. `npm run build` runs TypeScript project build first, then Vite build. `npm run test` runs Vitest once.
 
 Tests live in a `__tests__` directory under the major frontend subcomponent they cover:
 

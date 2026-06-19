@@ -5,6 +5,7 @@ import { ServerEndpointPrefix, type BusMessage } from '../../shared/messages'
 import {
   ExpiringMessageDeduper,
   getDefaultServerBridgeUrl,
+  isCompatibleServerMessage,
   parseServerBridgeFrame,
   prepareInboundServerMessage,
   prepareOutboundServerMessage,
@@ -12,7 +13,12 @@ import {
 } from './ServerBridgeProtocol'
 import './ServerBridge.css'
 
-export type ServerBridgeStatus = 'closed' | 'connecting' | 'open' | 'stale'
+export type ServerBridgeStatus =
+  | 'closed'
+  | 'connecting'
+  | 'incompatible'
+  | 'open'
+  | 'stale'
 
 interface ServerBridgeProps {
   onStatusChange: (status: ServerBridgeStatus) => void
@@ -66,10 +72,22 @@ export function ServerConnectionGlass({
       role="status"
     >
       <div className="server-bridge-panel">
-        <div className="server-bridge-title">Connecting to JENA server</div>
-        <div className="server-bridge-status">
-          Server bridge status: {status}
-        </div>
+        {status === 'incompatible' ? (
+          <>
+            <div className="server-bridge-title">JENA is out of date</div>
+            <div className="server-bridge-status">
+              This page was loaded with an older app version. Reload the page to
+              reconnect to the server.
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="server-bridge-title">Connecting to JENA server</div>
+            <div className="server-bridge-status">
+              Server bridge status: {status}
+            </div>
+          </>
+        )}
       </div>
     </div>
   )
@@ -94,6 +112,7 @@ class ServerBridgeController {
     null
   private unregisterBusListener: (() => void) | null = null
   private disposed = false
+  private incompatible = false
 
   constructor({
     broker,
@@ -137,7 +156,7 @@ class ServerBridgeController {
   }
 
   private connect() {
-    if (this.disposed) {
+    if (this.disposed || this.incompatible) {
       return
     }
 
@@ -175,6 +194,9 @@ class ServerBridgeController {
 
       this.socket = null
       this.clearTimers()
+      if (this.incompatible) {
+        return
+      }
       this.setStatus('closed')
       this.scheduleReconnect()
     })
@@ -277,6 +299,11 @@ class ServerBridgeController {
       type: 'ack',
     })
 
+    if (!isCompatibleServerMessage(frame.envelope)) {
+      this.becomeIncompatible()
+      return
+    }
+
     if (!this.deduper.markSeen(frame.envelope.id)) {
       return
     }
@@ -313,7 +340,7 @@ class ServerBridgeController {
   }
 
   private scheduleReconnect() {
-    if (this.disposed) {
+    if (this.disposed || this.incompatible) {
       return
     }
 
@@ -350,6 +377,18 @@ class ServerBridgeController {
 
   private setStatus(status: ServerBridgeStatus) {
     this.onStatusChange(status)
+  }
+
+  private becomeIncompatible() {
+    if (this.incompatible) {
+      return
+    }
+
+    this.incompatible = true
+    this.clearTimers()
+    this.setStatus('incompatible')
+    this.socket?.close()
+    this.socket = null
   }
 
   private clearTimers() {

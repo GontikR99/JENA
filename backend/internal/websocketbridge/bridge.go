@@ -14,6 +14,7 @@ import (
 	"github.com/coder/websocket"
 
 	"jena/backend/internal/eventbus"
+	"jena/backend/internal/generated/protocolversion"
 	"jena/backend/internal/logging"
 )
 
@@ -229,6 +230,7 @@ func (connection *connection) run(parentCtx context.Context) {
 	unlisten := connection.bridge.bus.Listen(connection.name+".*", func(_ context.Context, envelope eventbus.Envelope) {
 		envelope.AuthToken = ""
 		envelope.Destination = strings.TrimPrefix(envelope.Destination, connection.name+".")
+		envelope.Version = protocolversion.ProtocolVersion
 
 		select {
 		case connection.outbound <- envelope:
@@ -422,6 +424,7 @@ func (connection *connection) writeLoop(ctx context.Context) error {
 				return err
 			}
 		case envelope := <-connection.outbound:
+			envelope.Version = protocolversion.ProtocolVersion
 			nextSeq++
 			outgoing := frame{
 				Envelope: &envelope,

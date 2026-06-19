@@ -15,6 +15,7 @@ import (
 
 type Envelope struct {
 	ID            string          `json:"id"`
+	Version       int             `json:"version,omitempty"`
 	AuthToken     string          `json:"authToken,omitempty"`
 	Source        *string         `json:"source"`
 	Destination   string          `json:"destination"`

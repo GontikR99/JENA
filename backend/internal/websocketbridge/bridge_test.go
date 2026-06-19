@@ -10,6 +10,7 @@ import (
 
 	"jena/backend/internal/config"
 	"jena/backend/internal/eventbus"
+	"jena/backend/internal/generated/protocolversion"
 	"jena/backend/internal/logging"
 )
 
@@ -83,10 +84,41 @@ func TestReceiveEnvelopeDeduplicatesBeforeSendingToBus(t *testing.T) {
 		ID:          "message-1",
 		Payload:     json.RawMessage(`{}`),
 		Source:      &source,
+		Version:     protocolversion.ProtocolVersion,
 	}
 
 	connection.receiveEnvelope(context.Background(), 1, envelope)
 	connection.receiveEnvelope(context.Background(), 2, envelope)
+
+	if received != 1 {
+		t.Fatalf("received %d messages, want 1", received)
+	}
+}
+
+func TestReceiveEnvelopeAcceptsWrongProtocolVersion(t *testing.T) {
+	bus := eventbus.New()
+	bridge := New(bus, logging.NewNop(), "jena_session", nil)
+	connection := &connection{
+		ackOutbound: make(chan uint64, 1),
+		bridge:      bridge,
+		deduper:     newMessageDeduper(dedupWindow),
+		name:        "ws.127_0_0_1_1",
+	}
+	received := 0
+
+	unlisten := bus.Listen("service", func(_ context.Context, _ eventbus.Envelope) {
+		received++
+	})
+	defer unlisten()
+
+	source := "test"
+	connection.receiveEnvelope(context.Background(), 1, eventbus.Envelope{
+		Destination: "service",
+		ID:          "message-1",
+		Payload:     json.RawMessage(`{}`),
+		Source:      &source,
+		Version:     protocolversion.ProtocolVersion + 1,
+	})
 
 	if received != 1 {
 		t.Fatalf("received %d messages, want 1", received)

@@ -99,9 +99,16 @@ From the repository root:
 ```sh
 make dev
 make frontend
+make bump-protocol-version
 make test
 make package
 ```
+
+Use `make bump-protocol-version` when an incompatible frontend/backend message
+or RPC contract change requires old tabs to reload against the new backend.
+The target updates `protocol-version.txt` and regenerates checked-in frontend and
+backend source files, so raw `npm run build` and `go run` commands still compile
+against the current committed protocol version.
 
 Frontend commands:
 

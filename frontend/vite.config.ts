@@ -35,6 +35,8 @@ export default defineConfig({
       'src/bridges/**/__tests__/**/*.test.tsx',
       'src/characters/__tests__/**/*.test.ts',
       'src/characters/__tests__/**/*.test.tsx',
+      'src/generated/__tests__/**/*.test.ts',
+      'src/generated/__tests__/**/*.test.tsx',
       'src/triggers/__tests__/**/*.test.ts',
       'src/triggers/__tests__/**/*.test.tsx',
       'src/pip/__tests__/**/*.test.ts',

@@ -4,6 +4,7 @@ import {
   stripServerEndpointPrefix,
   type BusMessage,
 } from '../../shared/messages'
+import { protocolVersion } from '../../generated/protocolVersion'
 
 export type ServerBridgeFrame =
   | {
@@ -35,6 +36,7 @@ export function prepareOutboundServerMessage(message: BusMessage): BusMessage {
   return {
     ...message,
     destination: stripServerEndpointPrefix(message.destination),
+    version: protocolVersion,
   }
 }
 
@@ -43,6 +45,10 @@ export function prepareInboundServerMessage(message: BusMessage): BusMessage {
     ...message,
     source: message.source ? addServerEndpointPrefix(message.source) : null,
   }
+}
+
+export function isCompatibleServerMessage(message: BusMessage) {
+  return message.version === protocolVersion
 }
 
 export class ExpiringMessageDeduper {

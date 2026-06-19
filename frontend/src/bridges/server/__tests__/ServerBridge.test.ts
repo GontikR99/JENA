@@ -2,10 +2,12 @@ import { describe, expect, it } from 'vitest'
 import {
   ExpiringMessageDeduper,
   getDefaultServerBridgeUrl,
+  isCompatibleServerMessage,
   prepareInboundServerMessage,
   prepareOutboundServerMessage,
 } from '../ServerBridgeProtocol'
 import type { BusMessage } from '../../../shared/messages'
+import { protocolVersion } from '../../../generated/protocolVersion'
 
 describe('ServerBridge helpers', () => {
   it('uses the current host for the default websocket URL', () => {
@@ -26,6 +28,7 @@ describe('ServerBridge helpers', () => {
     expect(prepareOutboundServerMessage(message)).toMatchObject({
       destination: 'trigger-store',
       source: 'triggers',
+      version: protocolVersion,
     })
   })
 
@@ -41,6 +44,28 @@ describe('ServerBridge helpers', () => {
     })
   })
 
+  it('checks inbound server message protocol compatibility', () => {
+    expect(
+      isCompatibleServerMessage(
+        createMessage({
+          destination: 'triggers',
+          source: 'trigger-store',
+          version: protocolVersion,
+        }),
+      ),
+    ).toBe(true)
+
+    expect(
+      isCompatibleServerMessage(
+        createMessage({
+          destination: 'triggers',
+          source: 'trigger-store',
+          version: protocolVersion + 1,
+        }),
+      ),
+    ).toBe(false)
+  })
+
   it('expires deduplication IDs after the configured window', () => {
     const deduper = new ExpiringMessageDeduper(10 * 60_000)
 
@@ -53,14 +78,17 @@ describe('ServerBridge helpers', () => {
 function createMessage({
   destination,
   source,
+  version,
 }: {
   destination: string
   source: string | null
+  version?: number
 }): BusMessage {
   return {
     destination,
     id: 'message-1',
     payload: {},
     source,
+    ...(version === undefined ? {} : { version }),
   }
 }
