@@ -59,6 +59,10 @@ export interface SubscribedTriggerManagerState {
 export interface SubscribedTriggerManagerApi
   extends SubscribedTriggerManagerState {
   addSubscription: (subscriptionId: string) => Promise<void>
+  isTriggerEnabledForCharacter: (
+    triggerId: JenaTriggerId,
+    character: JenaCharacterServer,
+  ) => boolean
   removeSubscription: (subscriptionId: string) => Promise<void>
   setSubscribedTriggerEnablement: (
     subscriptionId: string,
@@ -128,6 +132,51 @@ export function SubscribedTriggerManagerProvider({
   const publishState = useCallback(() => {
     setState(getStateFromRefs())
   }, [getStateFromRefs])
+
+  const isTriggerEnabledForCharacter = useCallback(
+    (triggerId: JenaTriggerId, character: JenaCharacterServer) => {
+      const normalizedTriggerId = triggerId.trim().toLocaleLowerCase()
+
+      for (const snapshot of snapshotsRef.current.values()) {
+        const hasTrigger = snapshot.records.some(
+          (record) =>
+            record.triggerId.trim().toLocaleLowerCase() === normalizedTriggerId,
+        )
+        if (!hasTrigger) {
+          continue
+        }
+
+        const triggerOverride = triggerEnablementRef.current.find((record) => {
+          return (
+            record.subscriptionId === snapshot.id &&
+            record.triggerId.trim().toLocaleLowerCase() === normalizedTriggerId &&
+            getCharacterRecordKey(record.subscriptionId, record.character) ===
+              getCharacterRecordKey(snapshot.id, character)
+          )
+        })
+        if (triggerOverride) {
+          if (triggerOverride.mode === 'enabled') {
+            return true
+          }
+          continue
+        }
+
+        const defaultEnablement = defaultEnablementRef.current.find((record) => {
+          return (
+            record.subscriptionId === snapshot.id &&
+            getCharacterRecordKey(record.subscriptionId, record.character) ===
+              getCharacterRecordKey(snapshot.id, character)
+          )
+        })
+        if (defaultEnablement?.mode === 'enabled') {
+          return true
+        }
+      }
+
+      return false
+    },
+    [],
+  )
 
   const persistIfAnonymous = useCallback(async () => {
     if (statusRef.current !== 'anonymous') {
@@ -453,12 +502,14 @@ export function SubscribedTriggerManagerProvider({
     () => ({
       ...state,
       addSubscription,
+      isTriggerEnabledForCharacter,
       removeSubscription,
       setSubscribedTriggerEnablement,
       setSubscriptionDefaultEnablement,
     }),
     [
       addSubscription,
+      isTriggerEnabledForCharacter,
       removeSubscription,
       setSubscribedTriggerEnablement,
       setSubscriptionDefaultEnablement,

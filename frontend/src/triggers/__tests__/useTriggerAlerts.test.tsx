@@ -21,6 +21,7 @@ import {
 const hookState = vi.hoisted(() => ({
   areTriggersRunning: true,
   listeners: new Map<string, (message: { payload: unknown }) => void>(),
+  subscribedTriggerIds: new Set<string>(),
   triggers: [] as JenaResolvedTrigger[],
 }))
 
@@ -38,7 +39,37 @@ vi.mock('../../runtime/TriggerRuntime', () => ({
 
 vi.mock('../model/UserTriggerManager', () => ({
   useTriggerManager: () => ({
+    isTriggerEnabledForCharacter: (
+      triggerId: string,
+      character: { characterName: string; serverName: string },
+    ) => {
+      return hookState.triggers.some((resolvedTrigger) => {
+        return (
+          resolvedTrigger.trigger.id === triggerId &&
+          resolvedTrigger.enabledFor.some((enabledCharacter) =>
+            isSameCharacter(enabledCharacter, character),
+          )
+        )
+      })
+    },
     triggers: hookState.triggers,
+  }),
+}))
+
+vi.mock('../model/SubscribedTriggerManager', () => ({
+  useSubscribedTriggerManager: () => ({
+    isTriggerEnabledForCharacter: (
+      triggerId: string,
+      character: { characterName: string; serverName: string },
+    ) => {
+      return (
+        hookState.subscribedTriggerIds.has(triggerId) &&
+        isSameCharacter(character, {
+          characterName: 'Mesozoic',
+          serverName: 'Bristlebane',
+        })
+      )
+    },
   }),
 }))
 
@@ -67,6 +98,7 @@ describe('useTriggerAlerts', () => {
   beforeEach(() => {
     hookState.areTriggersRunning = true
     hookState.listeners.clear()
+    hookState.subscribedTriggerIds = new Set()
     hookState.triggers = [resolvedTrigger]
     vi.clearAllMocks()
   })
@@ -107,6 +139,25 @@ describe('useTriggerAlerts', () => {
     emit('alert.trigger-matched', createTriggerAlert())
 
     expect(callback).not.toHaveBeenCalled()
+  })
+
+  it('passes through subscribed trigger matches when the trigger is subscribed and enabled for the character', () => {
+    const callback = vi.fn()
+    const alert = createTriggerAlert({
+      characterName: 'mesozoic',
+      serverName: 'BRISTLEBANE',
+    })
+    hookState.triggers = []
+    hookState.subscribedTriggerIds.add(testTrigger.id)
+
+    renderHook(() => useOnTriggerMatch(callback))
+    emit('alert.trigger-matched', alert)
+
+    expect(callback).toHaveBeenCalledTimes(1)
+    expect(callback).toHaveBeenCalledWith({
+      alert,
+      trigger: testTrigger,
+    })
   })
 
   it('drops normal trigger matches when the trigger is not enabled for the character', () => {
@@ -164,6 +215,18 @@ function emit(destination: string, payload: unknown) {
   }
 
   listener({ payload })
+}
+
+function isSameCharacter(
+  left: { characterName: string; serverName: string },
+  right: { characterName: string; serverName: string },
+) {
+  return (
+    left.characterName.trim().toLocaleLowerCase() ===
+      right.characterName.trim().toLocaleLowerCase() &&
+    left.serverName.trim().toLocaleLowerCase() ===
+      right.serverName.trim().toLocaleLowerCase()
+  )
 }
 
 function createTriggerAlert(

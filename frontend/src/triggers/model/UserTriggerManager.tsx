@@ -50,6 +50,10 @@ export interface TriggerManagerApi {
   collapsedGroupIds: Set<string>
   deleteTrigger: (triggerId: JenaTriggerId) => Promise<JenaUserTriggerUpdate>
   deleteTriggers: (triggerIds: JenaTriggerId[]) => Promise<JenaUserTriggerUpdate>
+  isTriggerEnabledForCharacter: (
+    triggerId: JenaTriggerId,
+    character: JenaCharacterServer,
+  ) => boolean
   reconcileKnownGroupIds: (groupIds: string[]) => void
   setGroupCollapsed: (groupId: string, collapsed: boolean) => void
   setTriggerFlags: (
@@ -120,6 +124,22 @@ export function UserTriggerManagerProvider({
   const publishSnapshot = useCallback(() => {
     setTriggers(getResolvedSnapshot(recordsRef.current, triggersByIdRef.current))
   }, [])
+
+  const isTriggerEnabledForCharacter = useCallback(
+    (triggerId: JenaTriggerId, character: JenaCharacterServer) => {
+      const record = recordsRef.current.get(triggerId)
+      if (!record) {
+        return false
+      }
+
+      const characterKey = getJenaCharacterServerKey(character)
+      return record.enabledFor.some(
+        (enabledCharacter) =>
+          getJenaCharacterServerKey(enabledCharacter) === characterKey,
+      )
+    },
+    [],
+  )
 
   const persistTreeViewState = useCallback((groupIds: Set<string>) => {
     void writeTriggerTreeViewState({
@@ -846,6 +866,7 @@ export function UserTriggerManagerProvider({
         collapsedGroupIds,
         deleteTrigger,
         deleteTriggers,
+        isTriggerEnabledForCharacter,
         reconcileKnownGroupIds,
         setGroupCollapsed,
         setTriggerFlags,

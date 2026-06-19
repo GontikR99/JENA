@@ -4,17 +4,15 @@ import type {
   TriggerEarlyEnderMatchedMessage,
   TriggerStopRequestedMessage,
 } from '../../shared/messages'
-import {
-  isJenaTriggerEnabledForCharacter,
-  type JenaResolvedTrigger,
-} from '../../shared/triggers'
+import type { JenaResolvedTrigger } from '../../shared/triggers'
 import { useListen } from '../../shared/messageBrokerHooks'
 import { useTriggerRuntime } from '../../runtime/TriggerRuntime'
+import { useSubscribedTriggerManager } from '../model/SubscribedTriggerManager'
 import { useTriggerManager } from '../model/UserTriggerManager'
 
 export interface TriggerMatchEvent {
   alert: TriggerAlertMatchedMessage
-  resolvedTrigger: JenaResolvedTrigger
+  resolvedTrigger?: JenaResolvedTrigger
   trigger: TriggerAlertMatchedMessage['trigger']
 }
 
@@ -31,7 +29,13 @@ export function useOnTriggerMatch(
   callback: (event: TriggerMatchEvent) => void,
 ) {
   const { areTriggersRunning } = useTriggerRuntime()
-  const { triggers } = useTriggerManager()
+  const {
+    isTriggerEnabledForCharacter: isUserTriggerEnabledForCharacter,
+    triggers,
+  } = useTriggerManager()
+  const {
+    isTriggerEnabledForCharacter: isSubscribedTriggerEnabledForCharacter,
+  } = useSubscribedTriggerManager()
   const triggersById = useMemo(() => {
     return new Map(
       triggers.map((resolvedTrigger) => [
@@ -48,27 +52,23 @@ export function useOnTriggerMatch(
 
     const alert = message.payload as TriggerAlertMatchedMessage
     const resolvedTrigger = triggersById.get(alert.trigger.id)
-
-    // TODO: Check SubscribedTriggerStore records here once broadcast/subscribed
-    // trigger alerts can arrive over the network.
-    if (!resolvedTrigger) {
-      return
+    const character = {
+      characterName: alert.characterName,
+      serverName: alert.serverName,
     }
 
     if (
-      !isJenaTriggerEnabledForCharacter(resolvedTrigger, {
-        characterName: alert.characterName,
-        serverName: alert.serverName,
-      })
+      !isUserTriggerEnabledForCharacter(alert.trigger.id, character) &&
+      !isSubscribedTriggerEnabledForCharacter(alert.trigger.id, character)
     ) {
       return
     }
 
-    callback({
+    callback(withoutUndefinedValues({
       alert,
       resolvedTrigger,
       trigger: alert.trigger,
-    })
+    }))
   })
 }
 
@@ -91,4 +91,12 @@ export function useOnTriggerStop(callback: (event: TriggerStopEvent) => void) {
       alert: message.payload as TriggerStopRequestedMessage,
     })
   })
+}
+
+function withoutUndefinedValues<TValue extends Record<string, unknown>>(
+  value: TValue,
+) {
+  return Object.fromEntries(
+    Object.entries(value).filter(([, entryValue]) => entryValue !== undefined),
+  ) as TValue
 }
