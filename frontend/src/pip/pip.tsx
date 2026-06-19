@@ -3,6 +3,7 @@ import type {
   JenaTriggerTimer,
   JenaTriggerTimerType,
 } from '../shared/triggers'
+import jenaBrandLockupLargeUrl from '../assets/jena-brand-lockup-large.webp'
 import {
   useOnTimerEarlyEnder,
   useOnTriggerStop,
@@ -126,6 +127,20 @@ export function Pip() {
     <main className="pip-view">
       <TriggerMatchTimerLauncher onMatch={handleTimerMatch} />
       <TriggerMatchTextLauncher onMatch={handleTextMatch} />
+
+      <div aria-hidden="true" className="pip-watermark-layer">
+        <div className="pip-watermark-label pip-watermark-label-top">
+          TIMERS
+        </div>
+        <img
+          alt=""
+          className="pip-watermark-lockup"
+          src={jenaBrandLockupLargeUrl}
+        />
+        <div className="pip-watermark-label pip-watermark-label-bottom">
+          ALERT
+        </div>
+      </div>
 
       <section aria-label="Timers" className="pip-timer-stack">
         {timers.map((timer) => (
