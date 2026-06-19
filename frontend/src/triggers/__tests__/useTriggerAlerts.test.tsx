@@ -25,7 +25,14 @@ import {
 const hookState = vi.hoisted(() => ({
   areTriggersRunning: true,
   includeCharacterNameForTriggerMatches: 'never',
+  lastStartedAtMs: null as number | null,
   listeners: new Map<string, (message: { payload: unknown }) => void>(),
+  localCharacters: [] as Array<{
+    active: boolean
+    characterName: string
+    serverName: string
+    zone: string
+  }>,
   subscribedTriggerIds: new Set<string>(),
   triggers: [] as JenaResolvedTrigger[],
 }))
@@ -39,7 +46,12 @@ vi.mock('../../shared/messageBrokerHooks', () => ({
 vi.mock('../../runtime/TriggerRuntime', () => ({
   useTriggerRuntime: () => ({
     areTriggersRunning: hookState.areTriggersRunning,
+    lastStartedAtMs: hookState.lastStartedAtMs,
   }),
+}))
+
+vi.mock('../../characters/LocalCharactersProvider', () => ({
+  useLocalCharacters: () => hookState.localCharacters,
 }))
 
 vi.mock('../../settings/settingsContext', () => ({
@@ -106,7 +118,20 @@ vi.mock('../model/UserTriggerManager', () => ({
 
 vi.mock('../model/SubscribedTriggerManager', () => ({
   useSubscribedTriggerManager: () => ({
-    getTimerEarlyEnderBroadcastRegistrations: () => [],
+    getTimerEarlyEnderBroadcastRegistrations: (triggerId: string) => {
+      if (!hookState.subscribedTriggerIds.has(triggerId)) {
+        return []
+      }
+
+      return [
+        {
+          broadcastMode: 'subscribers',
+          enabled: true,
+          source: 'subscription',
+          subscriptionId: 'test-subscription',
+        },
+      ]
+    },
     getTriggerAlertRegistrations: (
       triggerId: string,
       character: { characterName: string; serverName: string },
@@ -129,6 +154,26 @@ vi.mock('../model/SubscribedTriggerManager', () => ({
           subscriptionId: 'test-subscription',
         },
       ]
+    },
+    hasSubscriptionTrigger: (subscriptionId: string, triggerId: string) => {
+      return (
+        subscriptionId === 'test-subscription' &&
+        hookState.subscribedTriggerIds.has(triggerId)
+      )
+    },
+    isSubscriptionTriggerEnabledForCharacter: (
+      subscriptionId: string,
+      triggerId: string,
+      character: { characterName: string; serverName: string },
+    ) => {
+      return (
+        subscriptionId === 'test-subscription' &&
+        hookState.subscribedTriggerIds.has(triggerId) &&
+        isSameCharacter(character, {
+          characterName: 'Mesozoic',
+          serverName: 'Bristlebane',
+        })
+      )
     },
     isTriggerEnabledForCharacter: (
       triggerId: string,
@@ -170,7 +215,9 @@ describe('useTriggerAlerts', () => {
   beforeEach(() => {
     hookState.areTriggersRunning = true
     hookState.includeCharacterNameForTriggerMatches = 'never'
+    hookState.lastStartedAtMs = null
     hookState.listeners.clear()
+    hookState.localCharacters = []
     hookState.subscribedTriggerIds = new Set()
     hookState.triggers = [resolvedTrigger]
     vi.clearAllMocks()
@@ -361,6 +408,137 @@ describe('useTriggerAlerts', () => {
     expect(event.alert.displayText).toBe('Mesozoic Display alert')
     expect(event.alert.speechText).toBe('Mesozoic Speech alert')
     expect(event.alert.timerName).toBe('Mesozoic Timer alert')
+  })
+
+  it('accepts subscription broadcasts when an enabled local character is active', () => {
+    const callback = vi.fn()
+    const alert = createTriggerAlert({
+      characterName: 'Jephine',
+      serverName: 'Bristlebane',
+    })
+    hookState.triggers = []
+    hookState.subscribedTriggerIds.add(testTrigger.id)
+    hookState.localCharacters = [
+      {
+        active: true,
+        characterName: 'Mesozoic',
+        serverName: 'Bristlebane',
+        zone: 'Guild Lobby',
+      },
+    ]
+
+    renderHook(() => useOnTriggerMatch(callback), { wrapper })
+    emit('alert.broadcast', {
+      alert,
+      eventId: 'subscription-broadcast',
+      kind: 'triggerMatched',
+      subscriptionId: 'test-subscription',
+    })
+
+    expect(callback).toHaveBeenCalledTimes(1)
+    expect(callback).toHaveBeenCalledWith(expect.objectContaining({
+      alert,
+      eventId: 'subscription-broadcast',
+      origin: 'broadcast',
+      trigger: testTrigger,
+    }))
+  })
+
+  it('accepts subscription broadcasts for inactive enabled characters shortly after triggers started', () => {
+    const callback = vi.fn()
+    hookState.triggers = []
+    hookState.subscribedTriggerIds.add(testTrigger.id)
+    hookState.lastStartedAtMs = Date.now() - 1_000
+    hookState.localCharacters = [
+      {
+        active: false,
+        characterName: 'Mesozoic',
+        serverName: 'Bristlebane',
+        zone: 'Guild Lobby',
+      },
+    ]
+
+    renderHook(() => useOnTriggerMatch(callback), { wrapper })
+    emit('alert.broadcast', {
+      alert: createTriggerAlert({
+        characterName: 'Jephine',
+        serverName: 'Bristlebane',
+      }),
+      eventId: 'recent-start-broadcast',
+      kind: 'triggerMatched',
+      subscriptionId: 'test-subscription',
+    })
+
+    expect(callback).toHaveBeenCalledTimes(1)
+  })
+
+  it('drops subscription broadcasts when no enabled local character is active or recently started', () => {
+    const callback = vi.fn()
+    hookState.triggers = []
+    hookState.subscribedTriggerIds.add(testTrigger.id)
+    hookState.localCharacters = [
+      {
+        active: false,
+        characterName: 'Mesozoic',
+        serverName: 'Bristlebane',
+        zone: 'Guild Lobby',
+      },
+    ]
+
+    renderHook(() => useOnTriggerMatch(callback), { wrapper })
+    emit('alert.broadcast', {
+      alert: createTriggerAlert({
+        characterName: 'Jephine',
+        serverName: 'Bristlebane',
+      }),
+      eventId: 'inactive-subscription-broadcast',
+      kind: 'triggerMatched',
+      subscriptionId: 'test-subscription',
+    })
+
+    expect(callback).not.toHaveBeenCalled()
+  })
+
+  it('does not mark rejected subscription broadcasts as seen', () => {
+    const callback = vi.fn()
+    hookState.triggers = []
+    hookState.subscribedTriggerIds.add(testTrigger.id)
+
+    renderHook(() => useOnTriggerMatch(callback), { wrapper })
+    emit('alert.broadcast', {
+      alert: createTriggerAlert({
+        characterName: 'Jephine',
+        serverName: 'Bristlebane',
+      }),
+      eventId: 'replayed-after-reject',
+      kind: 'triggerMatched',
+      subscriptionId: 'test-subscription',
+    })
+    emit('alert.broadcast', {
+      alert: createTriggerAlert({
+        characterName: 'Jephine',
+        serverName: 'Bristlebane',
+      }),
+      eventId: 'replayed-after-reject',
+      kind: 'triggerMatched',
+    })
+
+    expect(callback).toHaveBeenCalledTimes(1)
+  })
+
+  it('drops subscription timer early enders for unknown subscription triggers', () => {
+    const callback = vi.fn()
+    hookState.triggers = []
+
+    renderHook(() => useOnTimerEarlyEnder(callback), { wrapper })
+    emit('alert.broadcast', {
+      alert: createEarlyEnderAlert(),
+      eventId: 'unknown-subscription-early-ender',
+      kind: 'timerEarlyEnded',
+      subscriptionId: 'test-subscription',
+    })
+
+    expect(callback).not.toHaveBeenCalled()
   })
 
   it('drops normal trigger matches when the trigger is not enabled for the character', () => {

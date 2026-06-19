@@ -43,9 +43,15 @@ type alertWithTrigger struct {
 }
 
 type reflectedAlert struct {
-	Alert   json.RawMessage `json:"alert"`
-	EventID string          `json:"eventId"`
-	Kind    string          `json:"kind"`
+	Alert          json.RawMessage `json:"alert"`
+	EventID        string          `json:"eventId"`
+	Kind           string          `json:"kind"`
+	SubscriptionID string          `json:"subscriptionId,omitempty"`
+}
+
+type broadcastDelivery struct {
+	destination    string
+	subscriptionID string
 }
 
 func New(
@@ -99,33 +105,34 @@ func (service *Service) reflectAlert(ctx context.Context, metadata eventbus.RPCM
 		return nil, errors.New("alert trigger id is required")
 	}
 
-	destinations := make(map[string]struct{})
+	deliveries := make(map[string]broadcastDelivery)
 	if request.UserBroadcastMode != nil {
-		service.addUserBroadcastDestinations(ctx, metadata, alert.Trigger.ID, destinations)
+		service.addUserBroadcastDeliveries(ctx, metadata, alert.Trigger.ID, deliveries)
 	}
 	if len(request.SubscriptionIDs) > 0 {
-		if err := service.addSubscriptionBroadcastDestinations(ctx, request.SubscriptionIDs, alert.Trigger.ID, destinations); err != nil {
+		if err := service.addSubscriptionBroadcastDeliveries(ctx, request.SubscriptionIDs, alert.Trigger.ID, deliveries); err != nil {
 			return nil, err
 		}
 	}
 
-	if len(destinations) == 0 {
+	if len(deliveries) == 0 {
 		return struct{}{}, nil
 	}
 
-	payload, err := json.Marshal(reflectedAlert{
-		Alert:   request.Alert,
-		EventID: request.EventID,
-		Kind:    request.Kind,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("encode reflected alert: %w", err)
-	}
-
 	source := endpoint
-	for destination := range destinations {
+	for _, delivery := range deliveries {
+		payload, err := json.Marshal(reflectedAlert{
+			Alert:          request.Alert,
+			EventID:        request.EventID,
+			Kind:           request.Kind,
+			SubscriptionID: delivery.subscriptionID,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("encode reflected alert: %w", err)
+		}
+
 		_ = service.bus.Send(ctx, eventbus.Envelope{
-			Destination: destination,
+			Destination: delivery.destination,
 			Payload:     payload,
 			Source:      &source,
 		})
@@ -137,17 +144,17 @@ func (service *Service) reflectAlert(ctx context.Context, metadata eventbus.RPCM
 		logging.String("eventId", request.EventID),
 		logging.String("kind", request.Kind),
 		logging.String("triggerId", string(alert.Trigger.ID)),
-		logging.Int("destinationCount", len(destinations)),
+		logging.Int("destinationCount", len(deliveries)),
 	)
 
 	return struct{}{}, nil
 }
 
-func (service *Service) addUserBroadcastDestinations(
+func (service *Service) addUserBroadcastDeliveries(
 	ctx context.Context,
 	metadata eventbus.RPCMetadata,
 	triggerID model.TriggerID,
-	destinations map[string]struct{},
+	deliveries map[string]broadcastDelivery,
 ) {
 	userID, err := service.authenticatedUserID(ctx, metadata)
 	if err != nil || userID == "" {
@@ -168,20 +175,39 @@ func (service *Service) addUserBroadcastDestinations(
 
 	switch broadcastMode {
 	case model.BroadcastModeBoxes:
-		destinations["user."+userID+".alert.broadcast"] = struct{}{}
+		addBroadcastDelivery(deliveries, broadcastDelivery{
+			destination: "user." + userID + ".alert.broadcast",
+		})
 	case model.BroadcastModeSubscribers:
-		destinations["user."+userID+".alert.broadcast"] = struct{}{}
+		addBroadcastDelivery(deliveries, broadcastDelivery{
+			destination: "user." + userID + ".alert.broadcast",
+		})
 		if publish {
-			destinations["sub."+userID+".alert.broadcast"] = struct{}{}
+			subscriptionID, found, err := service.subscriptionIDForPublisher(ctx, userID)
+			if err != nil {
+				service.logger.Debug(
+					ctx,
+					"user broadcast subscription lookup failed",
+					logging.String("userId", userID),
+					logging.Error(err),
+				)
+				return
+			}
+			if found {
+				addBroadcastDelivery(deliveries, broadcastDelivery{
+					destination:    "sub." + userID + ".alert.broadcast",
+					subscriptionID: subscriptionID,
+				})
+			}
 		}
 	}
 }
 
-func (service *Service) addSubscriptionBroadcastDestinations(
+func (service *Service) addSubscriptionBroadcastDeliveries(
 	ctx context.Context,
 	subscriptionIDs []string,
 	triggerID model.TriggerID,
-	destinations map[string]struct{},
+	deliveries map[string]broadcastDelivery,
 ) error {
 	seen := make(map[string]struct{}, len(subscriptionIDs))
 	for _, subscriptionID := range subscriptionIDs {
@@ -202,8 +228,13 @@ func (service *Service) addSubscriptionBroadcastDestinations(
 			continue
 		}
 
-		destinations["user."+publisherUserID+".alert.broadcast"] = struct{}{}
-		destinations["sub."+publisherUserID+".alert.broadcast"] = struct{}{}
+		addBroadcastDelivery(deliveries, broadcastDelivery{
+			destination: "user." + publisherUserID + ".alert.broadcast",
+		})
+		addBroadcastDelivery(deliveries, broadcastDelivery{
+			destination:    "sub." + publisherUserID + ".alert.broadcast",
+			subscriptionID: normalized,
+		})
 	}
 
 	return nil
@@ -275,6 +306,34 @@ func (service *Service) publisherForSubscriberBroadcast(
 	}
 
 	return publisherUserID, true, nil
+}
+
+func (service *Service) subscriptionIDForPublisher(
+	ctx context.Context,
+	userID string,
+) (string, bool, error) {
+	var subscriptionID string
+	err := service.db.QueryRowContext(
+		ctx,
+		"SELECT subscription_id FROM publisher_subscriptions WHERE user_id = ?",
+		userID,
+	).Scan(&subscriptionID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, fmt.Errorf("lookup publisher subscription id: %w", err)
+	}
+
+	return subscriptionID, true, nil
+}
+
+func addBroadcastDelivery(
+	deliveries map[string]broadcastDelivery,
+	delivery broadcastDelivery,
+) {
+	key := delivery.destination + "\x00" + delivery.subscriptionID
+	deliveries[key] = delivery
 }
 
 func normalizeSubscriptionID(value string) (string, bool) {

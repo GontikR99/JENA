@@ -19,6 +19,7 @@ import type {
 
 const hookState = vi.hoisted(() => ({
   areTriggersRunning: true,
+  lastStartedAtMs: null as number | null,
   useBroadcasterSpeechProfile: true,
   listeners: new Map<string, (message: { payload: unknown }) => void>(),
   stopCallback: null as ((event: TriggerStopEvent) => void) | null,
@@ -35,6 +36,7 @@ vi.mock('../../shared/messageBrokerHooks', () => ({
 vi.mock('../../runtime/TriggerRuntime', () => ({
   useTriggerRuntime: () => ({
     areTriggersRunning: hookState.areTriggersRunning,
+    lastStartedAtMs: hookState.lastStartedAtMs,
   }),
 }))
 

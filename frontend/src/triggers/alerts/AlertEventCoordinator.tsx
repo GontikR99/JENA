@@ -13,6 +13,7 @@ import type {
 } from '../../shared/messages'
 import { createMessageId } from '../../shared/messages'
 import type { JenaResolvedTrigger } from '../../shared/triggers'
+import { useLocalCharacters } from '../../characters/LocalCharactersProvider'
 import { useListen } from '../../shared/messageBrokerHooks'
 import { useTriggerRuntime } from '../../runtime/TriggerRuntime'
 import {
@@ -25,6 +26,7 @@ import {
 } from '../model/UserTriggerManager'
 
 const broadcastDedupeTtlMs = 60_000
+const recentTriggerStartGraceMs = 5 * 60_000
 
 export type AlertEventOrigin = 'broadcast' | 'local'
 
@@ -66,7 +68,8 @@ export function AlertEventCoordinatorProvider({
 }: {
   children: ReactNode
 }) {
-  const { areTriggersRunning } = useTriggerRuntime()
+  const { areTriggersRunning, lastStartedAtMs } = useTriggerRuntime()
+  const localCharacters = useLocalCharacters()
   const {
     getTimerEarlyEnderBroadcastRegistration,
     getTriggerAlertRegistration,
@@ -75,6 +78,8 @@ export function AlertEventCoordinatorProvider({
   const {
     getTimerEarlyEnderBroadcastRegistrations,
     getTriggerAlertRegistrations,
+    hasSubscriptionTrigger,
+    isSubscriptionTriggerEnabledForCharacter,
   } = useSubscribedTriggerManager()
   const dedupeRef = useRef(new Map<string, number>())
   const timerEarlyEnderCallbacksRef = useRef(
@@ -191,16 +196,33 @@ export function AlertEventCoordinatorProvider({
 
   const handleBroadcastAlert = useCallback(
     (broadcast: BroadcastAlertMessage) => {
-      if (!markEventSeen(broadcast.eventId)) {
-        return
-      }
-
       if (broadcast.kind === 'triggerMatched') {
         if (!areTriggersRunning) {
           return
         }
 
         const alert = broadcast.alert as TriggerAlertMatchedMessage
+        if (
+          broadcast.subscriptionId &&
+          !localCharacters.some((character) => {
+            return (
+              (character.active ||
+                isWithinRecentTriggerStartGrace(lastStartedAtMs)) &&
+              isSubscriptionTriggerEnabledForCharacter(
+                broadcast.subscriptionId ?? '',
+                alert.trigger.id,
+                character,
+              )
+            )
+          })
+        ) {
+          return
+        }
+
+        if (!markEventSeen(broadcast.eventId)) {
+          return
+        }
+
         emitTriggerMatch({
           alert,
           eventId: broadcast.eventId,
@@ -212,6 +234,17 @@ export function AlertEventCoordinatorProvider({
       }
 
       const alert = broadcast.alert as TriggerEarlyEnderMatchedMessage
+      if (
+        broadcast.subscriptionId &&
+        !hasSubscriptionTrigger(broadcast.subscriptionId, alert.trigger.id)
+      ) {
+        return
+      }
+
+      if (!markEventSeen(broadcast.eventId)) {
+        return
+      }
+
       emitTimerEarlyEnder({
         alert,
         eventId: broadcast.eventId,
@@ -220,7 +253,16 @@ export function AlertEventCoordinatorProvider({
         trigger: alert.trigger,
       })
     },
-    [areTriggersRunning, emitTimerEarlyEnder, emitTriggerMatch, markEventSeen],
+    [
+      areTriggersRunning,
+      emitTimerEarlyEnder,
+      emitTriggerMatch,
+      hasSubscriptionTrigger,
+      isSubscriptionTriggerEnabledForCharacter,
+      lastStartedAtMs,
+      localCharacters,
+      markEventSeen,
+    ],
   )
 
   useListen('alert.trigger-matched', (message) => {
@@ -291,4 +333,11 @@ function withoutUndefinedValues<TValue extends Record<string, unknown>>(
   return Object.fromEntries(
     Object.entries(value).filter(([, entryValue]) => entryValue !== undefined),
   ) as TValue
+}
+
+function isWithinRecentTriggerStartGrace(lastStartedAtMs: number | null) {
+  return (
+    lastStartedAtMs !== null &&
+    Date.now() - lastStartedAtMs <= recentTriggerStartGraceMs
+  )
 }

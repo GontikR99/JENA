@@ -109,6 +109,7 @@ export interface BroadcastAlertMessage {
   alert: TriggerAlertMatchedMessage | TriggerEarlyEnderMatchedMessage
   eventId: string
   kind: BroadcastAlertKind
+  subscriptionId?: string
 }
 
 export interface TriggerStopRequestedMessage {

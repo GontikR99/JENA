@@ -23,6 +23,7 @@ interface TriggerRuntimeContextValue {
   canUseTriggerRuntime: boolean
   isStartingTriggers: boolean
   isStoppingTriggers: boolean
+  lastStartedAtMs: number | null
   startTriggers: () => Promise<void>
   stopTriggers: () => void
 }
@@ -47,6 +48,7 @@ export function TriggerRuntimeProvider({
   children: ReactNode
 }) {
   const [status, setStatus] = useState<TriggerRuntimeStatus>('stopped')
+  const [lastStartedAtMs, setLastStartedAtMs] = useState<number | null>(null)
   const [pipContainer, setPipContainer] = useState<HTMLElement | null>(null)
   const pipHostRef = useRef<DocumentPipHost | null>(null)
 
@@ -74,6 +76,7 @@ export function TriggerRuntimeProvider({
 
       pipHostRef.current = host
       setPipContainer(host.container)
+      setLastStartedAtMs(Date.now())
       setStatus('running')
     } catch (error) {
       pipHostRef.current = null
@@ -106,10 +109,11 @@ export function TriggerRuntimeProvider({
       canUseTriggerRuntime: isDocumentPipSupported(),
       isStartingTriggers: status === 'starting',
       isStoppingTriggers: status === 'stopping',
+      lastStartedAtMs,
       startTriggers,
       stopTriggers,
     }),
-    [startTriggers, status, stopTriggers],
+    [lastStartedAtMs, startTriggers, status, stopTriggers],
   )
   const internalValue = useMemo<TriggerRuntimeInternalContextValue>(
     () => ({

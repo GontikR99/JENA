@@ -67,6 +67,15 @@ export interface SubscribedTriggerManagerApi
     triggerId: JenaTriggerId,
     character: JenaCharacterServer,
   ) => SubscribedTriggerAlertRegistration[]
+  hasSubscriptionTrigger: (
+    subscriptionId: string,
+    triggerId: JenaTriggerId,
+  ) => boolean
+  isSubscriptionTriggerEnabledForCharacter: (
+    subscriptionId: string,
+    triggerId: JenaTriggerId,
+    character: JenaCharacterServer,
+  ) => boolean
   isTriggerEnabledForCharacter: (
     triggerId: JenaTriggerId,
     character: JenaCharacterServer,
@@ -188,6 +197,51 @@ export function SubscribedTriggerManagerProvider({
       )
     },
     [getTriggerAlertRegistrations],
+  )
+
+  const hasSubscriptionTrigger = useCallback(
+    (subscriptionId: string, triggerId: JenaTriggerId) => {
+      const normalizedSubscriptionId = normalizeSubscriptionID(subscriptionId)
+      if (!normalizedSubscriptionId) {
+        return false
+      }
+
+      return subscriptionHasTrigger(
+        normalizedSubscriptionId,
+        triggerId,
+        snapshotsRef.current,
+      )
+    },
+    [],
+  )
+
+  const isSubscriptionTriggerEnabledForCharacter = useCallback(
+    (
+      subscriptionId: string,
+      triggerId: JenaTriggerId,
+      character: JenaCharacterServer,
+    ) => {
+      const normalizedSubscriptionId = normalizeSubscriptionID(subscriptionId)
+      if (
+        !normalizedSubscriptionId ||
+        !subscriptionHasTrigger(
+          normalizedSubscriptionId,
+          triggerId,
+          snapshotsRef.current,
+        )
+      ) {
+        return false
+      }
+
+      return isSubscribedTriggerEnabled(
+        normalizedSubscriptionId,
+        triggerId.trim().toLocaleLowerCase(),
+        character,
+        defaultEnablementRef.current,
+        triggerEnablementRef.current,
+      )
+    },
+    [],
   )
 
   const getTimerEarlyEnderBroadcastRegistrations = useCallback(
@@ -543,6 +597,8 @@ export function SubscribedTriggerManagerProvider({
       addSubscription,
       getTimerEarlyEnderBroadcastRegistrations,
       getTriggerAlertRegistrations,
+      hasSubscriptionTrigger,
+      isSubscriptionTriggerEnabledForCharacter,
       isTriggerEnabledForCharacter,
       removeSubscription,
       setSubscribedTriggerEnablement,
@@ -552,6 +608,8 @@ export function SubscribedTriggerManagerProvider({
       addSubscription,
       getTimerEarlyEnderBroadcastRegistrations,
       getTriggerAlertRegistrations,
+      hasSubscriptionTrigger,
+      isSubscriptionTriggerEnabledForCharacter,
       isTriggerEnabledForCharacter,
       removeSubscription,
       setSubscribedTriggerEnablement,
@@ -711,6 +769,23 @@ function isSubscribedTriggerEnabled(
   })
 
   return defaultRecord?.mode === 'enabled'
+}
+
+function subscriptionHasTrigger(
+  subscriptionId: string,
+  triggerId: JenaTriggerId,
+  snapshots: Map<string, SubscribedTriggerSnapshot>,
+) {
+  const normalizedTriggerId = triggerId.trim().toLocaleLowerCase()
+
+  return (
+    snapshots
+      .get(subscriptionId)
+      ?.records.some(
+        (record) =>
+          record.triggerId.trim().toLocaleLowerCase() === normalizedTriggerId,
+      ) ?? false
+  )
 }
 
 function compareDefaultEnablementRecords(
