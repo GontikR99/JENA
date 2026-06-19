@@ -61,6 +61,40 @@ describe('alert pattern compiler', () => {
     expect(createAlertMatchContext(compiled, match)).toBeNull()
   })
 
+  it('substitutes the output-only zone variable', () => {
+    const compiled = compileAlertMatcher(
+      {
+        isRegex: true,
+        text: '^Boss points at {C}$',
+      },
+      'test-session',
+    )
+    const match = runPattern(compiled, 'Boss points at Suuloti', 'Suuloti')
+    const context = createAlertMatchContext(compiled, match, {
+      zoneName: 'Guild Lobby',
+    })
+
+    expect(substituteAlertTemplate('{C} in {Z}', context!)).toBe(
+      'Suuloti in Guild Lobby',
+    )
+  })
+
+  it('uses an unknown-zone placeholder when the zone is not available', () => {
+    const compiled = compileAlertMatcher(
+      {
+        isRegex: true,
+        text: '^Boss points at {C}$',
+      },
+      'test-session',
+    )
+    const match = runPattern(compiled, 'Boss points at Suuloti', 'Suuloti')
+    const context = createAlertMatchContext(compiled, match)
+
+    expect(substituteAlertTemplate('{C} in {Z}', context!)).toBe(
+      'Suuloti in unknown zone',
+    )
+  })
+
   it('validates numeric bounds after matching', () => {
     const compiled = compileAlertMatcher(
       {

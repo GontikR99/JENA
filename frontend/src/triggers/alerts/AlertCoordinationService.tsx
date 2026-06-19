@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react'
 import type {
+  CharacterPresence,
+  CharacterPresenceCharactersMessage,
   RegexMatchFoundMessage,
   TriggerSpeechProfile,
   TriggerAlertMatchedMessage,
@@ -16,6 +18,7 @@ import {
   createAlertMatchContext,
   createAlertPatternSessionId,
   substituteAlertTemplate,
+  unknownZoneName,
   type AlertCompiledPattern,
   type AlertMatchContext,
 } from './alertPatternCompiler'
@@ -39,6 +42,7 @@ export function AlertCoordinationService() {
   const patternFlushTimerRef =
     useRef<ReturnType<typeof globalThis.setTimeout> | null>(null)
   const registeredPatternsRef = useRef(new Set<string>())
+  const localCharactersRef = useRef<CharacterPresence[]>([])
   const triggerCountersRef = useRef(new Map<string, number>())
 
   const flushPendingPatterns = useCallback(() => {
@@ -117,6 +121,7 @@ export function AlertCoordinationService() {
           counter,
           repeated: counter,
           timerWarnTimeValue: binding.trigger.timer?.warningSeconds,
+          zoneName: getCharacterZoneName(localCharactersRef.current, match),
         })
 
         if (!context) {
@@ -155,9 +160,34 @@ export function AlertCoordinationService() {
 
     payload.triggers.forEach(registerTrigger)
   })
+  useListen('character-presence.characters', (message) => {
+    const payload = message.payload as CharacterPresenceCharactersMessage
+    localCharactersRef.current = payload.characters
+  })
   useListen('matcher.match-found', (message) => {
     handleMatchFound(message.payload as RegexMatchFoundMessage)
   })
+
+  useEffect(() => {
+    let cancelled = false
+
+    void call('worker.character-presence', 'getCharacters', {})
+      .then(({ characters }) => {
+        if (!cancelled) {
+          localCharactersRef.current = characters
+        }
+      })
+      .catch((error: unknown) => {
+        console.warn(
+          '[AlertCoordinationService] character presence load failed',
+          error,
+        )
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [call])
 
   useEffect(() => {
     return () => {
@@ -295,6 +325,24 @@ function getPotentialCounter(
   }
 
   return (counters.get(binding.trigger.id) ?? 0) + 1
+}
+
+function getCharacterZoneName(
+  characters: CharacterPresence[],
+  match: RegexMatchFoundMessage,
+) {
+  return (
+    characters.find((character) => {
+      return (
+        character.characterName.localeCompare(match.characterName, undefined, {
+          sensitivity: 'base',
+        }) === 0 &&
+        character.serverName.localeCompare(match.serverName, undefined, {
+          sensitivity: 'base',
+        }) === 0
+      )
+    })?.zone || unknownZoneName
+  )
 }
 
 function withoutUndefinedValues<TValue extends Record<string, unknown>>(

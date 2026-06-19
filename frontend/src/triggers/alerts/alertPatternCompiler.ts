@@ -3,6 +3,8 @@ import type { JenaTriggerMatcher } from '../../shared/triggers'
 
 export type AlertCompiledPatternKind = 'literal' | 'regex'
 
+export const unknownZoneName = 'unknown zone'
+
 export interface AlertCompiledPattern {
   captureBindings: AlertCaptureBinding[]
   characterCaptureNames: string[]
@@ -83,6 +85,7 @@ export function createAlertMatchContext(
     counter?: number
     repeated?: number
     timerWarnTimeValue?: number
+    zoneName?: string
   } = {},
 ): AlertMatchContext | null {
   if (!passesCharacterValidation(compiledPattern, match)) {
@@ -103,6 +106,7 @@ export function createAlertMatchContext(
     capturesByKey: {
       ...capturesByKey,
       C: match.characterName,
+      Z: options.zoneName ?? unknownZoneName,
     },
     counter: options.counter,
     lineText: match.text,
@@ -129,6 +133,7 @@ export function createPreviewAlertMatchContext({
   )
   const capturesByKey: Record<string, string> = {
     C: characterName,
+    Z: unknownZoneName,
   }
 
   compiledPattern.captureBindings.forEach((binding) => {

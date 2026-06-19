@@ -85,6 +85,10 @@ The shorthand `$S`, `$S1`, `$N`, and `$C` is not supported.
 `{LOGTIME}` is replaced with the time from the EverQuest log timestamp when it
 is available.
 
+`{Z}` is replaced with the current zone for the character whose log line matched
+the trigger, using JENA's local character presence. `{Z}` is output-only; it is
+not supported as trigger match syntax.
+
 `{COUNTER}` is replaced with the number of times the trigger has fired during
 the current application session.
 

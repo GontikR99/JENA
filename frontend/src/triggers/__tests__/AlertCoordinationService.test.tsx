@@ -61,7 +61,22 @@ describe('AlertCoordinationService', () => {
   beforeEach(() => {
     hookState.listeners.clear()
     hookState.rpc.mockReset()
-    hookState.rpc.mockResolvedValue({})
+    hookState.rpc.mockImplementation((endpoint: string, method: string) => {
+      if (endpoint === 'worker.character-presence' && method === 'getCharacters') {
+        return Promise.resolve({
+          characters: [
+            {
+              active: true,
+              characterName: 'Mesozoic',
+              serverName: 'Bristlebane',
+              zone: 'Guild Lobby',
+            },
+          ],
+        })
+      }
+
+      return Promise.resolve({})
+    })
     hookState.send.mockReset()
   })
 
@@ -80,7 +95,7 @@ describe('AlertCoordinationService', () => {
       expect.objectContaining({
         characterName: 'Mesozoic',
         clipboardText: 'Copy Fireball for Mesozoic',
-        displayText: 'Display Fireball',
+        displayText: 'Display Fireball in Guild Lobby',
         speechProfile: {
           pitch: 1.2,
           rate: 0.9,
@@ -118,7 +133,6 @@ describe('AlertCoordinationService', () => {
     })
     await flushPatternRegistration()
 
-    expect(hookState.rpc).toHaveBeenCalledTimes(1)
     expect(hookState.rpc).toHaveBeenCalledWith(
       'worker.matcher-service',
       'add-patterns',
@@ -160,7 +174,7 @@ function createTrigger({
       },
       display: {
         enabled: true,
-        text: 'Display ${spell}',
+        text: 'Display ${spell} in {Z}',
       },
       speech: {
         enabled: true,
@@ -207,7 +221,10 @@ function createTrigger({
 }
 
 function createMatch(): RegexMatchFoundMessage {
-  const pattern = hookState.rpc.mock.calls[0]?.[2]?.patterns?.[0]?.pattern
+  const patternRegistrationCall = hookState.rpc.mock.calls.find(([endpoint, method]) => {
+    return endpoint === 'worker.matcher-service' && method === 'add-patterns'
+  })
+  const pattern = patternRegistrationCall?.[2]?.patterns?.[0]?.pattern
   if (typeof pattern !== 'string') {
     throw new Error('Trigger pattern was not registered')
   }
