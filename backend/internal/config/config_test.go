@@ -62,6 +62,9 @@ func TestParseDefaults(t *testing.T) {
 	if config.SharePackageTTLMins != 240 {
 		t.Fatalf("unexpected SharePackageTTLMins %d", config.SharePackageTTLMins)
 	}
+	if config.SubscriptionCleanupHours != 24 {
+		t.Fatalf("unexpected SubscriptionCleanupHours %d", config.SubscriptionCleanupHours)
+	}
 	if config.WebSocketPath != "/_jena/ws" {
 		t.Fatalf("unexpected WebSocketPath %q", config.WebSocketPath)
 	}
@@ -108,6 +111,7 @@ func TestParseRejectsInvalidDatabasePoolSettings(t *testing.T) {
 		{"-auth-session-days", "0"},
 		{"-share-package-cleanup-minutes", "0"},
 		{"-share-package-ttl-minutes", "0"},
+		{"-subscription-cleanup-hours", "0"},
 	}
 
 	for _, args := range cases {

@@ -4,6 +4,7 @@ import type { CharacterPresence } from '../../shared/messages'
 import { useOnTriggerMatch } from '../alerts/useTriggerAlerts'
 import type { TriggerLogRecord } from '../model/types'
 import { CharacterPane } from './CharacterPane'
+import { SubscribedTriggersView } from './SubscribedTriggersView'
 import { TriggerLogTable } from './TriggerLogTable'
 import { UserTriggersEditor } from './UserTriggersEditor'
 import './TriggersView.css'
@@ -69,9 +70,7 @@ export function TriggersView() {
               groupResizeBehavior="preserve-relative-size"
               minSize={25}
             >
-              <div className="trigger-details-placeholder">
-                Trigger details placeholder
-              </div>
+              <SubscribedTriggersView selectedCharacter={selectedCharacter} />
             </Panel>
           </Group>
         </Panel>

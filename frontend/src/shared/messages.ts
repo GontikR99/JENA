@@ -1,5 +1,6 @@
 import type { FileSystemHandleLike } from './fileSystemAccess'
 import type {
+  JenaCharacterServer,
   JenaTrigger,
   JenaTriggerEnablementChange,
   JenaTriggerFlagChange,
@@ -122,6 +123,54 @@ export interface UserSettings {
   displayName: string
 }
 
+export interface SubscriptionTriggerRecord {
+  broadcastToSubscribers: boolean
+  triggerId: JenaTriggerId
+}
+
+export interface SubscriptionSyncRequestItem {
+  digest: string
+  id: string
+}
+
+export type SubscriptionSyncResult =
+  | {
+      digest: string
+      id: string
+      ownerDisplayName: string
+      status: 'current'
+    }
+  | {
+      digest: string
+      id: string
+      ownerDisplayName: string
+      records: SubscriptionTriggerRecord[]
+      status: 'updated'
+    }
+  | {
+      id: string
+      status: 'notFound'
+    }
+
+export type SubscriptionDefaultEnablementMode = 'disabled' | 'enabled'
+export type SubscribedTriggerEnablementMode =
+  | 'disabled'
+  | 'enabled'
+  | 'inherit'
+
+export interface SubscriptionDefaultEnablementRecord {
+  character: JenaCharacterServer
+  mode: SubscriptionDefaultEnablementMode
+  subscriptionId: string
+}
+
+export interface SubscribedTriggerEnablementRecord {
+  character: JenaCharacterServer
+  mode: Exclude<SubscribedTriggerEnablementMode, 'inherit'>
+  subscriptionId: string
+  triggerId: JenaTriggerId
+}
+
 export type AuthSessionResponse =
   | {
       status: 'anonymous'
@@ -190,6 +239,64 @@ export interface RpcEndpoints {
         creatorDisplayName: string
         expiresAt: string
         triggerIds: JenaTriggerId[]
+      }
+    }
+  }
+  'server.subscriptions': {
+    addUserSubscription: {
+      request: {
+        subscriptionId: string
+      }
+      response: Record<string, never>
+    }
+    fetchUserSubscriptions: {
+      request: Record<string, never>
+      response: {
+        defaultEnablement: SubscriptionDefaultEnablementRecord[]
+        subscriptions: string[]
+        triggerEnablement: SubscribedTriggerEnablementRecord[]
+      }
+    }
+    getPublishedSubscriptionCode: {
+      request: Record<string, never>
+      response: {
+        code: string
+        id: string
+      }
+    }
+    removeUserSubscription: {
+      request: {
+        subscriptionId: string
+      }
+      response: Record<string, never>
+    }
+    revokePublishedSubscriptionCode: {
+      request: Record<string, never>
+      response: Record<string, never>
+    }
+    setSubscribedTriggerEnablement: {
+      request: {
+        character: JenaCharacterServer
+        mode: SubscribedTriggerEnablementMode
+        subscriptionId: string
+        triggerId: JenaTriggerId
+      }
+      response: Record<string, never>
+    }
+    setSubscriptionDefaultEnablement: {
+      request: {
+        character: JenaCharacterServer
+        mode: SubscriptionDefaultEnablementMode
+        subscriptionId: string
+      }
+      response: Record<string, never>
+    }
+    syncSubscriptions: {
+      request: {
+        subscriptions: SubscriptionSyncRequestItem[]
+      }
+      response: {
+        subscriptions: SubscriptionSyncResult[]
       }
     }
   }

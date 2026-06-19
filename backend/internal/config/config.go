@@ -26,6 +26,7 @@ type Config struct {
 	LogTarget                   string
 	SharePackageCleanupMinutes  int
 	SharePackageTTLMins         int
+	SubscriptionCleanupHours    int
 	WebSocketPath               string
 }
 
@@ -60,6 +61,7 @@ func parse(args []string, output io.Writer) (Config, error) {
 	flags.StringVar(&config.LogTarget, "log-target", "console", "log output target: console, file, elasticsearch")
 	flags.IntVar(&config.SharePackageCleanupMinutes, "share-package-cleanup-minutes", 5, "share package cleanup interval in minutes")
 	flags.IntVar(&config.SharePackageTTLMins, "share-package-ttl-minutes", 240, "share package duration in minutes")
+	flags.IntVar(&config.SubscriptionCleanupHours, "subscription-cleanup-hours", 24, "subscription cleanup interval in hours")
 	flags.StringVar(&config.WebSocketPath, "websocket-path", "/_jena/ws", "event bus websocket endpoint path")
 
 	if err := flags.Parse(args); err != nil {
@@ -95,6 +97,9 @@ func parse(args []string, output io.Writer) (Config, error) {
 	}
 	if config.SharePackageTTLMins < 1 {
 		return Config{}, fmt.Errorf("share-package-ttl-minutes must be at least 1")
+	}
+	if config.SubscriptionCleanupHours < 1 {
+		return Config{}, fmt.Errorf("subscription-cleanup-hours must be at least 1")
 	}
 	if !slices.Contains([]string{"trace", "debug", "info", "warn", "warning", "error", "fatal"}, config.LogLevel) {
 		return Config{}, fmt.Errorf("log-level must be one of trace, debug, info, warn, error, fatal")

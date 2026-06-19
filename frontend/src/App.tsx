@@ -25,6 +25,7 @@ import { AlertCoordinationService } from './triggers/alerts/AlertCoordinationSer
 import { TriggerSpeechService } from './triggers/alerts/TriggerSpeechService'
 import { TriggerStopService } from './triggers/alerts/TriggerStopService'
 import { TriggerStoreProvider } from './triggers/model/TriggerStore'
+import { SubscribedTriggerManagerProvider } from './triggers/model/SubscribedTriggerManager'
 import { UserTriggerManagerProvider } from './triggers/model/UserTriggerManager'
 
 export function App() {
@@ -60,19 +61,21 @@ function AuthenticatedApp() {
       <TriggerStoreProvider>
         <AlertCoordinationService />
         <TriggerStopService />
-        <UserTriggerManagerProvider>
-          <NearbyCharactersProvider>
-            <LocalCharactersProvider>
-              <TriggerRuntimeProvider>
-                <TriggerSpeechService />
-                <TriggerShareCoordinator>
-                  <AppShell />
-                </TriggerShareCoordinator>
-                <TriggerRuntimePortal />
-              </TriggerRuntimeProvider>
-            </LocalCharactersProvider>
-          </NearbyCharactersProvider>
-        </UserTriggerManagerProvider>
+        <SubscribedTriggerManagerProvider>
+          <UserTriggerManagerProvider>
+            <NearbyCharactersProvider>
+              <LocalCharactersProvider>
+                <TriggerRuntimeProvider>
+                  <TriggerSpeechService />
+                  <TriggerShareCoordinator>
+                    <AppShell />
+                  </TriggerShareCoordinator>
+                  <TriggerRuntimePortal />
+                </TriggerRuntimeProvider>
+              </LocalCharactersProvider>
+            </NearbyCharactersProvider>
+          </UserTriggerManagerProvider>
+        </SubscribedTriggerManagerProvider>
       </TriggerStoreProvider>
     </>
   )

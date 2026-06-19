@@ -1,0 +1,68 @@
+.four-state-checkbox {
+  align-items: center;
+  background: #ffffff;
+  border: 1px solid #6b7280;
+  border-radius: 0.25rem;
+  box-sizing: border-box;
+  color: #ffffff;
+  display: inline-flex;
+  flex: 0 0 auto;
+  height: 1rem;
+  justify-content: center;
+  margin: 0;
+  padding: 0;
+  width: 1rem;
+}
+
+.four-state-checkbox:not(:disabled):hover {
+  border-color: #2563eb;
+}
+
+.four-state-checkbox:focus-visible {
+  box-shadow: 0 0 0 0.2rem rgba(13, 110, 253, 0.25);
+  outline: 0;
+}
+
+.four-state-checkbox:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.four-state-checkbox[data-state='enabled'],
+.four-state-checkbox[data-state='mixed'] {
+  background: #0d6efd;
+  border-color: #0d6efd;
+}
+
+.four-state-checkbox[data-state='inherit'] {
+  background: #9ca3af;
+  border-color: #6b7280;
+}
+
+.four-state-checkbox-mark {
+  display: block;
+  position: relative;
+}
+
+.four-state-checkbox[data-state='enabled'] .four-state-checkbox-mark {
+  border-bottom: 2px solid currentColor;
+  border-right: 2px solid currentColor;
+  height: 0.58rem;
+  margin-bottom: 0.125rem;
+  transform: rotate(45deg);
+  width: 0.32rem;
+}
+
+.four-state-checkbox[data-state='mixed'] .four-state-checkbox-mark {
+  background: currentColor;
+  border-radius: 999px;
+  height: 0.125rem;
+  width: 0.55rem;
+}
+
+.four-state-checkbox[data-state='inherit'] .four-state-checkbox-mark {
+  background: currentColor;
+  border-radius: 999px;
+  height: 0.28rem;
+  width: 0.28rem;
+}

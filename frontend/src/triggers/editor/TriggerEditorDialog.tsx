@@ -35,6 +35,7 @@ import {
 import './TriggerEditorDialog.css'
 
 export interface TriggerEditorDialogProps {
+  readOnly?: boolean
   setShown: (shown: boolean) => void
   setTrigger: (trigger: JenaTrigger) => void
   shown: boolean
@@ -42,6 +43,7 @@ export interface TriggerEditorDialogProps {
 }
 
 export function TriggerEditorDialog({
+  readOnly = false,
   setShown,
   setTrigger,
   shown,
@@ -146,84 +148,94 @@ export function TriggerEditorDialog({
       show={shown}
     >
       <Modal.Header closeButton>
-        <Modal.Title>Trigger Editor</Modal.Title>
+        <Modal.Title>{readOnly ? 'View Trigger' : 'Trigger Editor'}</Modal.Title>
       </Modal.Header>
       <Modal.Body className="trigger-editor-body">
-        <GeneralSettingsSection draft={draft} onChange={setDraft} />
-        {validationErrors.length > 0 ? (
-          <Alert className="mb-0 py-2" variant="danger">
-            {validationErrors.map((error) => (
-              <div key={error}>{error}</div>
-            ))}
-          </Alert>
-        ) : null}
+        <fieldset className="trigger-editor-readonly-fieldset" disabled={readOnly}>
+          <GeneralSettingsSection draft={draft} onChange={setDraft} />
+          {validationErrors.length > 0 ? (
+            <Alert className="mb-0 py-2" variant="danger">
+              {validationErrors.map((error) => (
+                <div key={error}>{error}</div>
+              ))}
+            </Alert>
+          ) : null}
 
-        <Tabs defaultActiveKey="basic" id="trigger-editor-tabs" mountOnEnter>
-          <Tab eventKey="basic" title="Basic">
-            <div className="trigger-editor-tab-panel">
-              <TextSettingsSection
-                clipboardTextEnabled={draft.actions.text.clipboard.enabled}
-                displayTextEnabled={draft.actions.text.display.enabled}
-                onChange={(text) =>
-                  setDraft({
-                    ...draft,
-                    actions: {
-                      ...draft.actions,
-                      text,
-                    },
-                  })
-                }
-                state={draft.actions.text}
+          <Tabs defaultActiveKey="basic" id="trigger-editor-tabs" mountOnEnter>
+            <Tab eventKey="basic" title="Basic">
+              <div className="trigger-editor-tab-panel">
+                <TextSettingsSection
+                  clipboardTextEnabled={draft.actions.text.clipboard.enabled}
+                  displayTextEnabled={draft.actions.text.display.enabled}
+                  onChange={(text) =>
+                    setDraft({
+                      ...draft,
+                      actions: {
+                        ...draft.actions,
+                        text,
+                      },
+                    })
+                  }
+                  state={draft.actions.text}
+                />
+                <AudioSettingsSection
+                  audioMode={draft.actions.audio.mode}
+                  characters={characters}
+                  onChange={(audio) =>
+                    setDraft({
+                      ...draft,
+                      actions: {
+                        ...draft.actions,
+                        audio,
+                      },
+                    })
+                  }
+                  onTestSpeech={handleTestSpeech}
+                  state={draft.actions.audio}
+                />
+              </div>
+            </Tab>
+            <Tab eventKey="timer" title="Timer">
+              <TimerTab
+                onChange={(timer) => setDraft({ ...draft, timer })}
+                timer={draft.timer}
               />
-              <AudioSettingsSection
-                audioMode={draft.actions.audio.mode}
+            </Tab>
+            <Tab eventKey="timer-ending" title="Timer Ending">
+              <TimerEndingTab
                 characters={characters}
-                onChange={(audio) =>
-                  setDraft({
-                    ...draft,
-                    actions: {
-                      ...draft.actions,
-                      audio,
-                    },
-                  })
-                }
-                onTestSpeech={handleTestSpeech}
-                state={draft.actions.audio}
+                onChange={(timer) => setDraft({ ...draft, timer })}
+                timer={draft.timer}
               />
-            </div>
-          </Tab>
-          <Tab eventKey="timer" title="Timer">
-            <TimerTab
-              onChange={(timer) => setDraft({ ...draft, timer })}
-              timer={draft.timer}
-            />
-          </Tab>
-          <Tab eventKey="timer-ending" title="Timer Ending">
-            <TimerEndingTab
-              characters={characters}
-              onChange={(timer) => setDraft({ ...draft, timer })}
-              timer={draft.timer}
-            />
-          </Tab>
-          <Tab eventKey="timer-ended" title="Timer Ended">
-            <TimerEndedTab
-              characters={characters}
-              onChange={(timer) => setDraft({ ...draft, timer })}
-              timer={draft.timer}
-            />
-          </Tab>
-          <Tab eventKey="counter" title="Counter">
-            <CounterTab />
-          </Tab>
-        </Tabs>
+            </Tab>
+            <Tab eventKey="timer-ended" title="Timer Ended">
+              <TimerEndedTab
+                characters={characters}
+                onChange={(timer) => setDraft({ ...draft, timer })}
+                timer={draft.timer}
+              />
+            </Tab>
+            <Tab eventKey="counter" title="Counter">
+              <CounterTab />
+            </Tab>
+          </Tabs>
+        </fieldset>
       </Modal.Body>
       <Modal.Footer>
-        <Button onClick={handleCancel} size="sm" variant="secondary">
-          Cancel
-        </Button>
-        <Button disabled={!isDirty} onClick={handleSave} size="sm">
-          Save
-        </Button>
+        {readOnly ? (
+          <Button onClick={handleCancel} size="sm">
+            Close
+          </Button>
+        ) : (
+          <>
+            <Button onClick={handleCancel} size="sm" variant="secondary">
+              Cancel
+            </Button>
+            <Button disabled={!isDirty} onClick={handleSave} size="sm">
+              Save
+            </Button>
+          </>
+        )}
       </Modal.Footer>
     </Modal>
   )

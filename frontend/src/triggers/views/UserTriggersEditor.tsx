@@ -5,6 +5,8 @@ import { FolderPlus, Globe, GlobeOff, ListPlus, Radio, RadioOff } from 'lucide-r
 import '@szhsin/react-menu/dist/index.css'
 import Alert from 'react-bootstrap/Alert'
 import Button from 'react-bootstrap/Button'
+import ButtonGroup from 'react-bootstrap/ButtonGroup'
+import Dropdown from 'react-bootstrap/Dropdown'
 import Modal from 'react-bootstrap/Modal'
 import ProgressBar from 'react-bootstrap/ProgressBar'
 import toast from 'react-hot-toast'
@@ -992,6 +994,49 @@ export function UserTriggersEditor({
     }
   }
 
+  async function handleSharePublished() {
+    try {
+      const response = await call(
+        'server.subscriptions',
+        'getPublishedSubscriptionCode',
+        {},
+      )
+
+      try {
+        await navigator.clipboard.writeText(response.code)
+        toast.success(`${response.code} copied to clipboard.`)
+      } catch (error) {
+        console.warn('[UserTriggersEditor] failed to copy subscription code', error)
+        toast.error(`Unable to copy subscription code: ${response.code}`)
+      }
+    } catch (error) {
+      console.warn('[UserTriggersEditor] failed to create subscription code', error)
+      toast.error(getErrorMessage(error))
+    }
+  }
+
+  async function handleRevokePublishedSubscription() {
+    const confirmed = confirm(
+      'This will invalidate your current subscriber link. Anyone following that link will stop receiving your published triggers. Continue?',
+    )
+
+    if (!confirmed) {
+      return
+    }
+
+    try {
+      await call(
+        'server.subscriptions',
+        'revokePublishedSubscriptionCode',
+        {},
+      )
+      toast.success('Subscriber link revoked.')
+    } catch (error) {
+      console.warn('[UserTriggersEditor] failed to revoke subscription code', error)
+      toast.error(getErrorMessage(error))
+    }
+  }
+
   async function exportTriggers(
     title: string,
     fileName: string,
@@ -1097,6 +1142,36 @@ export function UserTriggersEditor({
         <Button onClick={handleImportClick} size="sm" variant="outline-secondary">
           import GINA
         </Button>
+        {isAuthenticated ? (
+          <Dropdown as={ButtonGroup}>
+            <Button
+              onClick={() => {
+                void handleSharePublished()
+              }}
+              size="sm"
+              variant="outline-primary"
+            >
+              Share published
+            </Button>
+            <Dropdown.Toggle
+              id="user-triggers-share-published-menu"
+              size="sm"
+              split
+              variant="outline-primary"
+            >
+              <span className="visually-hidden">Subscription options</span>
+            </Dropdown.Toggle>
+            <Dropdown.Menu>
+              <Dropdown.Item
+                onClick={() => {
+                  void handleRevokePublishedSubscription()
+                }}
+              >
+                Revoke subscriber link...
+              </Dropdown.Item>
+            </Dropdown.Menu>
+          </Dropdown>
+        ) : null}
         <input
           accept=".gtp"
           className="d-none"

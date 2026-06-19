@@ -199,6 +199,7 @@ The canonical typed frontend contract is `frontend/src/shared/messages.ts`. Work
 | `worker.character-presence` | `frontend/src/shared/messages.ts` (`RpcEndpoints`) | `frontend/src/worker/CharacterPresenceService.ts` registers `character-presence` | `getCharacters` | Returns the worker's current character presence snapshot. |
 | `server.auth` | `frontend/src/shared/messages.ts` (`RpcEndpoints`) | `backend/internal/authservice/service.go` registers `auth` | `getSession` | Returns logged-in session state, stable user identity, and startup user settings. |
 | `server.sharing` | `frontend/src/shared/messages.ts` (`RpcEndpoints`) | `backend/internal/sharingservice/service.go` registers `sharing` | `createSharePackage`, `resolveSharePackage` | Creates expiring trigger share codes and resolves share codes back to trigger IDs plus creator display name. |
+| `server.subscriptions` | `frontend/src/shared/messages.ts` (`RpcEndpoints`) | `backend/internal/subscriptionservice/service.go` registers `subscriptions` | `getPublishedSubscriptionCode`, `revokePublishedSubscriptionCode`, `fetchUserSubscriptions`, `addUserSubscription`, `removeUserSubscription`, `setSubscriptionDefaultEnablement`, `setSubscribedTriggerEnablement`, `syncSubscriptions` | Creates/revokes published-trigger subscription codes, stores a logged-in user's followed subscriptions and enablement choices, and returns memoized published-trigger snapshots for subscription polling. |
 | `server.trigger-store` | `frontend/src/shared/messages.ts` (`RpcEndpoints`) | `backend/internal/triggerstore/service.go` registers `trigger-store` | `checkTriggers`, `storeTriggers`, `fetchTriggers` | Checks which canonical trigger IDs are missing, stores canonical trigger JSON, and fetches triggers by canonical ID with a 100-trigger response limit. |
 | `server.user-settings` | `frontend/src/shared/messages.ts` (`RpcEndpoints`) | `backend/internal/usersettings/service.go` registers `user-settings` | `updateSettings` | Persists authenticated per-user settings such as display name. |
 | `server.user-trigger-store` | `frontend/src/shared/messages.ts` (`RpcEndpoints`) | `backend/internal/usertriggerstore/service.go` registers `user-trigger-store` | `upsertTriggers`, `deleteTriggers`, `toggleTriggers`, `setTriggerFlags`, `fetchTriggers`, `ping` | Manages per-user trigger records, enablement, publish/broadcast flags, revisions, and update polling. |
@@ -308,6 +309,8 @@ The model includes:
 
 `frontend/src/triggers/model/UserTriggerManager.tsx` manages the resolved trigger list for the current user. Logged-out state is local/IndexedDB-backed; logged-in state syncs with the server user trigger store and polls revision state with `server.user-trigger-store.ping`. It applies authenticated mutations optimistically, rolls back and refreshes on failed server writes, and persists trigger tree collapsed/expanded state locally. It exposes `useTriggerManager()`.
 
+`frontend/src/triggers/model/SubscribedTriggerManager.tsx` manages followed published-trigger subscriptions. It watches log lines for UUID-shaped `{JENA:sub:<uuid>}` codes, stores followed subscription IDs and local enablement choices in IndexedDB when logged out, stores them through `server.subscriptions` when logged in, polls the backend every 30 seconds for subscription trigger snapshots, and fetches referenced trigger objects through `TriggerStore`. Subscription enablement has a per-character subscription default plus per-trigger overrides of enabled, disabled, or inherit.
+
 `frontend/src/triggers/views/UserTriggersEditor.tsx` is the trigger tree editor. It supports groups, empty UI-only groups, multi-select, context menus, import/export/share, add/edit/delete/rename/move, enablement, publish, and broadcast-mode toggles. Broadcast mode is tri-state: private, my boxes, and my subscribers. Double-clicking a trigger opens the trigger editor.
 
 `frontend/src/triggers/editor/TriggerEditorDialog.tsx` is the modal trigger editor.
@@ -354,6 +357,7 @@ The backend uses:
 - `internal/authservice`: Discord OAuth login, HTTP-only session cookies, session lookup, and stable user identity resolution.
 - `internal/logging`: DI-installed structured logger with console, rotating JSONL file, and Elasticsearch targets.
 - `internal/sharingservice`: expiring trigger share package creation and resolution, with periodic cleanup.
+- `internal/subscriptionservice`: published-trigger subscription code creation/revocation, followed-subscription storage, per-character subscription/trigger enablement storage, memoized published snapshot sync, and daily cleanup of expired or stale subscription rows.
 - `internal/triggerstore`: persistent canonical trigger JSON store.
 - `internal/usersettings`: user settings persistence and current display-name lookup.
 - `internal/usertriggerstore`: per-user trigger records, enablement, publish/broadcast flags, revision/update RPCs, and broadcasts.
