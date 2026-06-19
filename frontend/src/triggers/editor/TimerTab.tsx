@@ -1,6 +1,7 @@
 import Button from 'react-bootstrap/Button'
 import Form from 'react-bootstrap/Form'
 import Table from 'react-bootstrap/Table'
+import { Trash2 } from 'lucide-react'
 import { DurationInput } from './DurationInput'
 import { FormGridRow } from './Section'
 import {
@@ -38,6 +39,25 @@ export function TimerTab({ onChange, timer }: TimerTabProps) {
           isRegex: false,
         },
       ],
+    })
+  }
+
+  function removeEarlyEnder(index: number) {
+    const earlyEnders = timer.earlyEnders.filter((_, rowIndex) => {
+      return rowIndex !== index
+    })
+
+    onChange({
+      ...timer,
+      earlyEnders:
+        earlyEnders.length > 0
+          ? earlyEnders
+          : [
+              {
+                text: '',
+                isRegex: false,
+              },
+            ],
     })
   }
 
@@ -115,6 +135,7 @@ export function TimerTab({ onChange, timer }: TimerTabProps) {
             <tr>
               <th>Search Text</th>
               <th className="trigger-editor-regex-column">Use Regex</th>
+              <th className="trigger-editor-row-action-column" />
             </tr>
           </thead>
           <tbody>
@@ -145,6 +166,19 @@ export function TimerTab({ onChange, timer }: TimerTabProps) {
                     }
                     state={earlyEnder.isRegex ? 'enabled' : 'disabled'}
                   />
+                </td>
+                <td className="text-center">
+                  <Button
+                    aria-label={`Remove early ender ${index + 1}`}
+                    className="trigger-editor-row-action-button"
+                    disabled={timer.type === 'none'}
+                    onClick={() => removeEarlyEnder(index)}
+                    size="sm"
+                    title="Remove row"
+                    variant="outline-danger"
+                  >
+                    <Trash2 aria-hidden="true" size={14} />
+                  </Button>
                 </td>
               </tr>
             ))}
