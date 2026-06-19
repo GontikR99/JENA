@@ -19,6 +19,7 @@ import type {
 } from '../../shared/messages'
 import { useListen, useRpc } from '../../shared/messageBrokerHooks'
 import type {
+  JenaBroadcastMode,
   JenaCharacterServer,
   JenaTrigger,
   JenaTriggerId,
@@ -59,6 +60,13 @@ export interface SubscribedTriggerManagerState {
 export interface SubscribedTriggerManagerApi
   extends SubscribedTriggerManagerState {
   addSubscription: (subscriptionId: string) => Promise<void>
+  getTimerEarlyEnderBroadcastRegistrations: (
+    triggerId: JenaTriggerId,
+  ) => SubscribedTriggerAlertRegistration[]
+  getTriggerAlertRegistrations: (
+    triggerId: JenaTriggerId,
+    character: JenaCharacterServer,
+  ) => SubscribedTriggerAlertRegistration[]
   isTriggerEnabledForCharacter: (
     triggerId: JenaTriggerId,
     character: JenaCharacterServer,
@@ -75,6 +83,13 @@ export interface SubscribedTriggerManagerApi
     character: JenaCharacterServer,
     mode: SubscriptionDefaultEnablementMode,
   ) => Promise<void>
+}
+
+export interface SubscribedTriggerAlertRegistration {
+  broadcastMode: Extract<JenaBroadcastMode, 'private' | 'subscribers'>
+  enabled: boolean
+  source: 'subscription'
+  subscriptionId: string
 }
 
 const emptyState: SubscribedTriggerManagerState = {
@@ -133,47 +148,71 @@ export function SubscribedTriggerManagerProvider({
     setState(getStateFromRefs())
   }, [getStateFromRefs])
 
-  const isTriggerEnabledForCharacter = useCallback(
+  const getTriggerAlertRegistrations = useCallback(
     (triggerId: JenaTriggerId, character: JenaCharacterServer) => {
       const normalizedTriggerId = triggerId.trim().toLocaleLowerCase()
+      const registrations: SubscribedTriggerAlertRegistration[] = []
 
       for (const snapshot of snapshotsRef.current.values()) {
-        const hasTrigger = snapshot.records.some(
-          (record) =>
-            record.triggerId.trim().toLocaleLowerCase() === normalizedTriggerId,
+        const record = snapshot.records.find(
+          (candidate) =>
+            candidate.triggerId.trim().toLocaleLowerCase() === normalizedTriggerId,
         )
-        if (!hasTrigger) {
+        if (!record) {
           continue
         }
 
-        const triggerOverride = triggerEnablementRef.current.find((record) => {
-          return (
-            record.subscriptionId === snapshot.id &&
-            record.triggerId.trim().toLocaleLowerCase() === normalizedTriggerId &&
-            getCharacterRecordKey(record.subscriptionId, record.character) ===
-              getCharacterRecordKey(snapshot.id, character)
-          )
+        registrations.push({
+          broadcastMode: record.broadcastToSubscribers ? 'subscribers' : 'private',
+          enabled: isSubscribedTriggerEnabled(
+            snapshot.id,
+            normalizedTriggerId,
+            character,
+            defaultEnablementRef.current,
+            triggerEnablementRef.current,
+          ),
+          source: 'subscription',
+          subscriptionId: snapshot.id,
         })
-        if (triggerOverride) {
-          if (triggerOverride.mode === 'enabled') {
-            return true
-          }
-          continue
-        }
-
-        const defaultEnablement = defaultEnablementRef.current.find((record) => {
-          return (
-            record.subscriptionId === snapshot.id &&
-            getCharacterRecordKey(record.subscriptionId, record.character) ===
-              getCharacterRecordKey(snapshot.id, character)
-          )
-        })
-        if (defaultEnablement?.mode === 'enabled') {
-          return true
-        }
       }
 
-      return false
+      return registrations
+    },
+    [],
+  )
+
+  const isTriggerEnabledForCharacter = useCallback(
+    (triggerId: JenaTriggerId, character: JenaCharacterServer) => {
+      return getTriggerAlertRegistrations(triggerId, character).some(
+        (registration) => registration.enabled,
+      )
+    },
+    [getTriggerAlertRegistrations],
+  )
+
+  const getTimerEarlyEnderBroadcastRegistrations = useCallback(
+    (triggerId: JenaTriggerId) => {
+      const normalizedTriggerId = triggerId.trim().toLocaleLowerCase()
+      const registrations: SubscribedTriggerAlertRegistration[] = []
+
+      for (const snapshot of snapshotsRef.current.values()) {
+        const record = snapshot.records.find(
+          (candidate) =>
+            candidate.triggerId.trim().toLocaleLowerCase() === normalizedTriggerId,
+        )
+        if (!record || !record.broadcastToSubscribers) {
+          continue
+        }
+
+        registrations.push({
+          broadcastMode: 'subscribers',
+          enabled: true,
+          source: 'subscription',
+          subscriptionId: snapshot.id,
+        })
+      }
+
+      return registrations
     },
     [],
   )
@@ -502,6 +541,8 @@ export function SubscribedTriggerManagerProvider({
     () => ({
       ...state,
       addSubscription,
+      getTimerEarlyEnderBroadcastRegistrations,
+      getTriggerAlertRegistrations,
       isTriggerEnabledForCharacter,
       removeSubscription,
       setSubscribedTriggerEnablement,
@@ -509,6 +550,8 @@ export function SubscribedTriggerManagerProvider({
     }),
     [
       addSubscription,
+      getTimerEarlyEnderBroadcastRegistrations,
+      getTriggerAlertRegistrations,
       isTriggerEnabledForCharacter,
       removeSubscription,
       setSubscribedTriggerEnablement,
@@ -638,6 +681,36 @@ function getTriggerRecordKey(
     getCharacterRecordKey(subscriptionId, character),
     triggerId.toLocaleLowerCase(),
   ].join('\0')
+}
+
+function isSubscribedTriggerEnabled(
+  subscriptionId: string,
+  normalizedTriggerId: string,
+  character: JenaCharacterServer,
+  defaultEnablement: SubscriptionDefaultEnablementRecord[],
+  triggerEnablement: SubscribedTriggerEnablementRecord[],
+) {
+  const triggerOverride = triggerEnablement.find((record) => {
+    return (
+      record.subscriptionId === subscriptionId &&
+      record.triggerId.trim().toLocaleLowerCase() === normalizedTriggerId &&
+      getCharacterRecordKey(record.subscriptionId, record.character) ===
+        getCharacterRecordKey(subscriptionId, character)
+    )
+  })
+  if (triggerOverride) {
+    return triggerOverride.mode === 'enabled'
+  }
+
+  const defaultRecord = defaultEnablement.find((record) => {
+    return (
+      record.subscriptionId === subscriptionId &&
+      getCharacterRecordKey(record.subscriptionId, record.character) ===
+        getCharacterRecordKey(subscriptionId, character)
+    )
+  })
+
+  return defaultRecord?.mode === 'enabled'
 }
 
 function compareDefaultEnablementRecords(

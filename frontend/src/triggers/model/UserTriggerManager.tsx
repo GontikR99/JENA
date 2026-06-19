@@ -50,6 +50,13 @@ export interface TriggerManagerApi {
   collapsedGroupIds: Set<string>
   deleteTrigger: (triggerId: JenaTriggerId) => Promise<JenaUserTriggerUpdate>
   deleteTriggers: (triggerIds: JenaTriggerId[]) => Promise<JenaUserTriggerUpdate>
+  getTimerEarlyEnderBroadcastRegistration: (
+    triggerId: JenaTriggerId,
+  ) => UserTriggerAlertRegistration | null
+  getTriggerAlertRegistration: (
+    triggerId: JenaTriggerId,
+    character: JenaCharacterServer,
+  ) => UserTriggerAlertRegistration | null
   isTriggerEnabledForCharacter: (
     triggerId: JenaTriggerId,
     character: JenaCharacterServer,
@@ -72,6 +79,12 @@ export interface TriggerManagerApi {
     triggers: Array<JenaTrigger | JenaTriggerUpsert>,
     options?: UpsertTriggersOptions,
   ) => Promise<JenaUserTriggerUpdate>
+}
+
+export interface UserTriggerAlertRegistration {
+  broadcastMode: JenaBroadcastMode
+  enabled: boolean
+  source: 'user'
 }
 
 interface LocalUserTriggerCache {
@@ -137,6 +150,38 @@ export function UserTriggerManagerProvider({
         (enabledCharacter) =>
           getJenaCharacterServerKey(enabledCharacter) === characterKey,
       )
+    },
+    [],
+  )
+
+  const getTriggerAlertRegistration = useCallback(
+    (triggerId: JenaTriggerId, character: JenaCharacterServer) => {
+      const record = recordsRef.current.get(triggerId)
+      if (!record) {
+        return null
+      }
+
+      return {
+        broadcastMode: record.broadcastMode,
+        enabled: isTriggerEnabledForCharacter(triggerId, character),
+        source: 'user',
+      } satisfies UserTriggerAlertRegistration
+    },
+    [isTriggerEnabledForCharacter],
+  )
+
+  const getTimerEarlyEnderBroadcastRegistration = useCallback(
+    (triggerId: JenaTriggerId) => {
+      const record = recordsRef.current.get(triggerId)
+      if (!record) {
+        return null
+      }
+
+      return {
+        broadcastMode: record.broadcastMode,
+        enabled: true,
+        source: 'user',
+      } satisfies UserTriggerAlertRegistration
     },
     [],
   )
@@ -866,6 +911,8 @@ export function UserTriggerManagerProvider({
         collapsedGroupIds,
         deleteTrigger,
         deleteTriggers,
+        getTimerEarlyEnderBroadcastRegistration,
+        getTriggerAlertRegistration,
         isTriggerEnabledForCharacter,
         reconcileKnownGroupIds,
         setGroupCollapsed,

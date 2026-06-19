@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import { renderHook } from '@testing-library/react'
+import type { ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type {
   TriggerAlertMatchedMessage,
@@ -12,6 +13,7 @@ import {
   withCanonicalTriggerId,
   type JenaResolvedTrigger,
 } from '../../shared/triggers'
+import { AlertEventCoordinatorProvider } from '../alerts/AlertEventCoordinator'
 import {
   useOnTimerEarlyEnder,
   useOnTriggerMatch,
@@ -39,6 +41,40 @@ vi.mock('../../runtime/TriggerRuntime', () => ({
 
 vi.mock('../model/UserTriggerManager', () => ({
   useTriggerManager: () => ({
+    getTimerEarlyEnderBroadcastRegistration: (triggerId: string) => {
+      return hookState.triggers.some(
+        (resolvedTrigger) => resolvedTrigger.trigger.id === triggerId,
+      )
+        ? {
+            broadcastMode: 'private',
+            enabled: true,
+            source: 'user',
+          }
+        : null
+    },
+    getTriggerAlertRegistration: (
+      triggerId: string,
+      character: { characterName: string; serverName: string },
+    ) => {
+      const enabled = hookState.triggers.some((resolvedTrigger) => {
+        return (
+          resolvedTrigger.trigger.id === triggerId &&
+          resolvedTrigger.enabledFor.some((enabledCharacter) =>
+            isSameCharacter(enabledCharacter, character),
+          )
+        )
+      })
+
+      return hookState.triggers.some(
+        (resolvedTrigger) => resolvedTrigger.trigger.id === triggerId,
+      )
+        ? {
+            broadcastMode: 'private',
+            enabled,
+            source: 'user',
+          }
+        : null
+    },
     isTriggerEnabledForCharacter: (
       triggerId: string,
       character: { characterName: string; serverName: string },
@@ -58,6 +94,30 @@ vi.mock('../model/UserTriggerManager', () => ({
 
 vi.mock('../model/SubscribedTriggerManager', () => ({
   useSubscribedTriggerManager: () => ({
+    getTimerEarlyEnderBroadcastRegistrations: () => [],
+    getTriggerAlertRegistrations: (
+      triggerId: string,
+      character: { characterName: string; serverName: string },
+    ) => {
+      if (
+        !hookState.subscribedTriggerIds.has(triggerId) ||
+        !isSameCharacter(character, {
+          characterName: 'Mesozoic',
+          serverName: 'Bristlebane',
+        })
+      ) {
+        return []
+      }
+
+      return [
+        {
+          broadcastMode: 'private',
+          enabled: true,
+          source: 'subscription',
+          subscriptionId: 'test-subscription',
+        },
+      ]
+    },
     isTriggerEnabledForCharacter: (
       triggerId: string,
       character: { characterName: string; serverName: string },
@@ -110,22 +170,31 @@ describe('useTriggerAlerts', () => {
       serverName: 'BRISTLEBANE',
     })
 
-    renderHook(() => useOnTriggerMatch(callback))
+    renderHook(() => useOnTriggerMatch(callback), { wrapper })
     emit('alert.trigger-matched', alert)
 
     expect(callback).toHaveBeenCalledTimes(1)
-    expect(callback).toHaveBeenCalledWith({
+    expect(callback).toHaveBeenCalledWith(expect.objectContaining({
       alert,
+      eventId: expect.any(String),
+      origin: 'local',
+      registrations: [
+        {
+          broadcastMode: 'private',
+          enabled: true,
+          source: 'user',
+        },
+      ],
       resolvedTrigger,
       trigger: testTrigger,
-    })
+    }))
   })
 
   it('drops normal trigger matches when triggers are stopped', () => {
     const callback = vi.fn()
     hookState.areTriggersRunning = false
 
-    renderHook(() => useOnTriggerMatch(callback))
+    renderHook(() => useOnTriggerMatch(callback), { wrapper })
     emit('alert.trigger-matched', createTriggerAlert())
 
     expect(callback).not.toHaveBeenCalled()
@@ -135,7 +204,7 @@ describe('useTriggerAlerts', () => {
     const callback = vi.fn()
     hookState.triggers = []
 
-    renderHook(() => useOnTriggerMatch(callback))
+    renderHook(() => useOnTriggerMatch(callback), { wrapper })
     emit('alert.trigger-matched', createTriggerAlert())
 
     expect(callback).not.toHaveBeenCalled()
@@ -150,20 +219,30 @@ describe('useTriggerAlerts', () => {
     hookState.triggers = []
     hookState.subscribedTriggerIds.add(testTrigger.id)
 
-    renderHook(() => useOnTriggerMatch(callback))
+    renderHook(() => useOnTriggerMatch(callback), { wrapper })
     emit('alert.trigger-matched', alert)
 
     expect(callback).toHaveBeenCalledTimes(1)
-    expect(callback).toHaveBeenCalledWith({
+    expect(callback).toHaveBeenCalledWith(expect.objectContaining({
       alert,
+      eventId: expect.any(String),
+      origin: 'local',
+      registrations: [
+        {
+          broadcastMode: 'private',
+          enabled: true,
+          source: 'subscription',
+          subscriptionId: 'test-subscription',
+        },
+      ],
       trigger: testTrigger,
-    })
+    }))
   })
 
   it('drops normal trigger matches when the trigger is not enabled for the character', () => {
     const callback = vi.fn()
 
-    renderHook(() => useOnTriggerMatch(callback))
+    renderHook(() => useOnTriggerMatch(callback), { wrapper })
     emit(
       'alert.trigger-matched',
       createTriggerAlert({
@@ -181,14 +260,17 @@ describe('useTriggerAlerts', () => {
     hookState.areTriggersRunning = false
     hookState.triggers = []
 
-    renderHook(() => useOnTimerEarlyEnder(callback))
+    renderHook(() => useOnTimerEarlyEnder(callback), { wrapper })
     emit('alert.timer-early-ended', alert)
 
     expect(callback).toHaveBeenCalledTimes(1)
-    expect(callback).toHaveBeenCalledWith({
+    expect(callback).toHaveBeenCalledWith(expect.objectContaining({
       alert,
+      eventId: expect.any(String),
+      origin: 'local',
+      registrations: [],
       trigger: testTrigger,
-    })
+    }))
   })
 
   it('always passes through stop requests', () => {
@@ -206,6 +288,10 @@ describe('useTriggerAlerts', () => {
     })
   })
 })
+
+function wrapper({ children }: { children: ReactNode }) {
+  return <AlertEventCoordinatorProvider>{children}</AlertEventCoordinatorProvider>
+}
 
 function emit(destination: string, payload: unknown) {
   const listener = hookState.listeners.get(destination)

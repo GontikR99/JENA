@@ -73,6 +73,14 @@ export interface TriggerEarlyEnderMatchedMessage {
   trigger: JenaTrigger
 }
 
+export type BroadcastAlertKind = 'timerEarlyEnded' | 'triggerMatched'
+
+export interface BroadcastAlertMessage {
+  alert: TriggerAlertMatchedMessage | TriggerEarlyEnderMatchedMessage
+  eventId: string
+  kind: BroadcastAlertKind
+}
+
 export interface TriggerStopRequestedMessage {
   characterName: string
   command: '{JENA:STOP}' | '{GINA:STOP}'
@@ -190,6 +198,7 @@ export interface NearbyCharacterPresenceMessage {
 }
 
 export interface EndpointMessages {
+  'alert.broadcast': BroadcastAlertMessage
   'alert.timer-early-ended': TriggerEarlyEnderMatchedMessage
   'alert.stop-requested': TriggerStopRequestedMessage
   'alert.trigger-matched': TriggerAlertMatchedMessage
@@ -245,6 +254,18 @@ export interface RpcEndpoints {
         expiresAt: string
         triggerIds: JenaTriggerId[]
       }
+    }
+  }
+  'server.broadcast': {
+    reflectAlert: {
+      request: {
+        alert: TriggerAlertMatchedMessage | TriggerEarlyEnderMatchedMessage
+        eventId: string
+        kind: BroadcastAlertKind
+        subscriptionIds: string[]
+        userBroadcastMode?: 'boxes' | 'subscribers'
+      }
+      response: Record<string, never>
     }
   }
   'server.subscriptions': {

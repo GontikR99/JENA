@@ -210,6 +210,9 @@ function fireTriggerMatch(
       timestamp: '2026-06-16T00:00:00.000Z',
       trigger,
     },
+    eventId: 'test-trigger-match',
+    origin: 'local',
+    registrations: [],
     resolvedTrigger: createResolvedTrigger(trigger),
     trigger,
   })

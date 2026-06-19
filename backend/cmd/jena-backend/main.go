@@ -11,6 +11,7 @@ import (
 
 	"jena/backend/internal/app"
 	"jena/backend/internal/authservice"
+	"jena/backend/internal/broadcastservice"
 	"jena/backend/internal/config"
 	"jena/backend/internal/database"
 	"jena/backend/internal/eventbus"
@@ -115,6 +116,10 @@ func run(args []string) error {
 	}
 	defer subscriptionService.Dispose()
 	app.Install(container, subscriptionService)
+
+	broadcastService := broadcastservice.New(bus, db, authService, installedLogger)
+	defer broadcastService.Dispose()
+	app.Install(container, broadcastService)
 
 	userTriggerStore, err := usertriggerstore.New(context.Background(), bus, db, authService, triggerStore, installedLogger)
 	if err != nil {

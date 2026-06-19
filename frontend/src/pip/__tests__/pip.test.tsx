@@ -191,6 +191,9 @@ function emitTriggerMatch({
         timestamp: '2026-06-17T12:00:00Z',
         trigger,
       },
+      eventId: 'test-trigger-match',
+      origin: 'local',
+      registrations: [],
       resolvedTrigger: {
         broadcastMode: 'private',
         enabledFor: [
@@ -220,6 +223,9 @@ function emitTimerEarlyEnder({ timerName }: { timerName?: string }) {
         timestamp: '2026-06-17T12:00:01Z',
         trigger,
       },
+      eventId: 'test-early-ender',
+      origin: 'local',
+      registrations: [],
       trigger,
     })
   })

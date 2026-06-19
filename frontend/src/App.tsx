@@ -22,6 +22,8 @@ import {
   TriggerRuntimeProvider,
 } from './runtime/TriggerRuntime'
 import { AlertCoordinationService } from './triggers/alerts/AlertCoordinationService'
+import { AlertEventCoordinatorProvider } from './triggers/alerts/AlertEventCoordinator'
+import { BroadcastReflector } from './triggers/alerts/BroadcastReflector'
 import { TriggerSpeechService } from './triggers/alerts/TriggerSpeechService'
 import { TriggerStopService } from './triggers/alerts/TriggerStopService'
 import { TriggerStoreProvider } from './triggers/model/TriggerStore'
@@ -66,11 +68,14 @@ function AuthenticatedApp() {
             <NearbyCharactersProvider>
               <LocalCharactersProvider>
                 <TriggerRuntimeProvider>
-                  <TriggerSpeechService />
-                  <TriggerShareCoordinator>
-                    <AppShell />
-                  </TriggerShareCoordinator>
-                  <TriggerRuntimePortal />
+                  <AlertEventCoordinatorProvider>
+                    <BroadcastReflector />
+                    <TriggerSpeechService />
+                    <TriggerShareCoordinator>
+                      <AppShell />
+                    </TriggerShareCoordinator>
+                    <TriggerRuntimePortal />
+                  </AlertEventCoordinatorProvider>
                 </TriggerRuntimeProvider>
               </LocalCharactersProvider>
             </NearbyCharactersProvider>
