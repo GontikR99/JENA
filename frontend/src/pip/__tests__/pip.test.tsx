@@ -28,6 +28,26 @@ vi.mock('../../triggers/alerts/useTriggerAlerts', () => ({
   },
 }))
 
+vi.mock('../../settings/settingsContext', () => ({
+  useSettings: () => ({
+    machineSettings: {
+      pip: {
+        alerts: {
+          backgroundColor: '#000000',
+          fontSizePx: 20,
+          foregroundColor: '#ffff00',
+        },
+        timers: {
+          backgroundColor: '#570f00',
+          fillColor: '#ff0000',
+          fontSizePx: 16,
+          foregroundColor: '#ffff00',
+        },
+      },
+    },
+  }),
+}))
+
 describe('Pip', () => {
   let animationFrames: Map<number, FrameRequestCallback>
   let nextFrameId: number

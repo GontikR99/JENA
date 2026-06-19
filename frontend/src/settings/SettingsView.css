@@ -58,6 +58,12 @@
   padding-top: 1rem;
 }
 
+.settings-subsection h4 {
+  font-size: 0.875rem;
+  font-weight: 700;
+  margin: 0;
+}
+
 .settings-field {
   max-width: 34rem;
   padding-top: 0.75rem;
@@ -79,6 +85,106 @@
   color: #374151;
   font-variant-numeric: tabular-nums;
   text-align: right;
+}
+
+.settings-pip-layout {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  padding-top: 0.75rem;
+}
+
+.settings-pip-card {
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  display: grid;
+  gap: 0.75rem;
+  min-width: 0;
+  padding: 0.875rem;
+}
+
+.settings-pip-fields {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.settings-pip-field {
+  min-width: 0;
+}
+
+.settings-pip-field .form-label {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  margin-bottom: 0.25rem;
+}
+
+.settings-pip-field input[type='color'] {
+  min-height: 2.375rem;
+  padding: 0.25rem;
+}
+
+.settings-pip-preview-wrap {
+  background: #111827;
+  border: 1px solid #374151;
+  border-radius: 6px;
+  max-width: 100%;
+  overflow-x: auto;
+  padding: 0.75rem;
+}
+
+.settings-pip-timer-preview,
+.settings-pip-alert-preview {
+  font-family: Verdana, Geneva, sans-serif;
+  overflow: hidden;
+  position: relative;
+  white-space: nowrap;
+  width: 400px;
+}
+
+.settings-pip-timer-preview {
+  font-family: Tahoma, Verdana, Geneva, sans-serif;
+}
+
+.settings-pip-timer-preview-fill {
+  bottom: 0;
+  left: 0;
+  position: absolute;
+  top: 0;
+}
+
+.settings-pip-timer-preview-name,
+.settings-pip-timer-preview-duration {
+  box-sizing: border-box;
+  display: block;
+  height: 100%;
+  overflow: hidden;
+  position: absolute;
+  top: 0;
+  white-space: nowrap;
+  z-index: 1;
+}
+
+.settings-pip-timer-preview-name {
+  font-weight: 700;
+  left: 0;
+  padding-left: 1px;
+  right: 4.5rem;
+  text-align: left;
+}
+
+.settings-pip-timer-preview-duration {
+  font-family: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace;
+  min-width: 4.25rem;
+  padding-right: 1px;
+  right: 0;
+  text-align: right;
+}
+
+.settings-pip-alert-preview {
+  padding: 0;
+  text-align: center;
+  text-overflow: clip;
 }
 
 .settings-icon-button {
@@ -156,5 +262,10 @@
 
   .settings-range-field output {
     text-align: left;
+  }
+
+  .settings-pip-layout,
+  .settings-pip-fields {
+    grid-template-columns: 1fr;
   }
 }

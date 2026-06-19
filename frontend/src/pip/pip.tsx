@@ -1,9 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import type { CSSProperties } from 'react'
 import type {
   JenaTriggerTimer,
   JenaTriggerTimerType,
 } from '../shared/triggers'
 import jenaBrandLockupLargeUrl from '../assets/jena-brand-lockup-large.webp'
+import { useSettings } from '../settings/settingsContext'
+import type {
+  PipTextStyleSettings,
+  PipTimerStyleSettings,
+} from '../settings/settingsTypes'
 import {
   useOnTimerEarlyEnder,
   useOnTriggerStop,
@@ -33,6 +39,7 @@ interface RuntimeText {
 }
 
 export function Pip() {
+  const { machineSettings } = useSettings()
   const nextTimerId = useRef(1)
   const nextTextId = useRef(1)
   const [timers, setTimers] = useState<RuntimeTimer[]>([])
@@ -138,19 +145,29 @@ export function Pip() {
           src={jenaBrandLockupLargeUrl}
         />
         <div className="pip-watermark-label pip-watermark-label-bottom">
-          ALERT
+          ALERTS
         </div>
       </div>
 
       <section aria-label="Timers" className="pip-timer-stack">
         {timers.map((timer) => (
-          <TimerBar key={timer.id} onRemove={removeTimer} timer={timer} />
+          <TimerBar
+            key={timer.id}
+            onRemove={removeTimer}
+            settings={machineSettings.pip.timers}
+            timer={timer}
+          />
         ))}
       </section>
 
       <section aria-label="Trigger text" className="pip-text-stack">
         {texts.map((text) => (
-          <TextLine key={text.id} onRemove={removeText} text={text} />
+          <TextLine
+            key={text.id}
+            onRemove={removeText}
+            settings={machineSettings.pip.alerts}
+            text={text}
+          />
         ))}
       </section>
     </main>
@@ -177,9 +194,11 @@ function TriggerMatchTextLauncher({
 
 function TimerBar({
   onRemove,
+  settings,
   timer,
 }: {
   onRemove: (timerId: string) => void
+  settings: PipTimerStyleSettings
   timer: RuntimeTimer
 }) {
   const fillRef = useRef<HTMLDivElement | null>(null)
@@ -232,11 +251,29 @@ function TimerBar({
     }
   })
 
+  const lineHeightPx = getPipLineHeight(settings.fontSizePx)
+  const timerBarStyle: CSSProperties = {
+    backgroundColor: settings.backgroundColor,
+    color: settings.foregroundColor,
+    fontSize: `${settings.fontSizePx}px`,
+    height: `${lineHeightPx}px`,
+    lineHeight: `${lineHeightPx}px`,
+  }
+  const fillStyle: CSSProperties = {
+    backgroundColor: settings.fillColor,
+  }
+  const textStyle: CSSProperties = {
+    height: `${lineHeightPx}px`,
+    lineHeight: `${lineHeightPx}px`,
+  }
+
   return (
-    <div className="pip-timer-bar">
-      <div className="pip-timer-fill" ref={fillRef} />
-      <span className="pip-timer-name">{timer.timerName}</span>
-      <span className="pip-timer-duration" ref={durationRef}>
+    <div className="pip-timer-bar" style={timerBarStyle}>
+      <div className="pip-timer-fill" ref={fillRef} style={fillStyle} />
+      <span className="pip-timer-name" style={textStyle}>
+        {timer.timerName}
+      </span>
+      <span className="pip-timer-duration" ref={durationRef} style={textStyle}>
         {getInitialDurationLabel(timer)}
       </span>
     </div>
@@ -245,9 +282,11 @@ function TimerBar({
 
 function TextLine({
   onRemove,
+  settings,
   text,
 }: {
   onRemove: (textId: string) => void
+  settings: PipTextStyleSettings
   text: RuntimeText
 }) {
   useEffect(() => {
@@ -262,7 +301,21 @@ function TextLine({
     }
   }, [onRemove, text])
 
-  return <div className="pip-text-line">{text.text}</div>
+  const lineHeightPx = getPipLineHeight(settings.fontSizePx)
+  const style: CSSProperties = {
+    backgroundColor: settings.backgroundColor,
+    color: settings.foregroundColor,
+    flexBasis: `${lineHeightPx}px`,
+    fontSize: `${settings.fontSizePx}px`,
+    height: `${lineHeightPx}px`,
+    lineHeight: `${lineHeightPx}px`,
+  }
+
+  return (
+    <div className="pip-text-line" style={style}>
+      {text.text}
+    </div>
+  )
 }
 
 function findTimerIndex(
@@ -365,6 +418,10 @@ function formatDuration(totalSeconds: number) {
   }
 
   return `${seconds}s`
+}
+
+function getPipLineHeight(fontSizePx: number) {
+  return fontSizePx + 2
 }
 
 function padTimePart(value: number) {

@@ -131,6 +131,7 @@
   line-height: 20px;
   overflow: hidden;
   padding: 0;
+  text-align: center;
   text-overflow: clip;
   white-space: nowrap;
   width: 100%;
