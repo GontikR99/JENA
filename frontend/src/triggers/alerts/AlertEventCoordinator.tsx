@@ -141,6 +141,7 @@ export function AlertEventCoordinatorProvider({
       }
 
       const eventId = createMessageId()
+
       markEventSeen(eventId)
       emitTriggerMatch(
         withoutUndefinedValues({

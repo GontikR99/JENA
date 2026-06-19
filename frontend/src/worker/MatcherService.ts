@@ -130,8 +130,9 @@ export class MatcherService {
         return
       }
 
-      for (const match of registration.compiledPattern.matchAll(record.text)) {
-        this.sendMatch(record, registration.originalPattern, match)
+      const match = registration.compiledPattern.matchAll(record.text).next()
+      if (!match.done) {
+        this.sendMatch(record, registration.originalPattern, match.value)
       }
     })
   }
@@ -141,19 +142,10 @@ export class MatcherService {
       const regex = registration.compiledPattern
 
       regex.lastIndex = 0
+      const match = regex.exec(record.text)
 
-      for (;;) {
-        const match = regex.exec(record.text)
-
-        if (!match) {
-          return
-        }
-
+      if (match) {
         this.sendMatch(record, registration.originalPattern, match)
-
-        if (match[0] === '') {
-          regex.lastIndex += 1
-        }
       }
     })
   }

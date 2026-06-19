@@ -59,8 +59,8 @@ export function BroadcastReflector() {
     [call],
   )
 
-  useOnTriggerMatch(reflectTriggerMatch)
-  useOnTimerEarlyEnder(reflectTimerEarlyEnder)
+  useOnTriggerMatch(reflectTriggerMatch, { decorate: false })
+  useOnTimerEarlyEnder(reflectTimerEarlyEnder, { decorate: false })
 
   return null
 }

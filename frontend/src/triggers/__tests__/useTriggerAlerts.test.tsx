@@ -15,6 +15,7 @@ import {
 } from '../../shared/triggers'
 import { AlertEventCoordinatorProvider } from '../alerts/AlertEventCoordinator'
 import {
+  type TriggerMatchEvent,
   useOnTimerEarlyEnder,
   useOnTriggerMatch,
   useOnTriggerStop,
@@ -22,6 +23,7 @@ import {
 
 const hookState = vi.hoisted(() => ({
   areTriggersRunning: true,
+  includeCharacterNameForTriggerMatches: 'never',
   listeners: new Map<string, (message: { payload: unknown }) => void>(),
   subscribedTriggerIds: new Set<string>(),
   triggers: [] as JenaResolvedTrigger[],
@@ -36,6 +38,15 @@ vi.mock('../../shared/messageBrokerHooks', () => ({
 vi.mock('../../runtime/TriggerRuntime', () => ({
   useTriggerRuntime: () => ({
     areTriggersRunning: hookState.areTriggersRunning,
+  }),
+}))
+
+vi.mock('../../settings/settingsContext', () => ({
+  useSettings: () => ({
+    machineSettings: {
+      includeCharacterNameForTriggerMatches:
+        hookState.includeCharacterNameForTriggerMatches,
+    },
   }),
 }))
 
@@ -157,6 +168,7 @@ const resolvedTrigger: JenaResolvedTrigger = {
 describe('useTriggerAlerts', () => {
   beforeEach(() => {
     hookState.areTriggersRunning = true
+    hookState.includeCharacterNameForTriggerMatches = 'never'
     hookState.listeners.clear()
     hookState.subscribedTriggerIds = new Set()
     hookState.triggers = [resolvedTrigger]
@@ -237,6 +249,117 @@ describe('useTriggerAlerts', () => {
       ],
       trigger: testTrigger,
     }))
+  })
+
+  it('applies character name decoration to trigger match hook callbacks by default', () => {
+    const callback = vi.fn()
+    const alert = createTriggerAlert({
+      displayText: 'Display alert',
+      speechText: 'Speech alert',
+      timerName: 'Timer alert',
+    })
+    hookState.includeCharacterNameForTriggerMatches = 'always'
+
+    renderHook(() => useOnTriggerMatch(callback), { wrapper })
+    emit('alert.trigger-matched', alert)
+
+    expect(callback).toHaveBeenCalledTimes(1)
+    const event = callback.mock.calls[0]?.[0] as TriggerMatchEvent
+    expect(event.origin).toBe('local')
+    expect(event.alert.displayText).toBe('[Mesozoic] Display alert')
+    expect(event.alert.speechText).toBe('[Mesozoic] Speech alert')
+    expect(event.alert.timerName).toBe('Timer alert')
+  })
+
+  it('can opt out of trigger match hook decoration', () => {
+    const callback = vi.fn()
+    const alert = createTriggerAlert({
+      displayText: 'Display alert',
+      speechText: 'Speech alert',
+      timerName: 'Timer alert',
+    })
+    hookState.includeCharacterNameForTriggerMatches = 'always'
+
+    renderHook(() => useOnTriggerMatch(callback, { decorate: false }), { wrapper })
+    emit('alert.trigger-matched', alert)
+
+    expect(callback).toHaveBeenCalledTimes(1)
+    const event = callback.mock.calls[0]?.[0] as TriggerMatchEvent
+    expect(event.alert.displayText).toBe('Display alert')
+    expect(event.alert.speechText).toBe('Speech alert')
+    expect(event.alert.timerName).toBe('Timer alert')
+  })
+
+  it('applies local character name decoration to broadcast trigger match callbacks', () => {
+    const callback = vi.fn()
+    const alert = createTriggerAlert({
+      displayText: 'Display alert',
+      speechText: 'Speech alert',
+      timerName: 'Timer alert',
+    })
+    hookState.includeCharacterNameForTriggerMatches = 'always'
+
+    renderHook(() => useOnTriggerMatch(callback), { wrapper })
+    emit('alert.broadcast', {
+      alert,
+      eventId: 'remote-event',
+      kind: 'triggerMatched',
+    })
+
+    expect(callback).toHaveBeenCalledTimes(1)
+    const event = callback.mock.calls[0]?.[0] as TriggerMatchEvent
+    expect(event.origin).toBe('broadcast')
+    expect(event.alert.displayText).toBe('[Mesozoic] Display alert')
+    expect(event.alert.speechText).toBe('[Mesozoic] Speech alert')
+    expect(event.alert.timerName).toBe('Timer alert')
+  })
+
+  it('does not decorate broadcast callback fields whose raw templates contain character substitution', () => {
+    const callback = vi.fn()
+    const trigger = withCanonicalTriggerId({
+      ...testTrigger,
+      actions: {
+        ...testTrigger.actions,
+        display: {
+          enabled: true,
+          text: '{C} Display alert',
+        },
+        speech: {
+          enabled: true,
+          interrupt: false,
+          text: '{C} Speech alert',
+        },
+      },
+      timer: {
+        durationMs: 10_000,
+        earlyEnders: [],
+        endedAction: null,
+        name: '{C} Timer alert',
+        startBehavior: 'restart',
+        type: 'countdown',
+        warningAction: null,
+        warningSeconds: 0,
+      },
+    })
+    hookState.includeCharacterNameForTriggerMatches = 'if-not-present'
+
+    renderHook(() => useOnTriggerMatch(callback), { wrapper })
+    emit('alert.broadcast', {
+      alert: createTriggerAlert({
+        displayText: 'Mesozoic Display alert',
+        speechText: 'Mesozoic Speech alert',
+        timerName: 'Mesozoic Timer alert',
+        trigger,
+      }),
+      eventId: 'remote-event',
+      kind: 'triggerMatched',
+    })
+
+    expect(callback).toHaveBeenCalledTimes(1)
+    const event = callback.mock.calls[0]?.[0] as TriggerMatchEvent
+    expect(event.alert.displayText).toBe('Mesozoic Display alert')
+    expect(event.alert.speechText).toBe('Mesozoic Speech alert')
+    expect(event.alert.timerName).toBe('Mesozoic Timer alert')
   })
 
   it('drops normal trigger matches when the trigger is not enabled for the character', () => {

@@ -96,6 +96,46 @@ describe('MatcherService', () => {
     expect(receivedMatches).toEqual([])
   })
 
+  it('emits one match per pattern per log line', async () => {
+    const { broker, fileWatcher } = createHarness()
+    const receivedMatches: RegexMatchFoundMessage[] = []
+
+    broker.listen('client.matcher.match-found', (message) => {
+      receivedMatches.push(message.payload as RegexMatchFoundMessage)
+    })
+
+    await broker.call('test.matcher-service', 'matcher-service', 'add-patterns', {
+      patterns: [
+        {
+          pattern: 'say|tell',
+        },
+      ],
+    })
+    await broker.call('test.matcher-service', 'matcher-service', 'flush', {})
+
+    fileWatcher.emit({
+      characterName: 'Testcharacter',
+      serverName: 'Testserver',
+      text: 'This line has say and tell in it.',
+      timestamp: 'Fri Oct 24 13:33:11 2025',
+    })
+    await flushAsyncWork()
+
+    expect(receivedMatches).toEqual([
+      {
+        captures: {
+          named: {},
+          positional: [],
+        },
+        characterName: 'Testcharacter',
+        pattern: 'say|tell',
+        serverName: 'Testserver',
+        text: 'This line has say and tell in it.',
+        timestamp: 'Fri Oct 24 13:33:11 2025',
+      },
+    ])
+  })
+
   it('falls back to JavaScript regexes for patterns RE2JS cannot compile', async () => {
     const { broker, fileWatcher } = createHarness()
     const receivedMatches: RegexMatchFoundMessage[] = []
