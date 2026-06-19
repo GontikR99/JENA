@@ -57,6 +57,7 @@ export interface TriggerAlertMatchedMessage {
   clipboardText?: string
   displayText?: string
   serverName: string
+  speechProfile?: TriggerSpeechProfile
   speechText?: string
   text: string
   timerEndedAction?: TriggerTimerActionPayload
@@ -72,12 +73,22 @@ export interface TriggerTimerActionPayload {
   speechText?: string
 }
 
+export interface TriggerSpeechProfile {
+  pitch: number
+  rate: number
+  voiceLang?: string
+  voiceName?: string
+  voiceURI: string | null
+  volume: number
+}
+
 export type TriggerTimerActionKind = 'ended' | 'warning'
 
 export interface TriggerTimerActionMessage extends TriggerTimerActionPayload {
   characterName: string
   kind: TriggerTimerActionKind
   serverName: string
+  speechProfile?: TriggerSpeechProfile
   timerName: string
   timestamp: string
   trigger: JenaTrigger

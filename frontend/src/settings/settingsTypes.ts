@@ -8,6 +8,7 @@ export type IncludeCharacterNameForTriggerMatches =
 export interface TtsSettings {
   pitch: number
   rate: number
+  useBroadcasterSpeechProfile: boolean
   voiceURI: string | null
   volume: number
 }
@@ -51,6 +52,7 @@ export const defaultMachineSettings: MachineSettings = {
   tts: {
     pitch: 1,
     rate: 1,
+    useBroadcasterSpeechProfile: true,
     voiceURI: null,
     volume: 1,
   },

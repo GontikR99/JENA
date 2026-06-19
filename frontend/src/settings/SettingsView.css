@@ -69,6 +69,12 @@
   padding-top: 0.75rem;
 }
 
+.settings-field-note {
+  color: #6b7280;
+  font-size: 0.8125rem;
+  margin-top: 0.25rem;
+}
+
 .settings-range-field {
   align-items: center;
   display: grid;

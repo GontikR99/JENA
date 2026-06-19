@@ -3,6 +3,7 @@ import type { CSSProperties } from 'react'
 import Form from 'react-bootstrap/Form'
 import { Volume2 } from 'lucide-react'
 import { useSender } from '../shared/messageBrokerHooks'
+import { BINARY, FourStateCheckbox } from '../shared/widgets/FourStateCheckbox'
 import { useSettings } from './settingsContext'
 import { useSpeechVoices } from './speechVoiceContext'
 import {
@@ -187,6 +188,31 @@ export function SettingsView() {
               step={0.05}
               value={machineSettings.tts.volume}
             />
+            <div className="settings-field">
+              <FourStateCheckbox
+                id="use-broadcaster-speech-profile"
+                label="Use broadcaster speech settings when available"
+                mode={BINARY}
+                onChange={(nextState) => {
+                  updateMachineSettings((settings) => ({
+                    ...settings,
+                    tts: {
+                      ...settings.tts,
+                      useBroadcasterSpeechProfile: nextState === 'enabled',
+                    },
+                  }))
+                }}
+                state={
+                  machineSettings.tts.useBroadcasterSpeechProfile
+                    ? 'enabled'
+                    : 'disabled'
+                }
+              />
+              <div className="settings-field-note">
+                Broadcast alerts can carry the sender's rate, pitch, volume, and
+                best-effort voice choice.
+              </div>
+            </div>
           </div>
 
           <div className="settings-subsection">

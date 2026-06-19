@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import type {
+  TriggerSpeechProfile,
   TriggerTimerActionKind,
   TriggerTimerActionMessage,
   TriggerTimerActionPayload,
@@ -35,6 +36,7 @@ interface RuntimeTimer {
   generation: number
   id: string
   serverName: string
+  speechProfile?: TriggerSpeechProfile
   startedAtMs: number
   timerName: string
   triggerId: string
@@ -104,6 +106,7 @@ export function Pip() {
             endedAction: event.alert.timerEndedAction,
             generation: runtimeTimer.generation + 1,
             serverName: event.alert.serverName,
+            speechProfile: event.alert.speechProfile,
             startedAtMs,
             timerName,
             trigger: event.trigger,
@@ -124,6 +127,7 @@ export function Pip() {
           generation: 0,
           id: `pip-timer-${nextTimerId.current++}`,
           serverName: event.alert.serverName,
+          speechProfile: event.alert.speechProfile,
           startedAtMs,
           timerName,
           trigger: event.trigger,
@@ -414,6 +418,7 @@ function TimerBar({
         displayText: action.displayText,
         kind,
         serverName: currentTimer.serverName,
+        speechProfile: currentTimer.speechProfile,
         speechInterrupt: action.speechInterrupt,
         speechText: action.speechText,
         timerName: currentTimer.timerName,

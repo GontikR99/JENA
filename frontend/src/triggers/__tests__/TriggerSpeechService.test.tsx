@@ -19,6 +19,7 @@ import type {
 
 const hookState = vi.hoisted(() => ({
   areTriggersRunning: true,
+  useBroadcasterSpeechProfile: true,
   listeners: new Map<string, (message: { payload: unknown }) => void>(),
   stopCallback: null as ((event: TriggerStopEvent) => void) | null,
   timerActionCallback: null as ((event: TriggerTimerActionEvent) => void) | null,
@@ -43,6 +44,7 @@ vi.mock('../../settings/settingsContext', () => ({
       tts: {
         pitch: 1,
         rate: 1,
+        useBroadcasterSpeechProfile: hookState.useBroadcasterSpeechProfile,
         voiceURI: null,
         volume: 1,
       },
@@ -52,7 +54,18 @@ vi.mock('../../settings/settingsContext', () => ({
 
 vi.mock('../../settings/speechVoiceContext', () => ({
   useSpeechVoices: () => ({
-    voiceByURI: new Map(),
+    voiceByURI: new Map([
+      [
+        'voice:broadcaster',
+        {
+          default: false,
+          lang: 'en-US',
+          localService: true,
+          name: 'Broadcaster Voice',
+          voiceURI: 'voice:broadcaster',
+        },
+      ],
+    ]),
   }),
 }))
 
@@ -71,7 +84,11 @@ vi.mock('../alerts/useTriggerAlerts', () => ({
 class FakeSpeechSynthesisUtterance {
   onend: (() => void) | null = null
   onerror: (() => void) | null = null
+  pitch = 1
+  rate = 1
   text: string
+  voice: SpeechSynthesisVoice | null = null
+  volume = 1
 
   constructor(text: string) {
     this.text = text
@@ -89,6 +106,7 @@ const speechSynthesis = {
 describe('TriggerSpeechService', () => {
   beforeEach(() => {
     hookState.areTriggersRunning = true
+    hookState.useBroadcasterSpeechProfile = true
     hookState.listeners.clear()
     hookState.stopCallback = null
     hookState.timerActionCallback = null
@@ -193,6 +211,45 @@ describe('TriggerSpeechService', () => {
     ])
   })
 
+  it('uses carried speech profile settings when enabled', () => {
+    render(<TriggerSpeechService />)
+
+    fireTriggerMatch('profile speech', {
+      speechProfile: {
+        pitch: 1.5,
+        rate: 0.8,
+        voiceLang: 'en-US',
+        voiceName: 'Broadcaster Voice',
+        voiceURI: 'voice:broadcaster',
+        volume: 0.6,
+      },
+    })
+
+    expect(spokenUtterances[0]?.pitch).toBe(1.5)
+    expect(spokenUtterances[0]?.rate).toBe(0.8)
+    expect(spokenUtterances[0]?.volume).toBe(0.6)
+    expect(spokenUtterances[0]?.voice?.voiceURI).toBe('voice:broadcaster')
+  })
+
+  it('uses local speech settings when broadcaster profiles are disabled', () => {
+    hookState.useBroadcasterSpeechProfile = false
+    render(<TriggerSpeechService />)
+
+    fireTriggerMatch('local speech', {
+      speechProfile: {
+        pitch: 1.5,
+        rate: 0.8,
+        voiceURI: 'voice:broadcaster',
+        volume: 0.6,
+      },
+    })
+
+    expect(spokenUtterances[0]?.pitch).toBe(1)
+    expect(spokenUtterances[0]?.rate).toBe(1)
+    expect(spokenUtterances[0]?.volume).toBe(1)
+    expect(spokenUtterances[0]?.voice).toBeNull()
+  })
+
   it('speaks preview requests even when triggers are stopped', () => {
     hookState.areTriggersRunning = false
 
@@ -207,7 +264,10 @@ describe('TriggerSpeechService', () => {
 
 function fireTriggerMatch(
   speechText: string,
-  options: { interrupt?: boolean } = {},
+  options: {
+    interrupt?: boolean
+    speechProfile?: TriggerMatchEvent['alert']['speechProfile']
+  } = {},
 ) {
   if (!hookState.triggerMatchCallback) {
     throw new Error('Trigger match hook was not registered.')
@@ -218,10 +278,11 @@ function fireTriggerMatch(
   })
 
   hookState.triggerMatchCallback({
-    alert: {
-      characterName: 'Mesozoic',
-      serverName: 'Bristlebane',
-      speechText,
+      alert: {
+        characterName: 'Mesozoic',
+        serverName: 'Bristlebane',
+        speechProfile: options.speechProfile,
+        speechText,
       text: 'log line',
       timestamp: '2026-06-16T00:00:00.000Z',
       trigger,

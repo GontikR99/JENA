@@ -29,7 +29,31 @@ vi.mock('../../settings/settingsContext', () => ({
   useSettings: () => ({
     machineSettings: {
       includeCharacterNameForTriggerMatches: 'never',
+      tts: {
+        pitch: 1.2,
+        rate: 0.9,
+        useBroadcasterSpeechProfile: true,
+        voiceURI: 'voice:test',
+        volume: 0.75,
+      },
     },
+  }),
+}))
+
+vi.mock('../../settings/speechVoiceContext', () => ({
+  useSpeechVoices: () => ({
+    voiceByURI: new Map([
+      [
+        'voice:test',
+        {
+          default: false,
+          lang: 'en-US',
+          localService: true,
+          name: 'Test Voice',
+          voiceURI: 'voice:test',
+        },
+      ],
+    ]),
   }),
 }))
 
@@ -57,6 +81,14 @@ describe('AlertCoordinationService', () => {
         characterName: 'Mesozoic',
         clipboardText: 'Copy Fireball for Mesozoic',
         displayText: 'Display Fireball',
+        speechProfile: {
+          pitch: 1.2,
+          rate: 0.9,
+          voiceLang: 'en-US',
+          voiceName: 'Test Voice',
+          voiceURI: 'voice:test',
+          volume: 0.75,
+        },
         speechText: 'Say Mesozoic',
         timerEndedAction: {
           displayText: 'Ended Fireball',

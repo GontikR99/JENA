@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useRef } from 'react'
-import type { TriggerSpeechPreviewRequestedMessage } from '../../shared/messages'
+import type {
+  TriggerSpeechPreviewRequestedMessage,
+  TriggerSpeechProfile,
+} from '../../shared/messages'
 import { useListen } from '../../shared/messageBrokerHooks'
 import {
   createSpeechUtterance,
@@ -17,6 +20,7 @@ import {
 interface SpeechJob {
   interrupt: boolean
   requireRunning: boolean
+  speechProfile?: TriggerSpeechProfile
   text: string
 }
 
@@ -68,12 +72,16 @@ export function TriggerSpeechService() {
       return
     }
 
-    utterance.pitch = machineSettings.tts.pitch
-    utterance.rate = machineSettings.tts.rate
-    utterance.volume = machineSettings.tts.volume
-    if (machineSettings.tts.voiceURI) {
-      utterance.voice = voiceByURI.get(machineSettings.tts.voiceURI) ?? null
-    }
+    const speechSettings = getEffectiveSpeechSettings(
+      nextJob.speechProfile,
+      machineSettings.tts,
+      voiceByURI,
+    )
+
+    utterance.pitch = speechSettings.pitch
+    utterance.rate = speechSettings.rate
+    utterance.volume = speechSettings.volume
+    utterance.voice = speechSettings.voice
 
     const generation = generationRef.current
 
@@ -99,6 +107,7 @@ export function TriggerSpeechService() {
   }, [
     machineSettings.tts.pitch,
     machineSettings.tts.rate,
+    machineSettings.tts.useBroadcasterSpeechProfile,
     machineSettings.tts.voiceURI,
     machineSettings.tts.volume,
     voiceByURI,
@@ -155,6 +164,7 @@ export function TriggerSpeechService() {
     enqueueSpeech(
       {
         interrupt: event.trigger.actions.speech.interrupt,
+        speechProfile: event.alert.speechProfile,
         text: speechText,
       },
       {
@@ -172,6 +182,7 @@ export function TriggerSpeechService() {
     enqueueSpeech(
       {
         interrupt: event.alert.speechInterrupt ?? false,
+        speechProfile: event.alert.speechProfile,
         text: speechText,
       },
       {
@@ -204,4 +215,85 @@ export function TriggerSpeechService() {
   })
 
   return null
+}
+
+function getEffectiveSpeechSettings(
+  speechProfile: TriggerSpeechProfile | undefined,
+  localSettings: {
+    pitch: number
+    rate: number
+    useBroadcasterSpeechProfile: boolean
+    voiceURI: string | null
+    volume: number
+  },
+  voiceByURI: Map<string, SpeechSynthesisVoice>,
+) {
+  if (!localSettings.useBroadcasterSpeechProfile || !speechProfile) {
+    return {
+      pitch: localSettings.pitch,
+      rate: localSettings.rate,
+      voice: localSettings.voiceURI
+        ? voiceByURI.get(localSettings.voiceURI) ?? null
+        : null,
+      volume: localSettings.volume,
+    }
+  }
+
+  return {
+    pitch: speechProfile.pitch,
+    rate: speechProfile.rate,
+    voice: resolveProfileVoice(speechProfile, localSettings.voiceURI, voiceByURI),
+    volume: speechProfile.volume,
+  }
+}
+
+function resolveProfileVoice(
+  speechProfile: TriggerSpeechProfile,
+  localVoiceURI: string | null,
+  voiceByURI: Map<string, SpeechSynthesisVoice>,
+) {
+  if (speechProfile.voiceURI) {
+    const uriMatch = voiceByURI.get(speechProfile.voiceURI)
+    if (uriMatch) {
+      return uriMatch
+    }
+  }
+
+  const voices = [...voiceByURI.values()]
+
+  if (speechProfile.voiceName && speechProfile.voiceLang) {
+    const nameAndLangMatch = voices.find((voice) => {
+      return (
+        voice.name === speechProfile.voiceName &&
+        voice.lang === speechProfile.voiceLang
+      )
+    })
+    if (nameAndLangMatch) {
+      return nameAndLangMatch
+    }
+  }
+
+  if (speechProfile.voiceName) {
+    const nameMatch = voices.find((voice) => voice.name === speechProfile.voiceName)
+    if (nameMatch) {
+      return nameMatch
+    }
+
+    const normalizedVoiceName = speechProfile.voiceName.toLocaleLowerCase()
+    const caseInsensitiveNameMatch = voices.find((voice) => {
+      return voice.name.toLocaleLowerCase() === normalizedVoiceName
+    })
+    if (caseInsensitiveNameMatch) {
+      return caseInsensitiveNameMatch
+    }
+  }
+
+  if (speechProfile.voiceLang) {
+    const langMatch = voices.find((voice) => voice.lang === speechProfile.voiceLang)
+    if (langMatch) {
+      return langMatch
+    }
+  }
+
+  return localVoiceURI ? voiceByURI.get(localVoiceURI) ?? null : null
 }

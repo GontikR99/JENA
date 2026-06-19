@@ -1,12 +1,15 @@
 import { useCallback, useEffect, useRef } from 'react'
 import type {
   RegexMatchFoundMessage,
+  TriggerSpeechProfile,
   TriggerAlertMatchedMessage,
   TriggerTimerActionPayload,
   TriggerEarlyEnderMatchedMessage,
   TriggerStoreTriggersSeenMessage,
 } from '../../shared/messages'
 import { useListen, useRpc, useSender } from '../../shared/messageBrokerHooks'
+import { useSettings } from '../../settings/settingsContext'
+import { useSpeechVoices } from '../../settings/speechVoiceContext'
 import type { JenaTimerAction, JenaTrigger } from '../../shared/triggers'
 import {
   compileAlertMatcher,
@@ -27,6 +30,8 @@ interface AlertPatternBinding {
 export function AlertCoordinationService() {
   const call = useRpc('alert-coordination-service')
   const send = useSender('alert-coordination-service')
+  const { machineSettings } = useSettings()
+  const { voiceByURI } = useSpeechVoices()
   const sessionIdRef = useRef(createAlertPatternSessionId())
   const indexedTriggerIdsRef = useRef(new Set<string>())
   const patternIndexRef = useRef(new Map<string, AlertPatternBinding[]>())
@@ -124,6 +129,7 @@ export function AlertCoordinationService() {
             binding.trigger,
             match,
             context,
+            createSpeechProfile(machineSettings.tts, voiceByURI),
           )
 
           console.log('[AlertCoordinationService] trigger matched', payload)
@@ -141,7 +147,7 @@ export function AlertCoordinationService() {
         send('alert.timer-early-ended', payload)
       })
     },
-    [send],
+    [machineSettings.tts, send, voiceByURI],
   )
 
   useListen('trigger-store.triggers-seen', (message) => {
@@ -197,6 +203,7 @@ function createTriggerAlertPayload(
   trigger: JenaTrigger,
   match: RegexMatchFoundMessage,
   context: AlertMatchContext,
+  speechProfile: TriggerSpeechProfile,
 ): TriggerAlertMatchedMessage {
   return withoutUndefinedValues({
     characterName: match.characterName,
@@ -207,6 +214,7 @@ function createTriggerAlertPayload(
       ? substituteAlertTemplate(trigger.actions.display.text, context)
       : undefined,
     serverName: match.serverName,
+    speechProfile,
     speechText: trigger.actions.speech.enabled
       ? substituteAlertTemplate(trigger.actions.speech.text, context)
       : undefined,
@@ -222,6 +230,27 @@ function createTriggerAlertPayload(
       : undefined,
     timestamp: match.timestamp,
     trigger,
+  })
+}
+
+function createSpeechProfile(
+  tts: {
+    pitch: number
+    rate: number
+    voiceURI: string | null
+    volume: number
+  },
+  voiceByURI: Map<string, SpeechSynthesisVoice>,
+): TriggerSpeechProfile {
+  const voice = tts.voiceURI ? voiceByURI.get(tts.voiceURI) : null
+
+  return withoutUndefinedValues({
+    pitch: tts.pitch,
+    rate: tts.rate,
+    voiceLang: voice?.lang,
+    voiceName: voice?.name,
+    voiceURI: tts.voiceURI,
+    volume: tts.volume,
   })
 }
 
