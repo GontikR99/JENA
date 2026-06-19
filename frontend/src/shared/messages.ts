@@ -59,7 +59,26 @@ export interface TriggerAlertMatchedMessage {
   serverName: string
   speechText?: string
   text: string
+  timerEndedAction?: TriggerTimerActionPayload
   timerName?: string
+  timerWarningAction?: TriggerTimerActionPayload
+  timestamp: string
+  trigger: JenaTrigger
+}
+
+export interface TriggerTimerActionPayload {
+  displayText?: string
+  speechInterrupt?: boolean
+  speechText?: string
+}
+
+export type TriggerTimerActionKind = 'ended' | 'warning'
+
+export interface TriggerTimerActionMessage extends TriggerTimerActionPayload {
+  characterName: string
+  kind: TriggerTimerActionKind
+  serverName: string
+  timerName: string
   timestamp: string
   trigger: JenaTrigger
 }
@@ -199,6 +218,7 @@ export interface NearbyCharacterPresenceMessage {
 
 export interface EndpointMessages {
   'alert.broadcast': BroadcastAlertMessage
+  'alert.timer-action': TriggerTimerActionMessage
   'alert.timer-early-ended': TriggerEarlyEnderMatchedMessage
   'alert.stop-requested': TriggerStopRequestedMessage
   'alert.trigger-matched': TriggerAlertMatchedMessage

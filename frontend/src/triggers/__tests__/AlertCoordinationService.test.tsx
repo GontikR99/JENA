@@ -58,7 +58,17 @@ describe('AlertCoordinationService', () => {
         clipboardText: 'Copy Fireball for Mesozoic',
         displayText: 'Display Fireball',
         speechText: 'Say Mesozoic',
+        timerEndedAction: {
+          displayText: 'Ended Fireball',
+          speechInterrupt: true,
+          speechText: 'Ended Mesozoic',
+        },
         timerName: 'Timer Fireball',
+        timerWarningAction: {
+          displayText: 'Warning Fireball',
+          speechInterrupt: false,
+          speechText: 'Warning Mesozoic',
+        },
       }),
     )
   })
@@ -134,11 +144,31 @@ function createTrigger({
     timer: {
       durationMs: 10_000,
       earlyEnders: [],
-      endedAction: null,
+      endedAction: {
+        display: {
+          enabled: true,
+          text: 'Ended ${spell}',
+        },
+        speech: {
+          enabled: true,
+          interrupt: true,
+          text: 'Ended {C}',
+        },
+      },
       name: 'Timer ${spell}',
       startBehavior: 'restart',
       type: 'countdown',
-      warningAction: null,
+      warningAction: {
+        display: {
+          enabled: true,
+          text: 'Warning ${spell}',
+        },
+        speech: {
+          enabled: true,
+          interrupt: false,
+          text: 'Warning {C}',
+        },
+      },
       warningSeconds: 0,
     },
   })

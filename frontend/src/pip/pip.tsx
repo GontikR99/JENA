@@ -1,19 +1,27 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import type {
+  TriggerTimerActionKind,
+  TriggerTimerActionMessage,
+  TriggerTimerActionPayload,
+} from '../shared/messages'
+import type {
   JenaTriggerTimer,
   JenaTriggerTimerType,
 } from '../shared/triggers'
 import jenaBrandLockupLargeUrl from '../assets/jena-brand-lockup-large.webp'
+import { useSender } from '../shared/messageBrokerHooks'
 import { useSettings } from '../settings/settingsContext'
 import type {
   PipTextStyleSettings,
   PipTimerStyleSettings,
 } from '../settings/settingsTypes'
 import {
+  useOnTimerAction,
   useOnTimerEarlyEnder,
   useOnTriggerStop,
   useOnTriggerMatch,
+  type TriggerTimerActionEvent,
   type TimerEarlyEnderEvent,
   type TriggerMatchEvent,
 } from '../triggers/alerts/useTriggerAlerts'
@@ -23,13 +31,17 @@ const defaultTextLifetimeMs = 5000
 interface RuntimeTimer {
   characterName: string
   durationMs: number
+  endedAction?: TriggerTimerActionPayload
   generation: number
   id: string
   serverName: string
   startedAtMs: number
   timerName: string
   triggerId: string
+  trigger: TriggerMatchEvent['trigger']
   type: JenaTriggerTimerType
+  warningAction?: TriggerTimerActionPayload
+  warningSeconds: number
 }
 
 interface RuntimeText {
@@ -40,6 +52,7 @@ interface RuntimeText {
 
 export function Pip() {
   const { machineSettings } = useSettings()
+  const send = useSender('pip')
   const nextTimerId = useRef(1)
   const nextTextId = useRef(1)
   const [timers, setTimers] = useState<RuntimeTimer[]>([])
@@ -88,12 +101,16 @@ export function Pip() {
             ...runtimeTimer,
             characterName: event.alert.characterName,
             durationMs: timer.durationMs,
+            endedAction: event.alert.timerEndedAction,
             generation: runtimeTimer.generation + 1,
             serverName: event.alert.serverName,
             startedAtMs,
             timerName,
+            trigger: event.trigger,
             triggerId: event.trigger.id,
             type: timer.type,
+            warningAction: event.alert.timerWarningAction,
+            warningSeconds: timer.warningSeconds,
           }
         })
       }
@@ -103,13 +120,17 @@ export function Pip() {
         {
           characterName: event.alert.characterName,
           durationMs: timer.durationMs,
+          endedAction: event.alert.timerEndedAction,
           generation: 0,
           id: `pip-timer-${nextTimerId.current++}`,
           serverName: event.alert.serverName,
           startedAtMs,
           timerName,
+          trigger: event.trigger,
           triggerId: event.trigger.id,
           type: timer.type,
+          warningAction: event.alert.timerWarningAction,
+          warningSeconds: timer.warningSeconds,
         },
       ]
     })
@@ -130,10 +151,33 @@ export function Pip() {
     ])
   }, [])
 
+  const handleTimerAction = useCallback(
+    (alert: TriggerTimerActionMessage) => {
+      send('alert.timer-action', alert)
+    },
+    [send],
+  )
+
+  const handleTimerActionText = useCallback((event: TriggerTimerActionEvent) => {
+    if (!event.alert.displayText) {
+      return
+    }
+
+    setTexts((currentTexts) => [
+      ...currentTexts,
+      {
+        createdAtMs: performance.now(),
+        id: `pip-text-${nextTextId.current++}`,
+        text: event.alert.displayText ?? '',
+      },
+    ])
+  }, [])
+
   return (
     <main className="pip-view">
       <TriggerMatchTimerLauncher onMatch={handleTimerMatch} />
       <TriggerMatchTextLauncher onMatch={handleTextMatch} />
+      <TimerActionTextLauncher onAction={handleTimerActionText} />
 
       <div aria-hidden="true" className="pip-watermark-layer">
         <div className="pip-watermark-label pip-watermark-label-top">
@@ -154,6 +198,7 @@ export function Pip() {
           <TimerBar
             key={timer.id}
             onRemove={removeTimer}
+            onTimerAction={handleTimerAction}
             settings={machineSettings.pip.timers}
             timer={timer}
           />
@@ -192,23 +237,44 @@ function TriggerMatchTextLauncher({
   return null
 }
 
+function TimerActionTextLauncher({
+  onAction,
+}: {
+  onAction: (event: TriggerTimerActionEvent) => void
+}) {
+  useOnTimerAction(onAction)
+  return null
+}
+
 function TimerBar({
   onRemove,
+  onTimerAction,
   settings,
   timer,
 }: {
   onRemove: (timerId: string) => void
+  onTimerAction: (alert: TriggerTimerActionMessage) => void
   settings: PipTimerStyleSettings
   timer: RuntimeTimer
 }) {
   const fillRef = useRef<HTMLDivElement | null>(null)
   const durationRef = useRef<HTMLSpanElement | null>(null)
+  const endedCycleRef = useRef<number | null>(null)
+  const endedFiredRef = useRef(false)
+  const lastCycleIndexRef = useRef<number | null>(null)
   const removedRef = useRef(false)
   const timerRef = useRef(timer)
+  const warnedCycleRef = useRef<number | null>(null)
+  const warningFiredRef = useRef(false)
 
   useEffect(() => {
     timerRef.current = timer
+    endedCycleRef.current = null
+    endedFiredRef.current = false
+    lastCycleIndexRef.current = null
     removedRef.current = false
+    warnedCycleRef.current = null
+    warningFiredRef.current = false
   }, [timer])
 
   useEffect(() => {
@@ -218,6 +284,8 @@ function TimerBar({
       const currentTimer = timerRef.current
       const elapsedMs = Math.max(0, nowMs - currentTimer.startedAtMs)
       const frame = getTimerFrame(currentTimer, elapsedMs)
+
+      emitDueTimerActions(currentTimer, frame)
 
       if (fillRef.current) {
         fillRef.current.style.width = `${frame.progress * 100}%`
@@ -238,7 +306,122 @@ function TimerBar({
     return () => {
       cancelAnimationFrame(frameId)
     }
-  }, [onRemove, timer.generation, timer.id])
+  }, [onRemove, onTimerAction, timer.generation, timer.id])
+
+  function emitDueTimerActions(
+    currentTimer: RuntimeTimer,
+    frame: TimerFrame,
+  ) {
+    if (currentTimer.type === 'countdown') {
+      maybeEmitCountdownWarning(currentTimer, frame)
+      maybeEmitCountdownEnded(currentTimer, frame)
+      return
+    }
+
+    if (currentTimer.type === 'repeating') {
+      maybeEmitRepeatingEnded(currentTimer, frame)
+      maybeEmitRepeatingWarning(currentTimer, frame)
+    }
+  }
+
+  function maybeEmitCountdownWarning(
+    currentTimer: RuntimeTimer,
+    frame: TimerFrame,
+  ) {
+    if (
+      warningFiredRef.current ||
+      !currentTimer.warningAction ||
+      currentTimer.warningSeconds <= 0
+    ) {
+      return
+    }
+
+    if (frame.remainingMs <= currentTimer.warningSeconds * 1000) {
+      warningFiredRef.current = true
+      emitTimerAction('warning', currentTimer, currentTimer.warningAction)
+    }
+  }
+
+  function maybeEmitCountdownEnded(
+    currentTimer: RuntimeTimer,
+    frame: TimerFrame,
+  ) {
+    if (endedFiredRef.current || !currentTimer.endedAction || !frame.complete) {
+      return
+    }
+
+    endedFiredRef.current = true
+    emitTimerAction('ended', currentTimer, currentTimer.endedAction)
+  }
+
+  function maybeEmitRepeatingWarning(
+    currentTimer: RuntimeTimer,
+    frame: TimerFrame,
+  ) {
+    if (
+      !currentTimer.warningAction ||
+      currentTimer.warningSeconds <= 0 ||
+      warnedCycleRef.current === frame.cycleIndex
+    ) {
+      return
+    }
+
+    if (frame.remainingMs <= currentTimer.warningSeconds * 1000) {
+      warnedCycleRef.current = frame.cycleIndex
+      emitTimerAction('warning', currentTimer, currentTimer.warningAction)
+    }
+  }
+
+  function maybeEmitRepeatingEnded(
+    currentTimer: RuntimeTimer,
+    frame: TimerFrame,
+  ) {
+    const lastCycleIndex = lastCycleIndexRef.current
+
+    if (lastCycleIndex === null) {
+      lastCycleIndexRef.current = frame.cycleIndex
+      return
+    }
+
+    if (
+      frame.cycleIndex <= lastCycleIndex ||
+      endedCycleRef.current === lastCycleIndex
+    ) {
+      return
+    }
+
+    lastCycleIndexRef.current = frame.cycleIndex
+    if (!currentTimer.endedAction) {
+      return
+    }
+
+    endedCycleRef.current = lastCycleIndex
+    emitTimerAction('ended', currentTimer, currentTimer.endedAction)
+  }
+
+  function emitTimerAction(
+    kind: TriggerTimerActionKind,
+    currentTimer: RuntimeTimer,
+    action: TriggerTimerActionPayload,
+  ) {
+    if (!action.displayText && !action.speechText) {
+      return
+    }
+
+    onTimerAction(
+      withoutUndefinedValues({
+        characterName: currentTimer.characterName,
+        displayText: action.displayText,
+        kind,
+        serverName: currentTimer.serverName,
+        speechInterrupt: action.speechInterrupt,
+        speechText: action.speechText,
+        timerName: currentTimer.timerName,
+        timestamp: new Date().toISOString(),
+        trigger: currentTimer.trigger,
+      }),
+    )
+  }
 
   useOnTimerEarlyEnder((event) => {
     if (!doesEarlyEnderMatchTimer(event, timerRef.current)) {
@@ -337,14 +520,24 @@ function findTimerIndex(
   )
 }
 
-function getTimerFrame(timer: RuntimeTimer, elapsedMs: number) {
+interface TimerFrame {
+  complete: boolean
+  cycleIndex: number
+  label: string
+  progress: number
+  remainingMs: number
+}
+
+function getTimerFrame(timer: RuntimeTimer, elapsedMs: number): TimerFrame {
   switch (timer.type) {
     case 'countdown': {
       const remainingMs = Math.max(0, timer.durationMs - elapsedMs)
       return {
         complete: remainingMs <= 0,
+        cycleIndex: 0,
         label: formatRemainingDuration(remainingMs),
         progress: timer.durationMs > 0 ? remainingMs / timer.durationMs : 0,
+        remainingMs,
       }
     }
     case 'repeating': {
@@ -352,15 +545,19 @@ function getTimerFrame(timer: RuntimeTimer, elapsedMs: number) {
       const remainingMs = Math.max(0, timer.durationMs - cycleElapsedMs)
       return {
         complete: false,
+        cycleIndex: timer.durationMs > 0 ? Math.floor(elapsedMs / timer.durationMs) : 0,
         label: formatRemainingDuration(remainingMs),
         progress: timer.durationMs > 0 ? remainingMs / timer.durationMs : 0,
+        remainingMs,
       }
     }
     case 'stopwatch':
       return {
         complete: false,
+        cycleIndex: 0,
         label: formatElapsedDuration(elapsedMs),
         progress: timer.durationMs > 0 ? Math.min(1, elapsedMs / timer.durationMs) : 1,
+        remainingMs: Number.POSITIVE_INFINITY,
       }
   }
 }
@@ -426,4 +623,12 @@ function padTimePart(value: number) {
 
 function isSameText(left: string, right: string) {
   return left.localeCompare(right, undefined, { sensitivity: 'accent' }) === 0
+}
+
+function withoutUndefinedValues<TValue extends Record<string, unknown>>(
+  value: TValue,
+) {
+  return Object.fromEntries(
+    Object.entries(value).filter(([, entryValue]) => entryValue !== undefined),
+  ) as TValue
 }

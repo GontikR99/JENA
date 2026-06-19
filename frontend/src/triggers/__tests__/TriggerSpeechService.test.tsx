@@ -12,6 +12,7 @@ import {
   TriggerSpeechService,
 } from '../alerts/TriggerSpeechService'
 import type {
+  TriggerTimerActionEvent,
   TriggerMatchEvent,
   TriggerStopEvent,
 } from '../alerts/useTriggerAlerts'
@@ -20,6 +21,7 @@ const hookState = vi.hoisted(() => ({
   areTriggersRunning: true,
   listeners: new Map<string, (message: { payload: unknown }) => void>(),
   stopCallback: null as ((event: TriggerStopEvent) => void) | null,
+  timerActionCallback: null as ((event: TriggerTimerActionEvent) => void) | null,
   triggerMatchCallback: null as ((event: TriggerMatchEvent) => void) | null,
 }))
 
@@ -55,6 +57,9 @@ vi.mock('../../settings/speechVoiceContext', () => ({
 }))
 
 vi.mock('../alerts/useTriggerAlerts', () => ({
+  useOnTimerAction: (callback: (event: TriggerTimerActionEvent) => void) => {
+    hookState.timerActionCallback = callback
+  },
   useOnTriggerMatch: (callback: (event: TriggerMatchEvent) => void) => {
     hookState.triggerMatchCallback = callback
   },
@@ -86,6 +91,7 @@ describe('TriggerSpeechService', () => {
     hookState.areTriggersRunning = true
     hookState.listeners.clear()
     hookState.stopCallback = null
+    hookState.timerActionCallback = null
     hookState.triggerMatchCallback = null
     spokenUtterances.length = 0
     speechSynthesis.cancel.mockClear()
@@ -177,6 +183,16 @@ describe('TriggerSpeechService', () => {
     expect(speechSynthesis.speak).not.toHaveBeenCalled()
   })
 
+  it('speaks timer action speech', () => {
+    render(<TriggerSpeechService />)
+
+    fireTimerAction('timer warning')
+
+    expect(spokenUtterances.map((utterance) => utterance.text)).toEqual([
+      'timer warning',
+    ])
+  })
+
   it('speaks preview requests even when triggers are stopped', () => {
     hookState.areTriggersRunning = false
 
@@ -215,6 +231,29 @@ function fireTriggerMatch(
     registrations: [],
     resolvedTrigger: createResolvedTrigger(trigger),
     trigger,
+  })
+}
+
+function fireTimerAction(speechText: string) {
+  if (!hookState.timerActionCallback) {
+    throw new Error('Timer action hook was not registered.')
+  }
+
+  const trigger = createTrigger({
+    interrupt: false,
+  })
+
+  hookState.timerActionCallback({
+    alert: {
+      characterName: 'Mesozoic',
+      kind: 'warning',
+      serverName: 'Bristlebane',
+      speechInterrupt: false,
+      speechText,
+      timerName: 'Timer',
+      timestamp: '2026-06-16T00:00:00.000Z',
+      trigger,
+    },
   })
 }
 

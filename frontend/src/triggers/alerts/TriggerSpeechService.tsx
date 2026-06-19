@@ -8,7 +8,11 @@ import {
 import { useTriggerRuntime } from '../../runtime/TriggerRuntime'
 import { useSettings } from '../../settings/settingsContext'
 import { useSpeechVoices } from '../../settings/speechVoiceContext'
-import { useOnTriggerMatch, useOnTriggerStop } from './useTriggerAlerts'
+import {
+  useOnTimerAction,
+  useOnTriggerMatch,
+  useOnTriggerStop,
+} from './useTriggerAlerts'
 
 interface SpeechJob {
   interrupt: boolean
@@ -151,6 +155,23 @@ export function TriggerSpeechService() {
     enqueueSpeech(
       {
         interrupt: event.trigger.actions.speech.interrupt,
+        text: speechText,
+      },
+      {
+        requireRunning: true,
+      },
+    )
+  })
+
+  useOnTimerAction((event) => {
+    const speechText = event.alert.speechText?.trim()
+    if (!speechText) {
+      return
+    }
+
+    enqueueSpeech(
+      {
+        interrupt: event.alert.speechInterrupt ?? false,
         text: speechText,
       },
       {

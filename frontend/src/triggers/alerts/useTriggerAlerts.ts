@@ -3,6 +3,7 @@ import type {
   TriggerAlertMatchedMessage,
   TriggerEarlyEnderMatchedMessage,
   TriggerStopRequestedMessage,
+  TriggerTimerActionMessage,
 } from '../../shared/messages'
 import { useListen } from '../../shared/messageBrokerHooks'
 import { useSettings } from '../../settings/settingsContext'
@@ -17,6 +18,10 @@ export type { TimerEarlyEnderEvent, TriggerMatchEvent }
 
 export interface TriggerStopEvent {
   alert: TriggerStopRequestedMessage
+}
+
+export interface TriggerTimerActionEvent {
+  alert: TriggerTimerActionMessage
 }
 
 interface TriggerAlertHookOptions {
@@ -91,6 +96,27 @@ export function useOnTriggerStop(callback: (event: TriggerStopEvent) => void) {
   })
 }
 
+export function useOnTimerAction(
+  callback: (event: TriggerTimerActionEvent) => void,
+  options: TriggerAlertHookOptions = {},
+) {
+  const { machineSettings } = useSettings()
+  const decorate = options.decorate ?? true
+
+  useListen('alert.timer-action', (message) => {
+    const alert = message.payload as TriggerTimerActionMessage
+
+    callback({
+      alert: decorate
+        ? decorateTimerActionAlert(
+            alert,
+            machineSettings.includeCharacterNameForTriggerMatches,
+          )
+        : alert,
+    })
+  })
+}
+
 function decorateTriggerAlert(
   alert: TriggerAlertMatchedMessage,
   includeCharacterNameMode: IncludeCharacterNameForTriggerMatches,
@@ -146,6 +172,42 @@ function decorateTimerEarlyEnderAlert(
               includeCharacterNameMode,
             )
           : alert.timerName,
+  })
+}
+
+function decorateTimerActionAlert(
+  alert: TriggerTimerActionMessage,
+  includeCharacterNameMode: IncludeCharacterNameForTriggerMatches,
+) {
+  const action =
+    alert.kind === 'warning'
+      ? alert.trigger.timer?.warningAction
+      : alert.trigger.timer?.endedAction
+
+  return withoutUndefinedValues({
+    ...alert,
+    displayText:
+      alert.displayText === undefined
+        ? undefined
+        : action
+          ? withCharacterPrefix(
+              alert.displayText,
+              action.display.text,
+              alert.characterName,
+              includeCharacterNameMode,
+            )
+          : alert.displayText,
+    speechText:
+      alert.speechText === undefined
+        ? undefined
+        : action
+          ? withCharacterPrefix(
+              alert.speechText,
+              action.speech.text,
+              alert.characterName,
+              includeCharacterNameMode,
+            )
+          : alert.speechText,
   })
 }
 

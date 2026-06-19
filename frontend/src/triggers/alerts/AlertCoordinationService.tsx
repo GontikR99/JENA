@@ -2,11 +2,12 @@ import { useCallback, useEffect, useRef } from 'react'
 import type {
   RegexMatchFoundMessage,
   TriggerAlertMatchedMessage,
+  TriggerTimerActionPayload,
   TriggerEarlyEnderMatchedMessage,
   TriggerStoreTriggersSeenMessage,
 } from '../../shared/messages'
 import { useListen, useRpc, useSender } from '../../shared/messageBrokerHooks'
-import type { JenaTrigger } from '../../shared/triggers'
+import type { JenaTimerAction, JenaTrigger } from '../../shared/triggers'
 import {
   compileAlertMatcher,
   createAlertMatchContext,
@@ -210,11 +211,32 @@ function createTriggerAlertPayload(
       ? substituteAlertTemplate(trigger.actions.speech.text, context)
       : undefined,
     text: match.text,
+    timerEndedAction: trigger.timer?.endedAction
+      ? createTimerActionPayload(trigger.timer.endedAction, context)
+      : undefined,
     timerName: trigger.timer
       ? substituteAlertTemplate(trigger.timer.name, context)
       : undefined,
+    timerWarningAction: trigger.timer?.warningAction
+      ? createTimerActionPayload(trigger.timer.warningAction, context)
+      : undefined,
     timestamp: match.timestamp,
     trigger,
+  })
+}
+
+function createTimerActionPayload(
+  action: JenaTimerAction,
+  context: AlertMatchContext,
+): TriggerTimerActionPayload {
+  return withoutUndefinedValues({
+    displayText: action.display.enabled
+      ? substituteAlertTemplate(action.display.text, context)
+      : undefined,
+    speechInterrupt: action.speech.enabled ? action.speech.interrupt : undefined,
+    speechText: action.speech.enabled
+      ? substituteAlertTemplate(action.speech.text, context)
+      : undefined,
   })
 }
 

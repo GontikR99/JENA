@@ -16,6 +16,7 @@ import {
 import { AlertEventCoordinatorProvider } from '../alerts/AlertEventCoordinator'
 import {
   type TriggerMatchEvent,
+  useOnTimerAction,
   useOnTimerEarlyEnder,
   useOnTriggerMatch,
   useOnTriggerStop,
@@ -396,6 +397,22 @@ describe('useTriggerAlerts', () => {
     }))
   })
 
+  it('applies character name decoration to timer action callbacks by default', () => {
+    const callback = vi.fn()
+    hookState.includeCharacterNameForTriggerMatches = 'always'
+
+    renderHook(() => useOnTimerAction(callback))
+    emit('alert.timer-action', createTimerActionAlert())
+
+    expect(callback).toHaveBeenCalledTimes(1)
+    expect(callback).toHaveBeenCalledWith({
+      alert: expect.objectContaining({
+        displayText: '[Mesozoic] Timer warning display',
+        speechText: '[Mesozoic] Timer warning speech',
+      }),
+    })
+  })
+
   it('always passes through stop requests', () => {
     const callback = vi.fn()
     const alert = createStopAlert()
@@ -461,6 +478,44 @@ function createEarlyEnderAlert(
     timestamp: '2026-06-16T00:00:00.000Z',
     trigger: testTrigger,
     ...overrides,
+  }
+}
+
+function createTimerActionAlert() {
+  const trigger = withCanonicalTriggerId({
+    ...testTrigger,
+    timer: {
+      durationMs: 10_000,
+      earlyEnders: [],
+      endedAction: null,
+      name: 'Timer',
+      startBehavior: 'restart',
+      type: 'countdown',
+      warningAction: {
+        display: {
+          enabled: true,
+          text: 'Timer warning display',
+        },
+        speech: {
+          enabled: true,
+          interrupt: false,
+          text: 'Timer warning speech',
+        },
+      },
+      warningSeconds: 2,
+    },
+  })
+
+  return {
+    characterName: 'Mesozoic',
+    displayText: 'Timer warning display',
+    kind: 'warning',
+    serverName: 'Bristlebane',
+    speechInterrupt: false,
+    speechText: 'Timer warning speech',
+    timerName: 'Timer',
+    timestamp: '2026-06-16T00:00:00.000Z',
+    trigger,
   }
 }
 

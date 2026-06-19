@@ -2,9 +2,14 @@
 
 import { act, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type {
+  TriggerTimerActionMessage,
+  TriggerTimerActionPayload,
+} from '../../shared/messages'
 import type { JenaTrigger } from '../../shared/triggers'
 import type {
   TimerEarlyEnderEvent,
+  TriggerTimerActionEvent,
   TriggerMatchEvent,
   TriggerStopEvent,
 } from '../../triggers/alerts/useTriggerAlerts'
@@ -13,10 +18,24 @@ import { Pip } from '../pip'
 const hookState = vi.hoisted(() => ({
   earlyEnderListeners: [] as Array<(event: TimerEarlyEnderEvent) => void>,
   stopListeners: [] as Array<(event: TriggerStopEvent) => void>,
+  timerActionListeners: [] as Array<(event: TriggerTimerActionEvent) => void>,
   triggerMatchListeners: [] as Array<(event: TriggerMatchEvent) => void>,
 }))
 
+vi.mock('../../shared/messageBrokerHooks', () => ({
+  useSender: () => (_destination: string, payload: TriggerTimerActionMessage) => {
+    hookState.timerActionListeners.forEach((listener) => {
+      listener({
+        alert: payload,
+      })
+    })
+  },
+}))
+
 vi.mock('../../triggers/alerts/useTriggerAlerts', () => ({
+  useOnTimerAction: (callback: (event: TriggerTimerActionEvent) => void) => {
+    hookState.timerActionListeners = [callback]
+  },
   useOnTimerEarlyEnder: (callback: (event: TimerEarlyEnderEvent) => void) => {
     hookState.earlyEnderListeners.push(callback)
   },
@@ -58,6 +77,7 @@ describe('Pip', () => {
     nextFrameId = 1
     hookState.earlyEnderListeners = []
     hookState.stopListeners = []
+    hookState.timerActionListeners = []
     hookState.triggerMatchListeners = []
     nowSpy = vi.spyOn(performance, 'now').mockReturnValue(0)
 
@@ -139,6 +159,48 @@ describe('Pip', () => {
     expect(screen.queryByText('Short Timer')).not.toBeInTheDocument()
   })
 
+  it('shows timer warning and ended display text', () => {
+    render(<Pip />)
+
+    act(() => {
+      emitTriggerMatch({
+        timer: createTimer({
+          durationMs: 10_000,
+          endedAction: createTimerAction({
+            displayText: 'Timer ended',
+          }),
+          startBehavior: 'restart',
+          warningAction: createTimerAction({
+            displayText: 'Timer warning',
+          }),
+          warningSeconds: 2,
+        }),
+        timerEndedAction: {
+          displayText: 'Timer ended',
+        },
+        timerName: 'Action Timer',
+        timerWarningAction: {
+          displayText: 'Timer warning',
+        },
+      })
+    })
+
+    expect(screen.queryByText('Timer warning')).not.toBeInTheDocument()
+
+    act(() => {
+      runAnimationFrames(8000)
+    })
+
+    expect(screen.getByText('Timer warning')).toBeInTheDocument()
+
+    act(() => {
+      runAnimationFrames(10_000)
+    })
+
+    expect(screen.getByText('Timer ended')).toBeInTheDocument()
+    expect(screen.queryByText('Action Timer')).not.toBeInTheDocument()
+  })
+
   it('removes timers when a matching early ender arrives', () => {
     render(<Pip />)
 
@@ -213,11 +275,15 @@ describe('Pip', () => {
 function emitTriggerMatch({
   displayText,
   timer,
+  timerEndedAction,
   timerName,
+  timerWarningAction,
 }: {
   displayText?: string
   timer?: JenaTrigger['timer']
+  timerEndedAction?: TriggerTimerActionPayload
   timerName?: string
+  timerWarningAction?: TriggerTimerActionPayload
 }) {
   const trigger = createTrigger(timer ?? null)
 
@@ -228,7 +294,9 @@ function emitTriggerMatch({
         displayText,
         serverName: 'Bristlebane',
         text: 'log line',
+        timerEndedAction,
         timerName,
+        timerWarningAction,
         timestamp: '2026-06-17T12:00:00Z',
         trigger,
       },
@@ -249,6 +317,26 @@ function emitTriggerMatch({
       trigger,
     })
   })
+}
+
+function createTimerAction({
+  displayText = '',
+  speechInterrupt = false,
+  speechText = '',
+}: TriggerTimerActionPayload = {}): NonNullable<
+  NonNullable<JenaTrigger['timer']>['warningAction']
+> {
+  return {
+    display: {
+      enabled: displayText.length > 0,
+      text: displayText,
+    },
+    speech: {
+      enabled: speechText.length > 0,
+      interrupt: speechInterrupt,
+      text: speechText,
+    },
+  }
 }
 
 function emitTimerEarlyEnder({ timerName }: { timerName?: string }) {
