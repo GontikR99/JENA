@@ -20,7 +20,11 @@ import { useTriggerRuntime } from './TriggerRuntime'
 
 type LogStatus = 'idle' | 'reading' | 'ready'
 
-export function StartupButton() {
+interface StartupButtonProps {
+  onDirectoryOpened?: () => void
+}
+
+export function StartupButton({ onDirectoryOpened }: StartupButtonProps) {
   const callWorker = useRpc('startup-button')
   const {
     areTriggersRunning,
@@ -117,6 +121,7 @@ export function StartupButton() {
       setSavedDirectoryHandle(selectedDirectoryHandle)
       setDirectoryHandle(selectedDirectoryHandle)
       setLogStatus('ready')
+      onDirectoryOpened?.()
     } catch (error) {
       setDirectoryHandle(null)
       setLogStatus('idle')
@@ -168,6 +173,7 @@ export function StartupButton() {
         await setWorkerFileHandle(selectedDirectoryHandle)
         setDirectoryHandle(selectedDirectoryHandle)
         setLogStatus('ready')
+        onDirectoryOpened?.()
       }
 
       setSavedDirectoryHandle(selectedDirectoryHandle)
@@ -282,10 +288,10 @@ function getPrimaryButtonLabel({
   }
 
   if (hasSavedDirectoryHandle) {
-    return 'Open EverQuest directory'
+    return 'Open EverQuest Directory'
   }
 
-  return 'Choose EverQuest directory'
+  return 'Choose EverQuest Directory'
 }
 
 async function activateEverQuestDirectoryHandle(

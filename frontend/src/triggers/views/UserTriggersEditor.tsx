@@ -1138,6 +1138,10 @@ export function UserTriggersEditor({
       className="user-triggers-editor"
       onContextMenu={(event) => openContextMenu(event, null)}
     >
+      <header className="user-triggers-header">
+        <h2>My Triggers</h2>
+      </header>
+
       <div className="user-triggers-toolbar">
         <Button onClick={handleAddRootGroup} size="sm" variant="outline-secondary">
           add group

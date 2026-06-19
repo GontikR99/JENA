@@ -1,9 +1,26 @@
 .user-triggers-editor {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
   height: 100%;
   min-height: 0;
   min-width: 0;
+}
+
+.user-triggers-header {
+  align-items: center;
+  background: #f8fafc;
+  border-bottom: 1px solid var(--bs-border-color);
+  display: flex;
+  min-height: 2.5rem;
+  padding: 0.45rem 0.75rem;
+}
+
+.user-triggers-header h2 {
+  color: #111827;
+  font-size: 0.95rem;
+  font-weight: 700;
+  line-height: 1.25;
+  margin: 0;
 }
 
 .user-triggers-toolbar {

@@ -528,114 +528,130 @@ export function SubscribedTriggersView({
 
   return (
     <section className="subscribed-triggers-view" aria-label="Subscribed triggers">
-      {orderedSnapshots.length === 0 ? (
-        <div className="subscribed-triggers-empty">No subscriptions</div>
-      ) : (
-        <div className="subscribed-triggers-list">
-          {orderedSnapshots.map((subscription) => {
-            const treeItems = treeItemsBySubscription.get(subscription.id) ?? []
-            const defaultEnabled = getDefaultEnabled(subscription.id)
+      <header className="subscribed-triggers-header">
+        <h2>Subscriptions</h2>
+      </header>
 
-            return (
-              <Card className="subscribed-triggers-card" key={subscription.id}>
-                <Card.Header className="subscribed-triggers-card-header">
-                  <FourStateCheckbox
-                    ariaLabel={`Enable ${subscription.ownerDisplayName} by default`}
-                    className="subscribed-triggers-default-checkbox"
-                    disabled={!selectedCharacterRecord}
-                    mode={BINARY}
-                    onChange={(nextState) => {
-                      void handleDefaultToggle(subscription, nextState === 'enabled')
-                    }}
-                    state={defaultEnabled ? 'enabled' : 'disabled'}
-                    stopPropagation
-                    title={
-                      selectedCharacterRecord
-                        ? 'Enable by default'
-                        : 'Select a character to change enablement'
-                    }
-                  />
-                  <span className="subscribed-triggers-publisher-name">
-                    {subscription.ownerDisplayName || 'Anonymous publisher'}
-                  </span>
-                  <Button
-                    aria-label={`Unsubscribe from ${subscription.ownerDisplayName}`}
-                    className="subscribed-triggers-unsubscribe"
-                    onClick={() => {
-                      void handleUnsubscribe(subscription)
-                    }}
-                    size="sm"
-                    title="Unsubscribe"
-                    variant="outline-danger"
-                  >
-                    <X aria-hidden="true" size={15} />
-                  </Button>
-                </Card.Header>
-                <Card.Body className="subscribed-triggers-card-body">
-                  {subscription.triggers.length === 0 ? (
-                    <div className="subscribed-triggers-card-empty">
-                      No published triggers
-                    </div>
-                  ) : (
-                    <div
-                      className="subscribed-triggers-tree"
-                      onContextMenu={(event) =>
-                        openContextMenu(event, subscription, null)
+      <div className="subscribed-triggers-body">
+        {orderedSnapshots.length === 0 ? (
+          <div className="subscribed-triggers-empty">No subscriptions</div>
+        ) : (
+          <div className="subscribed-triggers-list">
+            {orderedSnapshots.map((subscription) => {
+              const treeItems = treeItemsBySubscription.get(subscription.id) ?? []
+              const defaultEnabled = getDefaultEnabled(subscription.id)
+
+              return (
+                <Card className="subscribed-triggers-card" key={subscription.id}>
+                  <Card.Header className="subscribed-triggers-card-header">
+                    <FourStateCheckbox
+                      ariaLabel={`Enable ${subscription.ownerDisplayName} by default`}
+                      className="subscribed-triggers-default-checkbox"
+                      disabled={!selectedCharacterRecord}
+                      mode={BINARY}
+                      onChange={(nextState) => {
+                        void handleDefaultToggle(
+                          subscription,
+                          nextState === 'enabled',
+                        )
+                      }}
+                      state={defaultEnabled ? 'enabled' : 'disabled'}
+                      stopPropagation
+                      title={
+                        selectedCharacterRecord
+                          ? 'Enable by default'
+                          : 'Select a character to change enablement'
                       }
-                      role="tree"
+                    />
+                    <span className="subscribed-triggers-publisher-name">
+                      {subscription.ownerDisplayName || 'Anonymous publisher'}
+                    </span>
+                    <Button
+                      aria-label={`Unsubscribe from ${subscription.ownerDisplayName}`}
+                      className="subscribed-triggers-unsubscribe"
+                      onClick={() => {
+                        void handleUnsubscribe(subscription)
+                      }}
+                      size="sm"
+                      title="Unsubscribe"
+                      variant="outline-danger"
                     >
-                      {treeItems.map((item) =>
-                        item.type === 'group' ? (
-                          <SubscribedGroupRow
-                            checkboxDisabled={!selectedCharacterRecord}
-                            checkboxState={getGroupOverrideState(subscription, item)}
-                            collapsed={!expandedGroupIds.has(item.id)}
-                            item={item}
-                            key={item.id}
-                            onContextMenu={(event, rowItem) =>
-                              openContextMenu(event, subscription, rowItem)
-                            }
-                            onSelect={handleGroupClick}
-                            onToggle={toggleGroup}
-                            onToggleChecked={(state) => {
-                              void handleGroupEnablement(subscription, item, state)
-                            }}
-                            selected={
-                              selection.type === 'group' &&
-                              selection.subscriptionId === item.subscriptionId &&
-                              areStringArraysEqual(selection.path, item.path)
-                            }
-                          />
-                        ) : (
-                          <SubscribedTriggerRow
-                            checkboxDisabled={!selectedCharacterRecord}
-                            checkboxState={getTriggerOverrideState(item)}
-                            item={item}
-                            key={item.id}
-                            onClick={handleTriggerClick}
-                            onContextMenu={(event, rowItem) =>
-                              openContextMenu(event, subscription, rowItem)
-                            }
-                            onDoubleClick={(trigger) => setViewTrigger(trigger)}
-                            onToggleChecked={(state) => {
-                              void handleTriggerEnablement(item, state)
-                            }}
-                            selected={
-                              selection.type === 'triggers' &&
-                              selection.subscriptionId === item.subscriptionId &&
-                              selection.ids.has(item.id)
-                            }
-                          />
-                        ),
-                      )}
-                    </div>
-                  )}
-                </Card.Body>
-              </Card>
-            )
-          })}
-        </div>
-      )}
+                      <X aria-hidden="true" size={15} />
+                    </Button>
+                  </Card.Header>
+                  <Card.Body className="subscribed-triggers-card-body">
+                    {subscription.triggers.length === 0 ? (
+                      <div className="subscribed-triggers-card-empty">
+                        No published triggers
+                      </div>
+                    ) : (
+                      <div
+                        className="subscribed-triggers-tree"
+                        onContextMenu={(event) =>
+                          openContextMenu(event, subscription, null)
+                        }
+                        role="tree"
+                      >
+                        {treeItems.map((item) =>
+                          item.type === 'group' ? (
+                            <SubscribedGroupRow
+                              checkboxDisabled={!selectedCharacterRecord}
+                              checkboxState={getGroupOverrideState(
+                                subscription,
+                                item,
+                              )}
+                              collapsed={!expandedGroupIds.has(item.id)}
+                              item={item}
+                              key={item.id}
+                              onContextMenu={(event, rowItem) =>
+                                openContextMenu(event, subscription, rowItem)
+                              }
+                              onSelect={handleGroupClick}
+                              onToggle={toggleGroup}
+                              onToggleChecked={(state) => {
+                                void handleGroupEnablement(
+                                  subscription,
+                                  item,
+                                  state,
+                                )
+                              }}
+                              selected={
+                                selection.type === 'group' &&
+                                selection.subscriptionId === item.subscriptionId &&
+                                areStringArraysEqual(selection.path, item.path)
+                              }
+                            />
+                          ) : (
+                            <SubscribedTriggerRow
+                              checkboxDisabled={!selectedCharacterRecord}
+                              checkboxState={getTriggerOverrideState(item)}
+                              item={item}
+                              key={item.id}
+                              onClick={handleTriggerClick}
+                              onContextMenu={(event, rowItem) =>
+                                openContextMenu(event, subscription, rowItem)
+                              }
+                              onDoubleClick={(trigger) => setViewTrigger(trigger)}
+                              onToggleChecked={(state) => {
+                                void handleTriggerEnablement(item, state)
+                              }}
+                              selected={
+                                selection.type === 'triggers' &&
+                                selection.subscriptionId === item.subscriptionId &&
+                                selection.ids.has(item.id)
+                              }
+                            />
+                          ),
+                        )}
+                      </div>
+                    )}
+                  </Card.Body>
+                </Card>
+              )
+            })}
+          </div>
+        )}
+      </div>
 
       <ControlledMenu
         anchorPoint={anchorPoint}

@@ -2,16 +2,17 @@ import { useState } from 'react'
 import Button from 'react-bootstrap/Button'
 import jenaBrandLockupUrl from './assets/jena-brand-lockup.png'
 import { useAuth } from './auth/authContext'
+import { InfoView } from './info/InfoView'
 import { StartupButton } from './runtime/StartupButton'
 import { SettingsView } from './settings/SettingsView'
 import { useSettings } from './settings/settingsContext'
 import { TriggersView } from './triggers/views/TriggersView'
 import './AppShell.css'
 
-type AppSection = 'triggers' | 'settings' | 'rolls' | 'search'
+type AppSection = 'info' | 'triggers' | 'settings' | 'rolls' | 'search'
 
 export function AppShell() {
-  const [activeSection, setActiveSection] = useState<AppSection>('triggers')
+  const [activeSection, setActiveSection] = useState<AppSection>('info')
   const { isAuthenticated, logIn, logOut } = useAuth()
   const { displayName } = useSettings()
 
@@ -32,6 +33,14 @@ export function AppShell() {
         </div>
 
         <nav className="app-nav" aria-label="Primary navigation">
+          <button
+            aria-current={activeSection === 'info' ? 'page' : undefined}
+            className={getNavLinkClassName(activeSection === 'info')}
+            onClick={() => setActiveSection('info')}
+            type="button"
+          >
+            Info
+          </button>
           <button
             aria-current={activeSection === 'triggers' ? 'page' : undefined}
             className={getNavLinkClassName(activeSection === 'triggers')}
@@ -57,7 +66,11 @@ export function AppShell() {
         </nav>
 
         <div className="app-startup-slot">
-          <StartupButton />
+          <StartupButton
+            onDirectoryOpened={() => {
+              setActiveSection('triggers')
+            }}
+          />
         </div>
 
         <div className="app-account-slot">
@@ -89,6 +102,7 @@ export function AppShell() {
       </header>
 
       <main className="app-main">
+        {activeSection === 'info' ? <InfoView /> : null}
         {activeSection === 'triggers' ? <TriggersView /> : null}
         {activeSection === 'settings' ? <SettingsView /> : null}
       </main>
