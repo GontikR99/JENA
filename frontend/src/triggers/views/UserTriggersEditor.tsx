@@ -35,6 +35,7 @@ import { TriggerEditorDialog } from '../editor/TriggerEditorDialog'
 import { exportGinaPackageFile } from '../gina/ginaPackageExporter'
 import { parseGinaPackageFile } from '../gina/ginaPackageParser'
 import { useTriggerStore } from '../model/TriggerStore'
+import type { TriggerRevealRequest } from '../model/types'
 import { useTriggerManager } from '../model/UserTriggerManager'
 import './UserTriggersEditor.css'
 
@@ -52,6 +53,7 @@ const collapsedGroupSymbol = '\u229e'
 const expandedGroupSymbol = '\u229f'
 
 interface UserTriggersEditorProps {
+  revealRequest?: TriggerRevealRequest | null
   selectedCharacter: CharacterPresence | null
 }
 
@@ -141,6 +143,7 @@ type TreeSelection =
     }
 
 export function UserTriggersEditor({
+  revealRequest,
   selectedCharacter,
 }: UserTriggersEditorProps) {
   const {
@@ -159,9 +162,13 @@ export function UserTriggersEditor({
   const triggerStore = useTriggerStore()
   const { isAuthenticated } = useAuth()
   const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const handledRevealRequestIdRef = useRef<number | null>(null)
+  const triggerRowRefs = useRef(new Map<JenaTriggerId, HTMLDivElement>())
   const [emptyGroups, setEmptyGroups] = useState<string[][]>([])
   const [emptyGroupsLoaded, setEmptyGroupsLoaded] = useState(false)
   const [selection, setSelection] = useState<TreeSelection>({ type: 'none' })
+  const [pendingScrollTriggerId, setPendingScrollTriggerId] =
+    useState<JenaTriggerId | null>(null)
   const [editorSession, setEditorSession] = useState<EditorSession | null>(null)
   const [importSession, setImportSession] = useState<ImportSession | null>(null)
   const [exportSession, setExportSession] = useState<ExportSession | null>(null)
@@ -240,6 +247,53 @@ export function UserTriggersEditor({
   useEffect(() => {
     reconcileKnownGroupIds(groupIds)
   }, [groupIds, reconcileKnownGroupIds])
+
+  useEffect(() => {
+    if (!revealRequest || revealRequest.target !== 'user') {
+      return
+    }
+    if (handledRevealRequestIdRef.current === revealRequest.id) {
+      return
+    }
+    handledRevealRequestIdRef.current = revealRequest.id
+
+    const resolved = triggersById.get(revealRequest.triggerId)
+    if (!resolved) {
+      toast.error('Trigger is no longer available in My Triggers.')
+      return
+    }
+
+    getAncestorGroupIds(resolved.trigger.groupPath).forEach((groupId) => {
+      setGroupCollapsed(groupId, false)
+    })
+    setSelection({
+      anchorId: revealRequest.triggerId,
+      ids: new Set([revealRequest.triggerId]),
+      type: 'triggers',
+    })
+    setPendingScrollTriggerId(revealRequest.triggerId)
+  }, [revealRequest, setGroupCollapsed, triggersById])
+
+  useEffect(() => {
+    if (!pendingScrollTriggerId) {
+      return
+    }
+
+    const frameId = requestAnimationFrame(() => {
+      const row = triggerRowRefs.current.get(pendingScrollTriggerId)
+      if (!row) {
+        return
+      }
+
+      row.scrollIntoView({ block: 'center' })
+      row.focus({ preventScroll: true })
+      setPendingScrollTriggerId(null)
+    })
+
+    return () => {
+      cancelAnimationFrame(frameId)
+    }
+  }, [pendingScrollTriggerId, treeItems])
 
   function openContextMenu(
     event: MouseEvent,
@@ -1266,6 +1320,9 @@ export function UserTriggersEditor({
                   void handleToggleTrigger(item, enabled)
                 }}
                 publishDisabled={!isAuthenticated}
+                rowRef={(node) => {
+                  setTriggerRowRef(triggerRowRefs.current, item.id, node)
+                }}
                 selected={selectedTriggerIds.has(item.id)}
                 showEnableColumn={showEnableColumn}
               />
@@ -1854,6 +1911,7 @@ function TriggerRow({
   onPublishToggle,
   onToggle,
   publishDisabled,
+  rowRef,
   selected,
   showEnableColumn,
 }: {
@@ -1867,6 +1925,7 @@ function TriggerRow({
   onPublishToggle: (publish: boolean) => void
   onToggle: (enabled: boolean) => void
   publishDisabled: boolean
+  rowRef: (node: HTMLDivElement | null) => void
   selected: boolean
   showEnableColumn: boolean
 }) {
@@ -1888,6 +1947,7 @@ function TriggerRow({
         event.stopPropagation()
         onDoubleClick(item)
       }}
+      ref={rowRef}
       role="treeitem"
       tabIndex={0}
     >
@@ -2042,6 +2102,22 @@ function getGroupIds(
   triggers.forEach((resolved) => addGroupPath(resolved.trigger.groupPath))
 
   return [...groupIds].sort()
+}
+
+function getAncestorGroupIds(path: string[]) {
+  return path.map((_, index) => getGroupId(path.slice(0, index + 1)))
+}
+
+function setTriggerRowRef(
+  refs: Map<JenaTriggerId, HTMLDivElement>,
+  triggerId: JenaTriggerId,
+  node: HTMLDivElement | null,
+) {
+  if (node) {
+    refs.set(triggerId, node)
+  } else {
+    refs.delete(triggerId)
+  }
 }
 
 function flattenGroups(

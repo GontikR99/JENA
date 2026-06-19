@@ -41,6 +41,7 @@ export interface TriggerMatchEvent {
   origin: AlertEventOrigin
   registrations: AlertRegistration[]
   resolvedTrigger?: JenaResolvedTrigger
+  subscriptionId?: string
   trigger: TriggerAlertMatchedMessage['trigger']
 }
 
@@ -232,6 +233,7 @@ export function AlertEventCoordinatorProvider({
           eventId: broadcast.eventId,
           origin: 'broadcast',
           registrations: [],
+          subscriptionId: broadcast.subscriptionId,
           trigger: alert.trigger,
         })
         return

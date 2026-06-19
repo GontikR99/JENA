@@ -1,8 +1,11 @@
 import { useCallback, useRef, useState } from 'react'
 import { Group, Panel, Separator } from 'react-resizable-panels'
 import type { CharacterPresence } from '../../shared/messages'
-import { useOnTriggerMatch } from '../alerts/useTriggerAlerts'
-import type { TriggerLogRecord } from '../model/types'
+import {
+  useOnTriggerMatch,
+  type TriggerMatchEvent,
+} from '../alerts/useTriggerAlerts'
+import type { TriggerLogRecord, TriggerRevealRequest } from '../model/types'
 import { CharacterPane } from './CharacterPane'
 import { SubscribedTriggersView } from './SubscribedTriggersView'
 import { TriggerLogTable } from './TriggerLogTable'
@@ -15,7 +18,10 @@ export function TriggersView() {
   const [selectedCharacter, setSelectedCharacter] =
     useState<CharacterPresence | null>(null)
   const [triggerLogRecords, setTriggerLogRecords] = useState<TriggerLogRecord[]>([])
+  const [triggerRevealRequest, setTriggerRevealRequest] =
+    useState<TriggerRevealRequest | null>(null)
   const nextLogRecordIdRef = useRef(0)
+  const nextRevealRequestIdRef = useRef(0)
 
   useOnTriggerMatch(
     useCallback((event) => {
@@ -26,6 +32,7 @@ export function TriggersView() {
         id: `${alert.timestamp}-${alert.trigger.id}-${nextLogRecordIdRef.current}`,
         logLine: alert.text,
         serverName: alert.serverName,
+        subscriptionId: getLogSubscriptionId(event),
         timestamp: alert.timestamp,
         triggerId: alert.trigger.id,
         triggerName: alert.trigger.name,
@@ -37,8 +44,22 @@ export function TriggersView() {
     }, []),
   )
 
-  function handleTriggerClick(triggerId: string) {
-    void triggerId
+  function handleTriggerClick(record: TriggerLogRecord) {
+    nextRevealRequestIdRef.current += 1
+    setTriggerRevealRequest(
+      record.subscriptionId
+        ? {
+            id: nextRevealRequestIdRef.current,
+            subscriptionId: record.subscriptionId,
+            target: 'subscription',
+            triggerId: record.triggerId,
+          }
+        : {
+            id: nextRevealRequestIdRef.current,
+            target: 'user',
+            triggerId: record.triggerId,
+          },
+    )
   }
 
   return (
@@ -60,7 +81,10 @@ export function TriggersView() {
               groupResizeBehavior="preserve-relative-size"
               minSize={25}
             >
-              <UserTriggersEditor selectedCharacter={selectedCharacter} />
+              <UserTriggersEditor
+                revealRequest={triggerRevealRequest}
+                selectedCharacter={selectedCharacter}
+              />
             </Panel>
 
             <Separator className="triggers-horizontal-resize-handle" />
@@ -70,7 +94,10 @@ export function TriggersView() {
               groupResizeBehavior="preserve-relative-size"
               minSize={25}
             >
-              <SubscribedTriggersView selectedCharacter={selectedCharacter} />
+              <SubscribedTriggersView
+                revealRequest={triggerRevealRequest}
+                selectedCharacter={selectedCharacter}
+              />
             </Panel>
           </Group>
         </Panel>
@@ -90,4 +117,29 @@ export function TriggersView() {
       </Group>
     </section>
   )
+}
+
+function getLogSubscriptionId(event: TriggerMatchEvent) {
+  if (event.subscriptionId) {
+    return event.subscriptionId
+  }
+
+  if (
+    event.registrations.some(
+      (registration) => registration.source === 'user' && registration.enabled,
+    )
+  ) {
+    return undefined
+  }
+
+  return event.registrations.find(isSubscriptionRegistration)?.subscriptionId
+}
+
+function isSubscriptionRegistration(
+  registration: TriggerMatchEvent['registrations'][number],
+): registration is Extract<
+  TriggerMatchEvent['registrations'][number],
+  { source: 'subscription' }
+> {
+  return registration.source === 'subscription'
 }

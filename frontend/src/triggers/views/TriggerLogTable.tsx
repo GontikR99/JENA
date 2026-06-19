@@ -3,7 +3,7 @@ import { useVirtualizer } from '@tanstack/react-virtual'
 import type { TriggerLogRecord } from '../model/types'
 
 interface TriggerLogTableProps {
-  onTriggerClick: (triggerId: string) => void
+  onTriggerClick: (record: TriggerLogRecord) => void
   records: TriggerLogRecord[]
 }
 
@@ -57,7 +57,7 @@ export function TriggerLogTable({
                   <div className="trigger-log-cell">
                     <button
                       className="trigger-log-link"
-                      onClick={() => onTriggerClick(record.triggerId)}
+                      onClick={() => onTriggerClick(record)}
                       type="button"
                     >
                       {record.triggerName}

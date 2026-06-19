@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { MouseEvent } from 'react'
 import { ControlledMenu, MenuItem, useMenuState } from '@szhsin/react-menu'
 import { Radio, RadioOff, X } from 'lucide-react'
@@ -28,6 +28,7 @@ import {
   type ResolvedSubscribedTrigger,
   type SubscribedTriggerSnapshot,
 } from '../model/SubscribedTriggerManager'
+import type { TriggerRevealRequest } from '../model/types'
 import { useTriggerManager } from '../model/UserTriggerManager'
 import './SubscribedTriggersView.css'
 
@@ -43,6 +44,7 @@ const collapsedGroupSymbol = '\u229e'
 const expandedGroupSymbol = '\u229f'
 
 interface SubscribedTriggersViewProps {
+  revealRequest?: TriggerRevealRequest | null
   selectedCharacter: CharacterPresence | null
 }
 
@@ -88,6 +90,7 @@ interface AdoptSession {
 }
 
 export function SubscribedTriggersView({
+  revealRequest,
   selectedCharacter,
 }: SubscribedTriggersViewProps) {
   const {
@@ -99,10 +102,15 @@ export function SubscribedTriggersView({
     triggerEnablement,
   } = useSubscribedTriggerManager()
   const { upsertTriggers } = useTriggerManager()
+  const handledRevealRequestIdRef = useRef<number | null>(null)
+  const rowRefs = useRef(new Map<string, HTMLDivElement>())
   const [expandedGroupIds, setExpandedGroupIds] = useState<Set<string>>(new Set())
   const [expandedGroupsLoaded, setExpandedGroupsLoaded] = useState(false)
   const [selection, setSelection] = useState<TreeSelection>(
     createEmptySelection,
+  )
+  const [pendingScrollItemKey, setPendingScrollItemKey] = useState<string | null>(
+    null,
   )
   const [menuTarget, setMenuTarget] = useState<MenuTarget>({
     item: null,
@@ -184,6 +192,72 @@ export function SubscribedTriggersView({
       console.warn('[SubscribedTriggersView] unable to save expanded groups', error)
     })
   }, [expandedGroupIds, expandedGroupsLoaded])
+
+  useEffect(() => {
+    if (!revealRequest || revealRequest.target !== 'subscription') {
+      return
+    }
+    if (handledRevealRequestIdRef.current === revealRequest.id) {
+      return
+    }
+    handledRevealRequestIdRef.current = revealRequest.id
+
+    const subscription = snapshots.find(
+      (snapshot) => snapshot.id === revealRequest.subscriptionId,
+    )
+    if (!subscription) {
+      toast.error('Subscription is no longer available.')
+      return
+    }
+
+    const trigger = subscription.triggers.find(
+      (candidate) => candidate.trigger.id === revealRequest.triggerId,
+    )
+    if (!trigger) {
+      toast.error('Trigger is no longer available in that subscription.')
+      return
+    }
+
+    const itemKey = getSubscribedTriggerItemKey(
+      revealRequest.subscriptionId,
+      revealRequest.triggerId,
+    )
+    setExpandedGroupIds((current) => {
+      const next = new Set(current)
+      getSubscriptionAncestorGroupIds(
+        revealRequest.subscriptionId,
+        trigger.trigger.groupPath,
+      ).forEach((groupId) => next.add(groupId))
+      return next
+    })
+    setSelection({
+      anchorKey: itemKey,
+      itemKeys: new Set([itemKey]),
+      subscriptionId: revealRequest.subscriptionId,
+    })
+    setPendingScrollItemKey(itemKey)
+  }, [revealRequest, snapshots])
+
+  useEffect(() => {
+    if (!pendingScrollItemKey) {
+      return
+    }
+
+    const frameId = requestAnimationFrame(() => {
+      const row = rowRefs.current.get(pendingScrollItemKey)
+      if (!row) {
+        return
+      }
+
+      row.scrollIntoView({ block: 'center' })
+      row.focus({ preventScroll: true })
+      setPendingScrollItemKey(null)
+    })
+
+    return () => {
+      cancelAnimationFrame(frameId)
+    }
+  }, [pendingScrollItemKey, treeItemsBySubscription])
 
   function openContextMenu(
     event: MouseEvent,
@@ -600,6 +674,13 @@ export function SubscribedTriggersView({
                               onToggleChecked={(state) => {
                                 void handleTriggerEnablement(item, state)
                               }}
+                              rowRef={(node) => {
+                                setSubscribedRowRef(
+                                  rowRefs.current,
+                                  getTreeItemKey(item),
+                                  node,
+                                )
+                              }}
                               selected={
                                 isItemSelected(selection, item)
                               }
@@ -735,6 +816,7 @@ function SubscribedTriggerRow({
   onContextMenu,
   onDoubleClick,
   onToggleChecked,
+  rowRef,
   selected,
 }: {
   checkboxDisabled: boolean
@@ -744,6 +826,7 @@ function SubscribedTriggerRow({
   onContextMenu: (event: MouseEvent, item: TreeItem) => void
   onDoubleClick: (trigger: JenaTrigger) => void
   onToggleChecked: (state: FourStateCheckboxState) => void
+  rowRef: (node: HTMLDivElement | null) => void
   selected: boolean
 }) {
   return (
@@ -764,6 +847,7 @@ function SubscribedTriggerRow({
         event.stopPropagation()
         onDoubleClick(item.trigger.trigger)
       }}
+      ref={rowRef}
       role="treeitem"
       tabIndex={0}
     >
@@ -1130,7 +1214,14 @@ function getTreeItemKey(item: TreeItem) {
     return `group\0${item.id}`
   }
 
-  return `trigger\0${item.subscriptionId}\0${item.id}`
+  return getSubscribedTriggerItemKey(item.subscriptionId, item.id)
+}
+
+function getSubscribedTriggerItemKey(
+  subscriptionId: string,
+  triggerId: JenaTriggerId,
+) {
+  return `trigger\0${subscriptionId}\0${triggerId}`
 }
 
 function getTriggerIdFromItemKey(itemKey: string, subscriptionId: string) {
@@ -1178,6 +1269,27 @@ function compareTriggersByPath(left: JenaTrigger, right: JenaTrigger) {
 
 function getSubscriptionGroupId(subscriptionId: string, path: string[]) {
   return `${subscriptionId}\0${path.join('\0')}`
+}
+
+function getSubscriptionAncestorGroupIds(
+  subscriptionId: string,
+  path: string[],
+) {
+  return path.map((_, index) =>
+    getSubscriptionGroupId(subscriptionId, path.slice(0, index + 1)),
+  )
+}
+
+function setSubscribedRowRef(
+  refs: Map<string, HTMLDivElement>,
+  itemKey: string,
+  node: HTMLDivElement | null,
+) {
+  if (node) {
+    refs.set(itemKey, node)
+  } else {
+    refs.delete(itemKey)
+  }
 }
 
 function getCharacterRecordKey(
