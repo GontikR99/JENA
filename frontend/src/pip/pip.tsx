@@ -389,10 +389,6 @@ function doesEarlyEnderMatchTimer(
     return false
   }
 
-  if (event.alert.timerName && event.alert.timerName !== timer.timerName) {
-    return false
-  }
-
   return true
 }
 

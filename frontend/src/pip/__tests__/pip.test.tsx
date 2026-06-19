@@ -160,6 +160,27 @@ describe('Pip', () => {
     expect(screen.queryByText('Endable Timer')).not.toBeInTheDocument()
   })
 
+  it('removes timers when the early ender has a different computed timer name', () => {
+    render(<Pip />)
+
+    act(() => {
+      emitTriggerMatch({
+        timer: createTimer({ startBehavior: 'restart' }),
+        timerName: '[Mesozoic] Endable Timer',
+      })
+    })
+
+    expect(screen.getByText('[Mesozoic] Endable Timer')).toBeInTheDocument()
+
+    act(() => {
+      emitTimerEarlyEnder({
+        timerName: 'Endable Timer',
+      })
+    })
+
+    expect(screen.queryByText('[Mesozoic] Endable Timer')).not.toBeInTheDocument()
+  })
+
   it('clears timers and text when a stop request arrives', () => {
     render(<Pip />)
 
