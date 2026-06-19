@@ -439,6 +439,13 @@ function TimerBar({
     }
   })
 
+  function handleCancelClick() {
+    if (!removedRef.current) {
+      removedRef.current = true
+      onRemove(timerRef.current.id)
+    }
+  }
+
   const lineHeightPx = getPipLineHeight(settings.fontSizePx)
   const timerBarStyle: CSSProperties = {
     backgroundColor: settings.backgroundColor,
@@ -454,6 +461,10 @@ function TimerBar({
     height: `${lineHeightPx}px`,
     lineHeight: `${lineHeightPx}px`,
   }
+  const cancelButtonStyle: CSSProperties = {
+    height: `${lineHeightPx}px`,
+    lineHeight: `${lineHeightPx}px`,
+  }
 
   return (
     <div className="pip-timer-bar" style={timerBarStyle}>
@@ -464,6 +475,15 @@ function TimerBar({
       <span className="pip-timer-duration" ref={durationRef} style={textStyle}>
         {getInitialDurationLabel(timer)}
       </span>
+      <button
+        aria-label={`Cancel timer ${timer.timerName}`}
+        className="pip-timer-cancel"
+        onClick={handleCancelClick}
+        style={cancelButtonStyle}
+        type="button"
+      >
+        X
+      </button>
     </div>
   )
 }

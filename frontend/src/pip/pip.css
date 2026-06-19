@@ -95,7 +95,7 @@
   font-weight: 700;
   left: 0;
   padding-left: 1px;
-  right: 4.5rem;
+  right: calc(4.5rem + 18px);
   text-align: left;
   text-overflow: clip;
 }
@@ -104,8 +104,32 @@
   font-family: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace;
   min-width: 4.25rem;
   padding-right: 1px;
-  right: 0;
+  right: 18px;
   text-align: right;
+}
+
+.pip-timer-cancel {
+  align-items: center;
+  background: #7f0000;
+  border: 0;
+  color: #fff;
+  cursor: pointer;
+  display: flex;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 12px;
+  font-weight: 800;
+  justify-content: center;
+  padding: 0;
+  position: absolute;
+  right: 0;
+  top: 0;
+  width: 18px;
+  z-index: 2;
+}
+
+.pip-timer-cancel:hover,
+.pip-timer-cancel:focus {
+  background: #b00000;
 }
 
 .pip-text-stack {

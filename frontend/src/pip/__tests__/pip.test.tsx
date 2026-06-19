@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { act, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type {
   TriggerTimerActionMessage,
@@ -220,6 +220,25 @@ describe('Pip', () => {
     })
 
     expect(screen.queryByText('Endable Timer')).not.toBeInTheDocument()
+  })
+
+  it('removes timers when their cancel button is clicked', () => {
+    render(<Pip />)
+
+    act(() => {
+      emitTriggerMatch({
+        timer: createTimer({ startBehavior: 'restart' }),
+        timerName: 'Cancelable Timer',
+      })
+    })
+
+    expect(screen.getByText('Cancelable Timer')).toBeInTheDocument()
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Cancel timer Cancelable Timer' }),
+    )
+
+    expect(screen.queryByText('Cancelable Timer')).not.toBeInTheDocument()
   })
 
   it('removes timers when the early ender has a different computed timer name', () => {
