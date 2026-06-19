@@ -157,6 +157,56 @@ func TestSyncSubscriptionsRefreshesCachedDisplayName(t *testing.T) {
 	}
 }
 
+func TestSyncSubscriptionsHidesOwnSubscription(t *testing.T) {
+	fixture := newTestService(t, testIdentity{userID: "discord:123"})
+	ctx := context.Background()
+	subscriptionID := insertPublisherSubscription(t, fixture.db, "discord:123", "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
+	insertUserTrigger(t, fixture.db, "discord:123", "11111111-1111-1111-1111-111111111111", true, model.BroadcastModeSubscribers)
+
+	params, err := json.Marshal(SyncSubscriptionsRequest{
+		Subscriptions: []SyncSubscriptionsRequestItem{{ID: subscriptionID}},
+	})
+	if err != nil {
+		t.Fatalf("json.Marshal returned error: %v", err)
+	}
+	response, err := fixture.service.syncSubscriptions(ctx, eventbus.RPCMetadata{
+		AuthToken: "token",
+		Sender:    "ws.127_0_0_1_9.subscribed-trigger-manager",
+	}, params)
+	if err != nil {
+		t.Fatalf("syncSubscriptions returned error: %v", err)
+	}
+
+	results := response.(SyncSubscriptionsResponse).Subscriptions
+	if len(results) != 1 {
+		t.Fatalf("got %d subscription results, want 1", len(results))
+	}
+	if results[0].Status != "notFound" {
+		t.Fatalf("Status %q, want notFound", results[0].Status)
+	}
+	if sources := fixture.service.activeSubscriberSources("discord:123", time.Now()); len(sources) != 0 {
+		t.Fatalf("active sources %#v, want no source registered for own subscription", sources)
+	}
+}
+
+func TestSyncSubscriptionsTreatsAuthFailureAsAnonymous(t *testing.T) {
+	fixture := newTestService(t, testIdentity{err: errors.New("auth failed")})
+	ctx := context.Background()
+	subscriptionID := insertPublisherSubscription(t, fixture.db, "discord:123", "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
+	insertUserTrigger(t, fixture.db, "discord:123", "11111111-1111-1111-1111-111111111111", true, model.BroadcastModeSubscribers)
+
+	response := syncSubscriptions(t, ctx, fixture.service, SyncSubscriptionsRequest{
+		Subscriptions: []SyncSubscriptionsRequestItem{{ID: subscriptionID}},
+	})
+
+	if len(response.Subscriptions) != 1 {
+		t.Fatalf("got %d subscription results, want 1", len(response.Subscriptions))
+	}
+	if response.Subscriptions[0].Status != "updated" {
+		t.Fatalf("Status %q, want updated", response.Subscriptions[0].Status)
+	}
+}
+
 func TestSubscriberBridgeFansOutToRecentSubscriberSockets(t *testing.T) {
 	fixture := newTestService(t, testIdentity{userID: "discord:456"})
 	ctx := context.Background()

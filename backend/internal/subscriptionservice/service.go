@@ -344,6 +344,8 @@ func (service *Service) syncSubscriptions(ctx context.Context, metadata eventbus
 		return nil, fmt.Errorf("decode sync subscriptions request: %w", err)
 	}
 
+	requestingUserID, _ := service.authenticate(ctx, metadata)
+
 	results := make([]SyncSubscriptionsResult, 0, len(request.Subscriptions))
 	seen := make(map[string]struct{}, len(request.Subscriptions))
 	for _, requested := range request.Subscriptions {
@@ -377,6 +379,14 @@ func (service *Service) syncSubscriptions(ctx context.Context, metadata eventbus
 				logging.String("subscriptionId", subscriptionID),
 				logging.String("requestedDigest", requested.Digest),
 			)
+			results = append(results, SyncSubscriptionsResult{
+				ID:     subscriptionID,
+				Status: "notFound",
+			})
+			continue
+		}
+
+		if requestingUserID != "" && requestingUserID == publisherUserID {
 			results = append(results, SyncSubscriptionsResult{
 				ID:     subscriptionID,
 				Status: "notFound",
