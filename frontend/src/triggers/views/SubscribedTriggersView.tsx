@@ -46,15 +46,11 @@ interface SubscribedTriggersViewProps {
   selectedCharacter: CharacterPresence | null
 }
 
-type TreeSelection =
-  | { type: 'none' }
-  | { path: string[]; subscriptionId: string; type: 'group' }
-  | {
-      anchorId: JenaTriggerId | null
-      ids: Set<JenaTriggerId>
-      subscriptionId: string
-      type: 'triggers'
-    }
+interface TreeSelection {
+  anchorKey: string | null
+  itemKeys: Set<string>
+  subscriptionId: string | null
+}
 
 type TreeItem = TreeGroupItem | TreeTriggerItem
 
@@ -105,7 +101,9 @@ export function SubscribedTriggersView({
   const { upsertTriggers } = useTriggerManager()
   const [expandedGroupIds, setExpandedGroupIds] = useState<Set<string>>(new Set())
   const [expandedGroupsLoaded, setExpandedGroupsLoaded] = useState(false)
-  const [selection, setSelection] = useState<TreeSelection>({ type: 'none' })
+  const [selection, setSelection] = useState<TreeSelection>(
+    createEmptySelection,
+  )
   const [menuTarget, setMenuTarget] = useState<MenuTarget>({
     item: null,
     subscription: null,
@@ -155,15 +153,6 @@ export function SubscribedTriggersView({
       ]),
     )
   }, [expandedGroupIds, orderedSnapshots])
-  const triggerOrderBySubscription = useMemo(() => {
-    return new Map(
-      [...treeItemsBySubscription].map(([subscriptionId, treeItems]) => [
-        subscriptionId,
-        treeItems.flatMap((item) => (item.type === 'trigger' ? [item.id] : [])),
-      ]),
-    )
-  }, [treeItemsBySubscription])
-
   useEffect(() => {
     let cancelled = false
 
@@ -206,37 +195,19 @@ export function SubscribedTriggersView({
     setMenuTarget({ item, subscription })
     setAnchorPoint({ x: event.clientX, y: event.clientY })
 
-    if (item?.type === 'trigger') {
+    if (item) {
       setSelection((current) => {
         if (
-          current.type === 'triggers' &&
           current.subscriptionId === item.subscriptionId &&
-          current.ids.has(item.id)
+          current.itemKeys.has(getTreeItemKey(item))
         ) {
           return current
         }
 
         return {
-          anchorId: item.id,
-          ids: new Set([item.id]),
+          anchorKey: getTreeItemKey(item),
+          itemKeys: new Set([getTreeItemKey(item)]),
           subscriptionId: item.subscriptionId,
-          type: 'triggers',
-        }
-      })
-    } else if (item?.type === 'group') {
-      setSelection((current) => {
-        if (
-          current.type === 'triggers' &&
-          current.subscriptionId === item.subscriptionId &&
-          current.ids.size > 0
-        ) {
-          return current
-        }
-
-        return {
-          path: item.path,
-          subscriptionId: item.subscriptionId,
-          type: 'group',
         }
       })
     }
@@ -244,55 +215,53 @@ export function SubscribedTriggersView({
     setMenuOpen(true)
   }
 
-  function handleTriggerClick(event: MouseEvent, item: TreeTriggerItem) {
+  function handleTreeItemClick(event: MouseEvent, item: TreeItem) {
     setSelection((current) => {
-      if (event.shiftKey && current.type === 'triggers' && current.anchorId) {
+      const itemKey = getTreeItemKey(item)
+      if (
+        event.shiftKey &&
+        current.subscriptionId === item.subscriptionId &&
+        current.anchorKey
+      ) {
         return {
-          anchorId: current.anchorId,
-          ids: selectTriggerRange(
-            triggerOrderBySubscription.get(item.subscriptionId) ?? [],
-            current.anchorId,
-            item.id,
+          anchorKey: current.anchorKey,
+          itemKeys: selectItemRange(
+            treeItemsBySubscription.get(item.subscriptionId) ?? [],
+            current.anchorKey,
+            itemKey,
           ),
           subscriptionId: item.subscriptionId,
-          type: 'triggers',
         }
       }
 
       if (event.ctrlKey || event.metaKey) {
-        const nextIds =
-          current.type === 'triggers' && current.subscriptionId === item.subscriptionId
-            ? new Set(current.ids)
-            : new Set<JenaTriggerId>()
+        const nextItemKeys =
+          current.subscriptionId === item.subscriptionId
+            ? new Set(current.itemKeys)
+            : new Set<string>()
 
-        if (nextIds.has(item.id)) {
-          nextIds.delete(item.id)
+        if (nextItemKeys.has(itemKey)) {
+          nextItemKeys.delete(itemKey)
         } else {
-          nextIds.add(item.id)
+          nextItemKeys.add(itemKey)
+        }
+
+        if (nextItemKeys.size === 0) {
+          return createEmptySelection()
         }
 
         return {
-          anchorId: getSelectionAnchor(nextIds, item.id),
-          ids: nextIds,
+          anchorKey: getSelectionAnchorKey(nextItemKeys, itemKey),
+          itemKeys: nextItemKeys,
           subscriptionId: item.subscriptionId,
-          type: 'triggers',
         }
       }
 
       return {
-        anchorId: item.id,
-        ids: new Set([item.id]),
+        anchorKey: itemKey,
+        itemKeys: new Set([itemKey]),
         subscriptionId: item.subscriptionId,
-        type: 'triggers',
       }
-    })
-  }
-
-  function handleGroupClick(_event: MouseEvent, item: TreeGroupItem) {
-    setSelection({
-      path: item.path,
-      subscriptionId: item.subscriptionId,
-      type: 'group',
     })
   }
 
@@ -450,23 +419,18 @@ export function SubscribedTriggersView({
       return
     }
 
-    const triggerIds = getEffectiveMenuSelection(menuTarget.item, selection)
-    if (triggerIds.length > 0) {
-      const triggers = getTriggersByIdsInTreeOrder(
-        treeItemsBySubscription.get(menuTarget.subscription.id) ?? [],
-        new Set(triggerIds),
-      )
+    const itemKeys = getEffectiveMenuSelection(
+      menuTarget.item,
+      selection,
+      menuTarget.subscription.id,
+    )
+    if (itemKeys.length > 0) {
       void adoptTriggers(
-        triggerIds.length === 1 ? 'Adopt Trigger' : 'Adopt Selection',
-        triggers,
-      )
-      return
-    }
-
-    if (menuTarget.item?.type === 'group') {
-      void adoptTriggers(
-        'Adopt Group',
-        getTriggersUnderPath(menuTarget.subscription.triggers, menuTarget.item.path),
+        getAdoptDialogTitle(itemKeys),
+        getTriggersForSelection(
+          menuTarget.subscription,
+          itemKeys,
+        ),
       )
     }
   }
@@ -526,6 +490,7 @@ export function SubscribedTriggersView({
   const effectiveMenuSelection = getEffectiveMenuSelection(
     menuTarget.item,
     selection,
+    menuTarget.subscription?.id ?? null,
   )
 
   return (
@@ -608,7 +573,7 @@ export function SubscribedTriggersView({
                               onContextMenu={(event, rowItem) =>
                                 openContextMenu(event, subscription, rowItem)
                               }
-                              onSelect={handleGroupClick}
+                              onSelect={handleTreeItemClick}
                               onToggle={toggleGroup}
                               onToggleChecked={(state) => {
                                 void handleGroupEnablement(
@@ -618,9 +583,7 @@ export function SubscribedTriggersView({
                                 )
                               }}
                               selected={
-                                selection.type === 'group' &&
-                                selection.subscriptionId === item.subscriptionId &&
-                                areStringArraysEqual(selection.path, item.path)
+                                isItemSelected(selection, item)
                               }
                             />
                           ) : (
@@ -629,7 +592,7 @@ export function SubscribedTriggersView({
                               checkboxState={getTriggerOverrideState(item)}
                               item={item}
                               key={item.id}
-                              onClick={handleTriggerClick}
+                              onClick={handleTreeItemClick}
                               onContextMenu={(event, rowItem) =>
                                 openContextMenu(event, subscription, rowItem)
                               }
@@ -638,9 +601,7 @@ export function SubscribedTriggersView({
                                 void handleTriggerEnablement(item, state)
                               }}
                               selected={
-                                selection.type === 'triggers' &&
-                                selection.subscriptionId === item.subscriptionId &&
-                                selection.ids.has(item.id)
+                                isItemSelected(selection, item)
                               }
                             />
                           ),
@@ -674,7 +635,7 @@ export function SubscribedTriggersView({
           }
           onClick={adoptMenuTarget}
         >
-          {getAdoptMenuLabel(menuTarget.item, effectiveMenuSelection.length)}
+          {getAdoptMenuLabel(menuTarget.item, effectiveMenuSelection)}
         </MenuItem>
       </ControlledMenu>
 
@@ -1037,94 +998,158 @@ function getTriggerIdsUnderPath(
   )
 }
 
-function getTriggersUnderPath(
-  triggers: ResolvedSubscribedTrigger[],
-  path: string[],
+function getTriggersForSelection(
+  subscription: SubscribedTriggerSnapshot,
+  itemKeys: string[],
 ) {
-  return triggers
-    .filter((trigger) => isSameOrChildPath(trigger.trigger.groupPath, path))
-    .map((trigger) => trigger.trigger)
-    .sort(compareTriggersByPath)
-}
+  const selectedTriggerIds = new Set<JenaTriggerId>()
+  const selectedGroupPaths: string[][] = []
 
-function getTriggersByIdsInTreeOrder(
-  treeItems: TreeItem[],
-  triggerIds: Set<JenaTriggerId>,
-) {
-  const seenTriggerIds = new Set<JenaTriggerId>()
-  const selectedTriggers: JenaTrigger[] = []
+  itemKeys.forEach((itemKey) => {
+    const triggerId = getTriggerIdFromItemKey(itemKey, subscription.id)
+    if (triggerId) {
+      selectedTriggerIds.add(triggerId)
+      return
+    }
 
-  treeItems.forEach((item) => {
-    if (
-      item.type === 'trigger' &&
-      triggerIds.has(item.id) &&
-      !seenTriggerIds.has(item.id)
-    ) {
-      seenTriggerIds.add(item.id)
-      selectedTriggers.push(item.trigger.trigger)
+    const groupPath = getGroupPathFromItemKey(itemKey, subscription.id)
+    if (groupPath) {
+      selectedGroupPaths.push(groupPath)
     }
   })
 
-  return selectedTriggers
+  return subscription.triggers
+    .map((trigger) => trigger.trigger)
+    .filter(
+      (trigger) =>
+        selectedTriggerIds.has(trigger.id) ||
+        selectedGroupPaths.some((path) =>
+          isSameOrChildPath(trigger.groupPath, path),
+        ),
+    )
+    .sort(compareTriggersByPath)
 }
 
 function getEffectiveMenuSelection(
   item: TreeItem | null,
   selection: TreeSelection,
+  subscriptionId: string | null,
 ) {
-  if (
-    item?.type === 'trigger' &&
-    (selection.type !== 'triggers' ||
-      selection.subscriptionId !== item.subscriptionId ||
-      !selection.ids.has(item.id))
-  ) {
-    return [item.id]
+  if (item) {
+    const itemKey = getTreeItemKey(item)
+    if (
+      selection.subscriptionId === item.subscriptionId &&
+      selection.itemKeys.has(itemKey)
+    ) {
+      return [...selection.itemKeys]
+    }
+
+    return [itemKey]
   }
 
-  return selection.type === 'triggers' ? [...selection.ids] : []
+  if (!subscriptionId || selection.subscriptionId !== subscriptionId) {
+    return []
+  }
+
+  return [...selection.itemKeys]
 }
 
-function selectTriggerRange(
-  triggerOrder: JenaTriggerId[],
-  anchorId: JenaTriggerId,
-  targetId: JenaTriggerId,
+function selectItemRange(
+  treeItems: TreeItem[],
+  anchorKey: string,
+  targetKey: string,
 ) {
-  const anchorIndex = triggerOrder.indexOf(anchorId)
-  const targetIndex = triggerOrder.indexOf(targetId)
+  const itemOrder = treeItems.map(getTreeItemKey)
+  const anchorIndex = itemOrder.indexOf(anchorKey)
+  const targetIndex = itemOrder.indexOf(targetKey)
 
   if (anchorIndex < 0 || targetIndex < 0) {
-    return new Set([targetId])
+    return new Set([targetKey])
   }
 
   const start = Math.min(anchorIndex, targetIndex)
   const end = Math.max(anchorIndex, targetIndex)
 
-  return new Set(triggerOrder.slice(start, end + 1))
+  return new Set(itemOrder.slice(start, end + 1))
 }
 
-function getSelectionAnchor(
-  ids: Set<JenaTriggerId>,
-  preferred: JenaTriggerId | null,
+function getSelectionAnchorKey(
+  itemKeys: Set<string>,
+  preferred: string | null,
 ) {
-  if (preferred && ids.has(preferred)) {
+  if (preferred && itemKeys.has(preferred)) {
     return preferred
   }
 
-  return [...ids][0] ?? null
+  return [...itemKeys][0] ?? null
 }
 
-function getAdoptMenuLabel(item: TreeItem | null, selectionCount: number) {
-  if (selectionCount > 1) {
-    return 'Adopt selection'
-  }
-  if (item?.type === 'group') {
-    return 'Adopt this group'
-  }
-  if (item?.type === 'trigger' || selectionCount === 1) {
-    return 'Adopt this trigger'
+function getAdoptDialogTitle(itemKeys: string[]) {
+  if (itemKeys.length === 1 && itemKeys[0]?.startsWith('group\0')) {
+    return 'Adopt Group'
   }
 
-  return 'Adopt selection'
+  if (itemKeys.length === 1 && itemKeys[0]?.startsWith('trigger\0')) {
+    return 'Adopt Trigger'
+  }
+
+  return 'Adopt Selection'
+}
+
+function getAdoptMenuLabel(item: TreeItem | null, itemKeys: string[]) {
+  if (itemKeys.length === 1) {
+    const itemKey = itemKeys[0]
+    if (itemKey?.startsWith('group\0') || item?.type === 'group') {
+      return 'Adopt this group'
+    }
+    if (itemKey?.startsWith('trigger\0') || item?.type === 'trigger') {
+      return 'Adopt this trigger'
+    }
+  }
+
+  return 'Adopt selected triggers'
+}
+
+function createEmptySelection(): TreeSelection {
+  return {
+    anchorKey: null,
+    itemKeys: new Set(),
+    subscriptionId: null,
+  }
+}
+
+function isItemSelected(selection: TreeSelection, item: TreeItem) {
+  return (
+    selection.subscriptionId === item.subscriptionId &&
+    selection.itemKeys.has(getTreeItemKey(item))
+  )
+}
+
+function getTreeItemKey(item: TreeItem) {
+  if (item.type === 'group') {
+    return `group\0${item.id}`
+  }
+
+  return `trigger\0${item.subscriptionId}\0${item.id}`
+}
+
+function getTriggerIdFromItemKey(itemKey: string, subscriptionId: string) {
+  const prefix = `trigger\0${subscriptionId}\0`
+  if (!itemKey.startsWith(prefix)) {
+    return null
+  }
+
+  return itemKey.slice(prefix.length) as JenaTriggerId
+}
+
+function getGroupPathFromItemKey(itemKey: string, subscriptionId: string) {
+  const prefix = `group\0${subscriptionId}\0`
+  if (!itemKey.startsWith(prefix)) {
+    return null
+  }
+
+  const pathText = itemKey.slice(prefix.length)
+  return pathText ? pathText.split('\0') : null
 }
 
 function compareGroupItems(left: TreeGroupItem, right: TreeGroupItem) {
@@ -1181,13 +1206,6 @@ function isSameOrChildPath(path: string[], parentPath: string[]) {
   return (
     path.length >= parentPath.length &&
     parentPath.every((part, index) => path[index] === part)
-  )
-}
-
-function areStringArraysEqual(left: string[], right: string[]) {
-  return (
-    left.length === right.length &&
-    left.every((part, index) => part === right[index])
   )
 }
 
