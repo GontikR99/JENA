@@ -88,7 +88,7 @@ describe('CharacterPresenceService', () => {
     characterPresenceService.dispose()
   })
 
-  it('ignores the Bind Affinity allowed line when tracking zones', async () => {
+  it('ignores area notification lines when tracking zones', async () => {
     const { broker, characterPresenceService, fileWatcher } = createHarness()
 
     broker.send('file-watcher', 'file-watcher.characters', {
@@ -123,6 +123,13 @@ describe('CharacterPresenceService', () => {
       serverName: 'bertox',
       text: 'You have entered an area where Bind Affinity is allowed.',
       timestamp: 'Sun Jun 14 10:00:01 2026',
+    })
+    await flushAsyncWork()
+    fileWatcher.emit({
+      characterName: 'Arias',
+      serverName: 'bertox',
+      text: 'You have entered an area where levitation effects do not function.',
+      timestamp: 'Sun Jun 14 10:00:02 2026',
     })
     await flushAsyncWork()
 

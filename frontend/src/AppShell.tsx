@@ -4,6 +4,7 @@ import jenaBrandLockupUrl from './assets/jena-brand-lockup.png'
 import { useAuth } from './auth/authContext'
 import { InfoView } from './info/InfoView'
 import { StartupButton } from './runtime/StartupButton'
+import { SearchView } from './search/SearchView'
 import { SettingsView } from './settings/SettingsView'
 import { useSettings } from './settings/settingsContext'
 import { TriggersView } from './triggers/views/TriggersView'
@@ -60,7 +61,12 @@ export function AppShell() {
           <button className="app-nav-link" disabled type="button">
             Rolls
           </button>
-          <button className="app-nav-link" disabled type="button">
+          <button
+            aria-current={activeSection === 'search' ? 'page' : undefined}
+            className={getNavLinkClassName(activeSection === 'search')}
+            onClick={() => setActiveSection('search')}
+            type="button"
+          >
             Search
           </button>
         </nav>
@@ -104,6 +110,7 @@ export function AppShell() {
       <main className="app-main">
         {activeSection === 'info' ? <InfoView /> : null}
         {activeSection === 'triggers' ? <TriggersView /> : null}
+        {activeSection === 'search' ? <SearchView /> : null}
         {activeSection === 'settings' ? <SettingsView /> : null}
       </main>
     </div>

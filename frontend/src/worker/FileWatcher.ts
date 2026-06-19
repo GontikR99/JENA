@@ -2,13 +2,23 @@ import type {
   FileSystemDirectoryHandleLike,
   FileSystemHandleLike,
 } from '../shared/fileSystemAccess'
-import type { EverQuestCharacter, EverQuestLogFile } from '../shared/messages'
+import type {
+  EverQuestCharacter,
+  EverQuestLogFile,
+  LogSearchDoneMessage,
+  LogSearchMatchMessage,
+} from '../shared/messages'
 import { getDependency, type Deps } from './di'
 import { MessageBroker } from './MessageBroker'
 
 const directoryScanIntervalMs = 100
 const tailIntervalMs = 10
 const characterActiveWindowMs = 30 * 60 * 1000
+const logSearchChunkSizeBytes = 512 * 1024
+const logSearchMaxMatches = 5000
+const logSearchMaxBinarySearchIterations = 64
+const logSearchProbeBytes = 4096
+const logSearchYieldLineInterval = 250
 
 interface TailTask {
   logFile: EverQuestLogFile
@@ -20,6 +30,21 @@ interface TailTask {
 interface CharacterIdentity {
   characterName: string
   serverName: string
+}
+
+interface ActiveLogSearch {
+  canceled: boolean
+  searchId: string
+}
+
+interface StartLogSearchRequest {
+  characterName: string
+  endMs: number
+  query: string
+  searchId: string
+  serverName: string
+  startMs: number
+  useRegex: boolean
 }
 
 export interface EverQuestLogLineRecord {
@@ -41,6 +66,7 @@ export class FileWatcher {
   private readonly tailTasks = new Map<string, TailTask>()
   private readonly watchedLogFileNames = new Set<string>()
   private readonly characterLastLogLineReceivedAt = new Map<string, number>()
+  private activeLogSearch: ActiveLogSearch | null = null
   private cachedLogFiles: EverQuestLogFile[] = []
   private lastAnnouncedCharactersSignature = ''
   private isDirectoryScanRunning = false
@@ -59,6 +85,8 @@ export class FileWatcher {
     this.unregister = broker.register('file-watcher', {
       setFileHandle: this.setFileHandle,
       getCharacters: this.getCharacters,
+      startLogSearch: this.startLogSearch,
+      cancelLogSearch: this.cancelLogSearch,
     })
   }
 
@@ -89,6 +117,7 @@ export class FileWatcher {
     this.characterLastLogLineReceivedAt.clear()
     this.cachedLogFiles = []
     this.lastAnnouncedCharactersSignature = ''
+    this.cancelActiveLogSearch()
 
     if (this.getEverQuestDirectoryHandle()) {
       this.isTailRunning = true
@@ -98,6 +127,44 @@ export class FileWatcher {
     }
 
     return {}
+  }
+
+  private readonly startLogSearch = (params: unknown) => {
+    if (!isStartLogSearchRequest(params)) {
+      throw new Error('Invalid startLogSearch request.')
+    }
+
+    if (params.endMs < params.startMs) {
+      throw new Error('Search end time must be after start time.')
+    }
+
+    const matcher = createLogSearchMatcher(params.query, params.useRegex)
+    const task: ActiveLogSearch = {
+      canceled: false,
+      searchId: params.searchId,
+    }
+
+    this.cancelActiveLogSearch()
+    this.activeLogSearch = task
+    void this.runLogSearch(params, matcher, task)
+
+    return {}
+  }
+
+  private readonly cancelLogSearch = (params: unknown) => {
+    if (!isCancelLogSearchRequest(params)) {
+      throw new Error('Invalid cancelLogSearch request.')
+    }
+
+    if (
+      this.activeLogSearch &&
+      this.activeLogSearch.searchId === params.searchId
+    ) {
+      this.activeLogSearch.canceled = true
+      return { canceled: true }
+    }
+
+    return { canceled: false }
   }
 
   private readonly getCharacters = async () => {
@@ -111,6 +178,209 @@ export class FileWatcher {
     return {
       characters: this.getCachedCharacters(),
     }
+  }
+
+  private async runLogSearch(
+    request: StartLogSearchRequest,
+    matcher: (text: string) => boolean,
+    task: ActiveLogSearch,
+  ) {
+    let matchCount = 0
+    let truncated = false
+
+    try {
+      const logFile = await this.getSearchLogFile(request)
+      const file = await this.getLogFile(logFile)
+
+      if (!file) {
+        throw new Error('Log file was not found.')
+      }
+
+      const startOffset = await findLogSearchStartOffset(file, request.startMs)
+      const scanResult = await this.scanLogFile({
+        file,
+        logFile,
+        matcher,
+        request,
+        startOffset,
+        task,
+      })
+
+      matchCount = scanResult.matchCount
+      truncated = scanResult.truncated
+
+      this.sendLogSearchDone({
+        matchCount,
+        searchId: request.searchId,
+        status: task.canceled ? 'canceled' : 'complete',
+        truncated,
+      })
+    } catch (error) {
+      this.sendLogSearchDone({
+        error: getErrorMessage(error),
+        matchCount,
+        searchId: request.searchId,
+        status: task.canceled ? 'canceled' : 'error',
+        truncated,
+      })
+    } finally {
+      if (this.activeLogSearch === task) {
+        this.activeLogSearch = null
+      }
+    }
+  }
+
+  private async scanLogFile({
+    file,
+    logFile,
+    matcher,
+    request,
+    startOffset,
+    task,
+  }: {
+    file: File
+    logFile: EverQuestLogFile
+    matcher: (text: string) => boolean
+    request: StartLogSearchRequest
+    startOffset: number
+    task: ActiveLogSearch
+  }) {
+    let offset = startOffset
+    let pendingText = ''
+    let processedLineCount = 0
+    let matchCount = 0
+    let truncated = false
+
+    while (offset < file.size && !task.canceled) {
+      const chunkEnd = Math.min(file.size, offset + logSearchChunkSizeBytes)
+      const chunkText = await file.slice(offset, chunkEnd).text()
+      offset = chunkEnd
+
+      const combinedText = `${pendingText}${chunkText}`
+      const lastNewlineIndex = combinedText.lastIndexOf('\n')
+      const completeText =
+        lastNewlineIndex >= 0
+          ? combinedText.slice(0, lastNewlineIndex)
+          : ''
+
+      pendingText =
+        lastNewlineIndex >= 0
+          ? combinedText.slice(lastNewlineIndex + 1)
+          : combinedText
+
+      if (!completeText) {
+        await yieldToEventLoop()
+        continue
+      }
+
+      const lines = completeText.split('\n')
+      for (const rawLineText of lines) {
+        if (task.canceled) {
+          break
+        }
+
+        processedLineCount += 1
+        const rawLine = trimLineEnding(rawLineText)
+        const parsedLine = parseEverQuestLogLineWithTimestamp(rawLine)
+
+        if (!parsedLine) {
+          continue
+        }
+
+        if (parsedLine.timestampMs < request.startMs) {
+          continue
+        }
+
+        if (parsedLine.timestampMs > request.endMs) {
+          return { matchCount, truncated }
+        }
+
+        if (matcher(parsedLine.text)) {
+          matchCount += 1
+          this.sendLogSearchMatch({
+            characterName: logFile.characterName,
+            index: matchCount - 1,
+            rawLine,
+            searchId: request.searchId,
+            serverName: logFile.serverName,
+            text: parsedLine.text,
+            timestamp: parsedLine.timestamp,
+            timestampMs: parsedLine.timestampMs,
+          })
+
+          if (matchCount >= logSearchMaxMatches) {
+            truncated = true
+            return { matchCount, truncated }
+          }
+        }
+
+        if (processedLineCount % logSearchYieldLineInterval === 0) {
+          await yieldToEventLoop()
+        }
+      }
+
+      await yieldToEventLoop()
+    }
+
+    if (pendingText && !task.canceled) {
+      const rawLine = trimLineEnding(pendingText)
+      const parsedLine = parseEverQuestLogLineWithTimestamp(rawLine)
+      if (
+        parsedLine &&
+        parsedLine.timestampMs >= request.startMs &&
+        parsedLine.timestampMs <= request.endMs &&
+        matcher(parsedLine.text)
+      ) {
+        matchCount += 1
+        this.sendLogSearchMatch({
+          characterName: logFile.characterName,
+          index: matchCount - 1,
+          rawLine,
+          searchId: request.searchId,
+          serverName: logFile.serverName,
+          text: parsedLine.text,
+          timestamp: parsedLine.timestamp,
+          timestampMs: parsedLine.timestampMs,
+        })
+        truncated = matchCount >= logSearchMaxMatches
+      }
+    }
+
+    return { matchCount, truncated }
+  }
+
+  private async getSearchLogFile(request: StartLogSearchRequest) {
+    const logs =
+      this.cachedLogFiles.length > 0
+        ? this.cachedLogFiles
+        : await this.refreshLogCache(false)
+    const characterName = normalizeSearchKey(request.characterName)
+    const serverName = normalizeSearchKey(request.serverName)
+    const logFile = logs.find(
+      (candidate) =>
+        normalizeSearchKey(candidate.characterName) === characterName &&
+        normalizeSearchKey(candidate.serverName) === serverName,
+    )
+
+    if (!logFile) {
+      throw new Error('No log file exists for that character and server.')
+    }
+
+    return logFile
+  }
+
+  private cancelActiveLogSearch() {
+    if (this.activeLogSearch) {
+      this.activeLogSearch.canceled = true
+    }
+  }
+
+  private sendLogSearchMatch(message: LogSearchMatchMessage) {
+    this.broker.send('file-watcher', 'client.log-search.match-found', message)
+  }
+
+  private sendLogSearchDone(message: LogSearchDoneMessage) {
+    this.broker.send('file-watcher', 'client.log-search.done', message)
   }
 
   private startDirectoryScanning() {
@@ -494,6 +764,213 @@ function isSetFileHandleRequest(
       candidate.fileHandle.kind === 'directory')
   )
 }
+
+function isStartLogSearchRequest(value: unknown): value is StartLogSearchRequest {
+  if (!value || typeof value !== 'object') {
+    return false
+  }
+
+  const candidate = value as Partial<StartLogSearchRequest>
+
+  return (
+    typeof candidate.searchId === 'string' &&
+    typeof candidate.characterName === 'string' &&
+    typeof candidate.serverName === 'string' &&
+    typeof candidate.startMs === 'number' &&
+    Number.isFinite(candidate.startMs) &&
+    typeof candidate.endMs === 'number' &&
+    Number.isFinite(candidate.endMs) &&
+    typeof candidate.query === 'string' &&
+    typeof candidate.useRegex === 'boolean'
+  )
+}
+
+function isCancelLogSearchRequest(
+  value: unknown,
+): value is { searchId: string } {
+  if (!value || typeof value !== 'object') {
+    return false
+  }
+
+  const candidate = value as Partial<{ searchId: string }>
+  return typeof candidate.searchId === 'string'
+}
+
+function createLogSearchMatcher(query: string, useRegex: boolean) {
+  if (query.length === 0) {
+    throw new Error('Search text is required.')
+  }
+
+  if (useRegex) {
+    const regex = new RegExp(query, 'i')
+    return (text: string) => regex.test(text)
+  }
+
+  const normalizedQuery = query.toLocaleLowerCase()
+  return (text: string) => text.toLocaleLowerCase().includes(normalizedQuery)
+}
+
+async function findLogSearchStartOffset(file: File, startMs: number) {
+  let low = 0
+  let high = file.size
+
+  for (let index = 0; index < logSearchMaxBinarySearchIterations; index += 1) {
+    if (low >= high) {
+      break
+    }
+
+    const midpoint = Math.floor((low + high) / 2)
+    const probe = await readLineAtOrAfter(file, midpoint)
+
+    if (!probe) {
+      if (high === midpoint) {
+        break
+      }
+      high = midpoint
+      continue
+    }
+
+    if (!probe.parsedLine) {
+      const nextLow = Math.max(low + 1, probe.nextOffset)
+      if (nextLow <= low || nextLow > high) {
+        break
+      }
+      low = nextLow
+      continue
+    }
+
+    if (probe.parsedLine.timestampMs < startMs) {
+      const nextLow = Math.max(low + 1, probe.nextOffset)
+      if (nextLow <= low) {
+        break
+      }
+      low = nextLow
+      continue
+    }
+
+    if (probe.lineStart >= high) {
+      break
+    }
+    high = probe.lineStart
+  }
+
+  return low
+}
+
+async function readLineAtOrAfter(file: File, offset: number) {
+  const safeOffset = Math.max(0, Math.min(file.size, Math.floor(offset)))
+  const chunkStart = safeOffset
+  const chunkEnd = Math.min(file.size, chunkStart + logSearchProbeBytes)
+  const chunk = await file.slice(chunkStart, chunkEnd).text()
+
+  if (!chunk) {
+    return null
+  }
+
+  let lineStartInChunk = 0
+  if (chunkStart > 0) {
+    const firstNewlineIndex = chunk.indexOf('\n')
+    if (firstNewlineIndex < 0) {
+      return null
+    }
+    lineStartInChunk = firstNewlineIndex + 1
+  }
+
+  if (lineStartInChunk >= chunk.length) {
+    return null
+  }
+
+  const lineEndInChunk = chunk.indexOf('\n', lineStartInChunk)
+  if (lineEndInChunk < 0 && chunkEnd < file.size) {
+    return null
+  }
+
+  const rawLine = trimLineEnding(
+    lineEndInChunk >= 0
+      ? chunk.slice(lineStartInChunk, lineEndInChunk)
+      : chunk.slice(lineStartInChunk),
+  )
+  const lineStart = chunkStart + lineStartInChunk
+  const nextOffset =
+    lineEndInChunk >= 0 ? chunkStart + lineEndInChunk + 1 : chunkEnd
+
+  return {
+    lineStart,
+    nextOffset,
+    parsedLine: parseEverQuestLogLineWithTimestamp(rawLine),
+    rawLine,
+  }
+}
+
+function parseEverQuestLogLineWithTimestamp(line: string) {
+  const match =
+    /^\[(Sun|Mon|Tue|Wed|Thu|Fri|Sat) (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{1,2}) (\d{2}):(\d{2}):(\d{2}) (\d{4})]\s?(.*)$/.exec(
+      line,
+    )
+
+  if (!match) {
+    return null
+  }
+
+  const [, , monthName, dayText, hourText, minuteText, secondText, yearText, text] =
+    match
+  const monthIndex = monthNames.indexOf(monthName)
+  if (monthIndex < 0) {
+    return null
+  }
+
+  const timestampMs = new Date(
+    Number(yearText),
+    monthIndex,
+    Number(dayText),
+    Number(hourText),
+    Number(minuteText),
+    Number(secondText),
+  ).getTime()
+
+  if (!Number.isFinite(timestampMs)) {
+    return null
+  }
+
+  return {
+    text,
+    timestamp: line.slice(1, line.indexOf(']')),
+    timestampMs,
+  }
+}
+
+function trimLineEnding(line: string) {
+  return line.endsWith('\r') ? line.slice(0, -1) : line
+}
+
+function normalizeSearchKey(value: string) {
+  return value.trim().toLocaleLowerCase()
+}
+
+function yieldToEventLoop() {
+  return new Promise<void>((resolve) => {
+    globalThis.setTimeout(resolve, 0)
+  })
+}
+
+function getErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error)
+}
+
+const monthNames = [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
+]
 
 export async function enumerateEverQuestLogs(
   directoryHandle: FileSystemDirectoryHandleLike,

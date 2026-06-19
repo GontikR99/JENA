@@ -1,0 +1,132 @@
+.search-view {
+  color: #333;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  height: 100%;
+  min-height: 0;
+  padding: 0.75rem;
+}
+
+.search-controls {
+  display: grid;
+  grid-template-columns: minmax(16rem, 1fr) minmax(20rem, 1.4fr) minmax(18rem, 1.3fr) auto;
+  gap: 0.75rem;
+  align-items: end;
+}
+
+.search-control-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.search-control-label {
+  color: #333;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.search-control-row {
+  display: flex;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.search-control-row > * {
+  min-width: 0;
+}
+
+.search-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.search-status {
+  color: #333;
+  font-size: 0.85rem;
+  min-height: 1.25rem;
+}
+
+.search-table-panel {
+  border: 1px solid #b8b8b8;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  user-select: none;
+}
+
+.search-table-header,
+.search-table-row {
+  display: grid;
+  grid-template-columns: 13rem 16rem minmax(20rem, 1fr);
+}
+
+.search-table-header {
+  background: #e8e8e8;
+  border-bottom: 1px solid #b8b8b8;
+  color: #222;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.search-table-header button {
+  background: transparent;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  padding: 0.35rem 0.5rem;
+  text-align: left;
+}
+
+.search-table-header button:hover {
+  background: #d9d9d9;
+}
+
+.search-table-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  position: relative;
+}
+
+.search-table-virtual-space {
+  position: relative;
+  width: 100%;
+}
+
+.search-table-row {
+  border-bottom: 1px solid #ddd;
+  color: #444;
+  font-size: 0.82rem;
+  left: 0;
+  position: absolute;
+  right: 0;
+  top: 0;
+}
+
+.search-table-row[aria-selected='true'] {
+  background: #cfe3f7;
+  color: #1f2f3f;
+}
+
+.search-table-cell {
+  overflow: hidden;
+  padding: 0.35rem 0.5rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.search-table-empty {
+  color: #444;
+  padding: 1rem;
+}
+
+@media (max-width: 1100px) {
+  .search-controls {
+    grid-template-columns: 1fr;
+  }
+}

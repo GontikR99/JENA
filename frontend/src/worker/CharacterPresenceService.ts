@@ -8,9 +8,6 @@ import { getDependency, type Deps } from './di'
 import { MessageBroker } from './MessageBroker'
 
 const zoneEnteredRegularExpression = '^You have entered (?<zone>.*)[.]$'
-const ignoredZoneEnteredLines = new Set([
-  'You have entered an area where Bind Affinity is allowed.',
-])
 const whoZoneRegularExpression =
   '^\\[[^\\]]+\\]\\s+(?<characterName>\\S+)\\s+(?:\\([^)]*\\)\\s+)?(?:<[^>]*>\\s+)?ZONE:\\s+(?<zone>.+?)\\s+\\([^)]+\\)\\s*$'
 const serverPresenceIntervalMs = 30_000
@@ -104,12 +101,8 @@ export class CharacterPresenceService {
   }
 
   private handleZoneEnteredMatch(message: RegexMatchFoundMessage) {
-    if (ignoredZoneEnteredLines.has(message.text)) {
-      return
-    }
-
     const zone = message.captures.named.zone
-    if (!zone) {
+    if (!zone || isIgnoredZoneEnteredZone(zone)) {
       return
     }
 
@@ -217,6 +210,10 @@ function getCharacterKey(character: CharacterIdentity) {
 
 function normalizeCharacterName(characterName: string) {
   return characterName.trim().toLocaleLowerCase()
+}
+
+function isIgnoredZoneEnteredZone(zone: string) {
+  return zone.trim().toLocaleLowerCase().startsWith('an area ')
 }
 
 function compareCharacters(left: CharacterPresence, right: CharacterPresence) {

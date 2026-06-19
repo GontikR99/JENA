@@ -233,6 +233,8 @@ export interface EndpointMessages {
   'alert.trigger-matched': TriggerAlertMatchedMessage
   'character-presence.characters': CharacterPresenceCharactersMessage
   'file-watcher.characters': FileWatcherCharactersMessage
+  'log-search.done': LogSearchDoneMessage
+  'log-search.match-found': LogSearchMatchMessage
   'matcher.match-found': RegexMatchFoundMessage
   'speech.preview-requested': TriggerSpeechPreviewRequestedMessage
   'subscriptions.updated': SubscriptionUpdatedMessage
@@ -244,6 +246,27 @@ export interface EverQuestLogFile {
   characterName: string
   fileName: string
   serverName: string
+}
+
+export interface LogSearchMatchMessage {
+  characterName: string
+  index: number
+  rawLine: string
+  searchId: string
+  serverName: string
+  text: string
+  timestamp: string
+  timestampMs: number
+}
+
+export type LogSearchDoneStatus = 'canceled' | 'complete' | 'error'
+
+export interface LogSearchDoneMessage {
+  error?: string
+  matchCount: number
+  searchId: string
+  status: LogSearchDoneStatus
+  truncated: boolean
 }
 
 export interface RpcEndpoints {
@@ -360,6 +383,26 @@ export interface RpcEndpoints {
         fileHandle: FileSystemHandleLike | null
       }
       response: Record<string, never>
+    }
+    startLogSearch: {
+      request: {
+        characterName: string
+        endMs: number
+        query: string
+        searchId: string
+        serverName: string
+        startMs: number
+        useRegex: boolean
+      }
+      response: Record<string, never>
+    }
+    cancelLogSearch: {
+      request: {
+        searchId: string
+      }
+      response: {
+        canceled: boolean
+      }
     }
     getCharacters: {
       request: Record<string, never>
