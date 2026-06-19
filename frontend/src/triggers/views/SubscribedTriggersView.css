@@ -17,6 +17,10 @@
   padding: 0.45rem 0.75rem;
 }
 
+.subscribed-triggers-collapse-all {
+  margin-left: auto;
+}
+
 .subscribed-triggers-header h2 {
   color: #111827;
   font-size: 0.95rem;
@@ -66,6 +70,12 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.subscribed-triggers-card-actions {
+  align-items: center;
+  display: inline-flex;
+  gap: 0.35rem;
 }
 
 .subscribed-triggers-unsubscribe {

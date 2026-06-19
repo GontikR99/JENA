@@ -352,6 +352,25 @@ export function SubscribedTriggersView({
     })
   }
 
+  function collapseAllGroups() {
+    setExpandedGroupIds(new Set())
+  }
+
+  function collapseSubscriptionGroups(subscriptionId: string) {
+    setExpandedGroupIds((current) => {
+      const next = new Set(current)
+      const prefix = `${subscriptionId}\0`
+
+      next.forEach((groupId) => {
+        if (groupId.startsWith(prefix)) {
+          next.delete(groupId)
+        }
+      })
+
+      return next
+    })
+  }
+
   async function handleDefaultToggle(
     subscription: SubscribedTriggerSnapshot,
     enabled: boolean,
@@ -571,6 +590,15 @@ export function SubscribedTriggersView({
     <section className="subscribed-triggers-view" aria-label="Subscribed triggers">
       <header className="subscribed-triggers-header">
         <h2>Subscriptions</h2>
+        <Button
+          className="subscribed-triggers-collapse-all"
+          disabled={expandedGroupIds.size === 0}
+          onClick={collapseAllGroups}
+          size="sm"
+          variant="outline-secondary"
+        >
+          Collapse all
+        </Button>
       </header>
 
       <div className="subscribed-triggers-body">
@@ -607,18 +635,32 @@ export function SubscribedTriggersView({
                     <span className="subscribed-triggers-publisher-name">
                       {subscription.ownerDisplayName || 'Anonymous publisher'}
                     </span>
-                    <Button
-                      aria-label={`Unsubscribe from ${subscription.ownerDisplayName}`}
-                      className="subscribed-triggers-unsubscribe"
-                      onClick={() => {
-                        void handleUnsubscribe(subscription)
-                      }}
-                      size="sm"
-                      title="Unsubscribe"
-                      variant="outline-danger"
-                    >
-                      <X aria-hidden="true" size={15} />
-                    </Button>
+                    <span className="subscribed-triggers-card-actions">
+                      <Button
+                        disabled={!hasExpandedSubscriptionGroup(
+                          expandedGroupIds,
+                          subscription.id,
+                        )}
+                        onClick={() => collapseSubscriptionGroups(subscription.id)}
+                        size="sm"
+                        title="Collapse this subscription"
+                        variant="outline-secondary"
+                      >
+                        Collapse all
+                      </Button>
+                      <Button
+                        aria-label={`Unsubscribe from ${subscription.ownerDisplayName}`}
+                        className="subscribed-triggers-unsubscribe"
+                        onClick={() => {
+                          void handleUnsubscribe(subscription)
+                        }}
+                        size="sm"
+                        title="Unsubscribe"
+                        variant="outline-danger"
+                      >
+                        <X aria-hidden="true" size={15} />
+                      </Button>
+                    </span>
                   </Card.Header>
                   <Card.Body className="subscribed-triggers-card-body">
                     {subscription.triggers.length === 0 ? (
@@ -1278,6 +1320,14 @@ function getSubscriptionAncestorGroupIds(
   return path.map((_, index) =>
     getSubscriptionGroupId(subscriptionId, path.slice(0, index + 1)),
   )
+}
+
+function hasExpandedSubscriptionGroup(
+  expandedGroupIds: Set<string>,
+  subscriptionId: string,
+) {
+  const prefix = `${subscriptionId}\0`
+  return [...expandedGroupIds].some((groupId) => groupId.startsWith(prefix))
 }
 
 function setSubscribedRowRef(

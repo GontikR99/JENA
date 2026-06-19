@@ -31,6 +31,10 @@
   padding: 0.5rem;
 }
 
+.user-triggers-collapse-all {
+  margin-left: auto;
+}
+
 .user-triggers-tree {
   min-height: 0;
   overflow: auto;

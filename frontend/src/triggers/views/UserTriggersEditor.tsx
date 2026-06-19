@@ -382,6 +382,12 @@ export function UserTriggersEditor({
     toggleGroupCollapsed(item.id)
   }
 
+  function collapseAllGroups() {
+    groupIds.forEach((groupId) => {
+      setGroupCollapsed(groupId, true)
+    })
+  }
+
   async function handleToggleTrigger(item: TreeTriggerItem, enabled: boolean) {
     if (!selectedCharacterRecord) {
       toast.error('Select a character before changing enablement.')
@@ -1237,6 +1243,15 @@ export function UserTriggersEditor({
             </Dropdown.Menu>
           </Dropdown>
         ) : null}
+        <Button
+          className="user-triggers-collapse-all"
+          disabled={groupIds.length === 0}
+          onClick={collapseAllGroups}
+          size="sm"
+          variant="outline-secondary"
+        >
+          Collapse all
+        </Button>
         <input
           accept=".gtp"
           className="d-none"
