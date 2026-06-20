@@ -1,5 +1,6 @@
 import { useCallback, useRef, useState } from 'react'
 import { Group, Panel, Separator } from 'react-resizable-panels'
+import { useLocalCharacters } from '../../characters/LocalCharactersProvider'
 import type { CharacterPresence } from '../../shared/messages'
 import {
   useOnTriggerMatch,
@@ -15,6 +16,7 @@ import './TriggersView.css'
 const maxTriggerLogRecords = 1000
 
 export function TriggersView() {
+  const characters = useLocalCharacters()
   const [selectedCharacter, setSelectedCharacter] =
     useState<CharacterPresence | null>(null)
   const [triggerLogRecords, setTriggerLogRecords] = useState<TriggerLogRecord[]>([])
@@ -45,6 +47,14 @@ export function TriggersView() {
   )
 
   function handleTriggerClick(record: TriggerLogRecord) {
+    const matchingCharacter = characters.find((character) =>
+      isSameCharacterRecord(character, record),
+    )
+
+    if (matchingCharacter) {
+      setSelectedCharacter(matchingCharacter)
+    }
+
     nextRevealRequestIdRef.current += 1
     setTriggerRevealRequest(
       record.subscriptionId
@@ -116,6 +126,16 @@ export function TriggersView() {
         </Panel>
       </Group>
     </section>
+  )
+}
+
+function isSameCharacterRecord(
+  character: CharacterPresence,
+  record: TriggerLogRecord,
+) {
+  return (
+    character.characterName === record.characterName &&
+    character.serverName === record.serverName
   )
 }
 
