@@ -24,6 +24,7 @@ import {
 
 const hookState = vi.hoisted(() => ({
   areTriggersRunning: true,
+  headlessMode: false,
   includeCharacterNameForTriggerMatches: 'never',
   lastStartedAtMs: null as number | null,
   listeners: new Map<string, (message: { payload: unknown }) => void>(),
@@ -57,6 +58,7 @@ vi.mock('../../characters/LocalCharactersProvider', () => ({
 vi.mock('../../settings/settingsContext', () => ({
   useSettings: () => ({
     machineSettings: {
+      headlessMode: hookState.headlessMode,
       includeCharacterNameForTriggerMatches:
         hookState.includeCharacterNameForTriggerMatches,
     },
@@ -214,6 +216,7 @@ const resolvedTrigger: JenaResolvedTrigger = {
 describe('useTriggerAlerts', () => {
   beforeEach(() => {
     hookState.areTriggersRunning = true
+    hookState.headlessMode = false
     hookState.includeCharacterNameForTriggerMatches = 'never'
     hookState.lastStartedAtMs = null
     hookState.listeners.clear()
@@ -258,6 +261,31 @@ describe('useTriggerAlerts', () => {
     emit('alert.trigger-matched', createTriggerAlert())
 
     expect(callback).not.toHaveBeenCalled()
+  })
+
+  it('passes through normal trigger matches in headless mode when the overlay is hidden', () => {
+    const callback = vi.fn()
+    hookState.areTriggersRunning = false
+    hookState.headlessMode = true
+
+    renderHook(() => useOnTriggerMatch(callback), { wrapper })
+    emit('alert.trigger-matched', createTriggerAlert())
+
+    expect(callback).toHaveBeenCalledTimes(1)
+    expect(callback).toHaveBeenCalledWith(expect.objectContaining({
+      alert: createTriggerAlert(),
+      eventId: expect.any(String),
+      origin: 'local',
+      registrations: [
+        {
+          broadcastMode: 'private',
+          enabled: true,
+          source: 'user',
+        },
+      ],
+      resolvedTrigger,
+      trigger: testTrigger,
+    }))
   })
 
   it('drops normal trigger matches when the trigger is unknown locally', () => {

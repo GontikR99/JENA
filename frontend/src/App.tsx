@@ -28,6 +28,7 @@ import { TriggerSpeechService } from './triggers/alerts/TriggerSpeechService'
 import { TriggerStopService } from './triggers/alerts/TriggerStopService'
 import { TriggerStoreProvider } from './triggers/model/TriggerStore'
 import { SubscribedTriggerManagerProvider } from './triggers/model/SubscribedTriggerManager'
+import { TriggerLogProvider } from './triggers/model/TriggerLog'
 import { UserTriggerManagerProvider } from './triggers/model/UserTriggerManager'
 
 export function App() {
@@ -71,9 +72,11 @@ function AuthenticatedApp() {
                   <TriggerTimerRuntimeProvider>
                     <BroadcastReflector />
                     <TriggerSpeechService />
-                    <TriggerShareCoordinator>
-                      <AppShell />
-                    </TriggerShareCoordinator>
+                    <TriggerLogProvider>
+                      <TriggerShareCoordinator>
+                        <AppShell />
+                      </TriggerShareCoordinator>
+                    </TriggerLogProvider>
                     <TriggerRuntimePortal />
                   </TriggerTimerRuntimeProvider>
                 </AlertEventCoordinatorProvider>
