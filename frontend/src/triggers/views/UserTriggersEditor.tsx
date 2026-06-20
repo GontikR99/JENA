@@ -46,6 +46,7 @@ const triggerCacheStoreName = 'trigger-cache'
 const userTriggerCacheStoreName = 'user-trigger-cache'
 const settingsStoreName = 'settings'
 const emptyGroupsCacheKey = 'user-trigger-editor-empty-groups'
+const expandedGroupsCacheKey = 'user-trigger-editor-expanded-groups'
 const triggerMutationChunkSize = 100
 const triggerTreeIndentRem = 1.15
 const triggerTreeLeafIndentNudgeRem = 0.8
@@ -147,12 +148,8 @@ export function UserTriggersEditor({
   selectedCharacter,
 }: UserTriggersEditorProps) {
   const {
-    collapsedGroupIds,
     deleteTriggers,
-    reconcileKnownGroupIds,
     setTriggerFlags,
-    setGroupCollapsed,
-    toggleGroupCollapsed,
     toggleTriggers,
     triggers,
     upsertTrigger,
@@ -163,9 +160,14 @@ export function UserTriggersEditor({
   const { isAuthenticated } = useAuth()
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const handledRevealRequestIdRef = useRef<number | null>(null)
+  const expandedGroupsTouchedRef = useRef(false)
   const triggerRowRefs = useRef(new Map<JenaTriggerId, HTMLDivElement>())
   const [emptyGroups, setEmptyGroups] = useState<string[][]>([])
   const [emptyGroupsLoaded, setEmptyGroupsLoaded] = useState(false)
+  const [expandedGroupIds, setExpandedGroupIds] = useState<Set<string>>(
+    new Set(),
+  )
+  const [expandedGroupsLoaded, setExpandedGroupsLoaded] = useState(false)
   const [selection, setSelection] = useState<TreeSelection>({ type: 'none' })
   const [pendingScrollTriggerId, setPendingScrollTriggerId] =
     useState<JenaTriggerId | null>(null)
@@ -184,8 +186,8 @@ export function UserTriggersEditor({
     ? toCharacterServer(selectedCharacter)
     : null
   const treeItems = useMemo(
-    () => buildVisibleTreeItems(triggers, emptyGroups, collapsedGroupIds),
-    [collapsedGroupIds, emptyGroups, triggers],
+    () => buildVisibleTreeItems(triggers, emptyGroups, expandedGroupIds),
+    [emptyGroups, expandedGroupIds, triggers],
   )
   const groupIds = useMemo(
     () => getGroupIds(triggers, emptyGroups),
@@ -245,8 +247,38 @@ export function UserTriggersEditor({
   }, [emptyGroups, emptyGroupsLoaded])
 
   useEffect(() => {
-    reconcileKnownGroupIds(groupIds)
-  }, [groupIds, reconcileKnownGroupIds])
+    let cancelled = false
+
+    void readExpandedGroups()
+      .then((ids) => {
+        if (!cancelled) {
+          if (!expandedGroupsTouchedRef.current) {
+            setExpandedGroupIds(new Set(ids))
+          }
+          setExpandedGroupsLoaded(true)
+        }
+      })
+      .catch((error: unknown) => {
+        console.warn('[UserTriggersEditor] unable to load expanded groups', error)
+        if (!cancelled) {
+          setExpandedGroupsLoaded(true)
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!expandedGroupsLoaded) {
+      return
+    }
+
+    void writeExpandedGroups([...expandedGroupIds]).catch((error: unknown) => {
+      console.warn('[UserTriggersEditor] unable to persist expanded groups', error)
+    })
+  }, [expandedGroupIds, expandedGroupsLoaded])
 
   useEffect(() => {
     if (!revealRequest || revealRequest.target !== 'user') {
@@ -263,8 +295,13 @@ export function UserTriggersEditor({
       return
     }
 
-    getAncestorGroupIds(resolved.trigger.groupPath).forEach((groupId) => {
-      setGroupCollapsed(groupId, false)
+    expandedGroupsTouchedRef.current = true
+    setExpandedGroupIds((current) => {
+      const next = new Set(current)
+      getAncestorGroupIds(resolved.trigger.groupPath).forEach((groupId) => {
+        next.add(groupId)
+      })
+      return next
     })
     setSelection({
       anchorId: revealRequest.triggerId,
@@ -272,7 +309,7 @@ export function UserTriggersEditor({
       type: 'triggers',
     })
     setPendingScrollTriggerId(revealRequest.triggerId)
-  }, [revealRequest, setGroupCollapsed, triggersById])
+  }, [revealRequest, triggersById])
 
   useEffect(() => {
     if (!pendingScrollTriggerId) {
@@ -379,13 +416,41 @@ export function UserTriggersEditor({
   }
 
   function toggleGroup(item: TreeGroupItem) {
-    toggleGroupCollapsed(item.id)
+    expandedGroupsTouchedRef.current = true
+    setExpandedGroupIds((current) => {
+      const next = new Set(current)
+      if (next.has(item.id)) {
+        next.delete(item.id)
+      } else {
+        next.add(item.id)
+      }
+
+      return next
+    })
+  }
+
+  function setGroupExpanded(groupId: string, expanded: boolean) {
+    if (!groupId) {
+      return
+    }
+
+    expandedGroupsTouchedRef.current = true
+    setExpandedGroupIds((current) => {
+      const next = new Set(current)
+
+      if (expanded) {
+        next.add(groupId)
+      } else {
+        next.delete(groupId)
+      }
+
+      return next
+    })
   }
 
   function collapseAllGroups() {
-    groupIds.forEach((groupId) => {
-      setGroupCollapsed(groupId, true)
-    })
+    expandedGroupsTouchedRef.current = true
+    setExpandedGroupIds(new Set())
   }
 
   async function handleToggleTrigger(item: TreeTriggerItem, enabled: boolean) {
@@ -509,7 +574,7 @@ export function UserTriggersEditor({
 
     const groupPath = [...parentPath, normalizedName]
     setEmptyGroups((previous) => mergeGroupPaths([...previous, groupPath]))
-    setGroupCollapsed(getGroupId(parentPath), false)
+    setGroupExpanded(getGroupId(parentPath), true)
   }
 
   function handleAddTrigger(groupPath: string[]) {
@@ -786,8 +851,8 @@ export function UserTriggersEditor({
         previous.map((path) => renamePathPrefix(path, sourcePath, movedPath)),
       ),
     )
-    setGroupCollapsed(getGroupId(targetParentPath), false)
-    setGroupCollapsed(getGroupId(movedPath), false)
+    setGroupExpanded(getGroupId(targetParentPath), true)
+    setGroupExpanded(getGroupId(movedPath), true)
     setSelection({ path: movedPath, type: 'group' })
   }
 
@@ -989,6 +1054,21 @@ export function UserTriggersEditor({
         ? `${sanitizeExportFileName(selectedTriggers[0].name || 'trigger')}.gtp`
         : 'jena-selected-triggers.gtp',
       selectedTriggers,
+    )
+  }
+
+  async function handleExportAllTriggers() {
+    const allTriggers = getAllTriggersInTreeOrder(triggers)
+
+    if (allTriggers.length === 0) {
+      toast.error('No triggers to export.')
+      return
+    }
+
+    await exportTriggers(
+      'Export All Triggers',
+      'jena-triggers.gtp',
+      allTriggers,
     )
   }
 
@@ -1213,6 +1293,16 @@ export function UserTriggersEditor({
         <Button onClick={handleImportClick} size="sm" variant="outline-secondary">
           import GINA
         </Button>
+        <Button
+          disabled={triggers.length === 0}
+          onClick={() => {
+            void handleExportAllTriggers()
+          }}
+          size="sm"
+          variant="outline-secondary"
+        >
+          export GINA
+        </Button>
         {isAuthenticated ? (
           <Dropdown as={ButtonGroup}>
             <Button
@@ -1268,7 +1358,7 @@ export function UserTriggersEditor({
           treeItems.map((item) =>
             item.type === 'group' ? (
               <GroupRow
-                collapsed={collapsedGroupIds.has(item.id)}
+                collapsed={!expandedGroupIds.has(item.id)}
                 checkboxState={
                   groupStatesById.get(item.id)?.state ?? 'disabled'
                 }
@@ -2051,7 +2141,7 @@ function BroadcastModeToggle({
 function buildVisibleTreeItems(
   triggers: JenaResolvedTrigger[],
   emptyGroups: string[][],
-  collapsedGroups: Set<string>,
+  expandedGroupIds: Set<string>,
 ) {
   const groups = new Map<string, TreeGroupItem>()
   const triggersByParent = new Map<string, TreeTriggerItem[]>()
@@ -2098,7 +2188,7 @@ function buildVisibleTreeItems(
     siblings.sort(compareTriggerItems)
   })
 
-  return flattenGroups(groups, triggersByParent, collapsedGroups, [])
+  return flattenGroups(groups, triggersByParent, expandedGroupIds, [])
 }
 
 function getGroupIds(
@@ -2138,7 +2228,7 @@ function setTriggerRowRef(
 function flattenGroups(
   groups: Map<string, TreeGroupItem>,
   triggersByParent: Map<string, TreeTriggerItem[]>,
-  collapsedGroups: Set<string>,
+  expandedGroupIds: Set<string>,
   parentPath: string[],
 ) {
   const parentId = getGroupId(parentPath)
@@ -2150,8 +2240,8 @@ function flattenGroups(
   childGroups.forEach((group) => {
     items.push(group)
 
-    if (!collapsedGroups.has(group.id)) {
-      items.push(...flattenGroups(groups, triggersByParent, collapsedGroups, group.path))
+    if (expandedGroupIds.has(group.id)) {
+      items.push(...flattenGroups(groups, triggersByParent, expandedGroupIds, group.path))
     }
   })
 
@@ -2221,6 +2311,23 @@ function getTriggersByIdsInTreeOrder(
       seenTriggerIds.add(item.id)
       selectedTriggers.push(item.resolved.trigger)
     }
+  })
+
+  return selectedTriggers
+}
+
+function getAllTriggersInTreeOrder(triggers: JenaResolvedTrigger[]) {
+  const seenTriggerIds = new Set<JenaTriggerId>()
+  const selectedTriggers: JenaTrigger[] = []
+  const sortedTriggers = [...triggers].sort(compareResolvedTriggersByPath)
+
+  sortedTriggers.forEach((resolved) => {
+    if (seenTriggerIds.has(resolved.trigger.id)) {
+      return
+    }
+
+    seenTriggerIds.add(resolved.trigger.id)
+    selectedTriggers.push(resolved.trigger)
   })
 
   return selectedTriggers
@@ -2722,6 +2829,26 @@ async function writeEmptyGroups(groups: string[][]) {
 
   try {
     await putValue(database, emptyGroupsCacheKey, mergeGroupPaths(groups))
+  } finally {
+    database.close()
+  }
+}
+
+async function readExpandedGroups() {
+  const database = await openDatabase()
+
+  try {
+    return (await getValue<string[]>(database, expandedGroupsCacheKey)) ?? []
+  } finally {
+    database.close()
+  }
+}
+
+async function writeExpandedGroups(groupIds: string[]) {
+  const database = await openDatabase()
+
+  try {
+    await putValue(database, expandedGroupsCacheKey, [...groupIds].sort())
   } finally {
     database.close()
   }

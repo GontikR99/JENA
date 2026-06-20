@@ -44,13 +44,9 @@ const selectedCharacter: CharacterPresence = {
 
 vi.mock('../model/UserTriggerManager', () => ({
   useTriggerManager: () => ({
-    collapsedGroupIds: new Set<string>(),
     deleteTrigger: vi.fn(),
     deleteTriggers: vi.fn(),
-    reconcileKnownGroupIds: vi.fn(),
     setTriggerFlags: vi.fn(),
-    setGroupCollapsed: vi.fn(),
-    toggleGroupCollapsed: vi.fn(),
     toggleTriggers: vi.fn(),
     triggers: resolvedTriggers,
     upsertTrigger: vi.fn(),
@@ -81,12 +77,17 @@ vi.mock('../../shared/messageBrokerHooks', () => ({
 }))
 
 describe('UserTriggersEditor', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks()
+    await deleteDatabase('jena')
   })
 
   it('hides enable controls when no character is selected', async () => {
+    const user = userEvent.setup()
+
     render(<UserTriggersEditor selectedCharacter={null} />)
+
+    await user.click(await screen.findByLabelText('Expand Raid'))
 
     expect(await screen.findByText('Test Trigger')).toBeInTheDocument()
     expect(screen.queryByLabelText('Enable Test Trigger')).not.toBeInTheDocument()
@@ -96,7 +97,11 @@ describe('UserTriggersEditor', () => {
   })
 
   it('shows enable controls when a character is selected', async () => {
+    const user = userEvent.setup()
+
     render(<UserTriggersEditor selectedCharacter={selectedCharacter} />)
+
+    await user.click(await screen.findByLabelText('Expand Raid'))
 
     expect(await screen.findByLabelText('Enable Test Trigger')).toBeInTheDocument()
     expect(screen.getByLabelText('Enable triggers in Raid')).toBeInTheDocument()
@@ -107,8 +112,20 @@ describe('UserTriggersEditor', () => {
 
     render(<UserTriggersEditor selectedCharacter={selectedCharacter} />)
 
+    await user.click(await screen.findByLabelText('Expand Raid'))
     await user.dblClick(await screen.findByText('Test Trigger'))
 
     expect(await screen.findByText('Trigger Editor')).toBeInTheDocument()
   })
 })
+
+function deleteDatabase(name: string) {
+  return new Promise<void>((resolve, reject) => {
+    const request = indexedDB.deleteDatabase(name)
+
+    request.onsuccess = () => resolve()
+    request.onerror = () =>
+      reject(request.error ?? new Error('Failed to delete IndexedDB database.'))
+    request.onblocked = () => resolve()
+  })
+}
