@@ -10,6 +10,8 @@ DEPLOY_BINARY ?= dist/jena-backend-linux-x86_64
 DEPLOY_ENV ?= test
 DEPLOY_ID ?= $(shell powershell -NoProfile -Command "Get-Date -Format 'yyyy-MM-dd-HHmmss'")
 DEPLOY_REMOTE_BINARY ?= /tmp/jena-backend
+DEPLOY_SCP ?= scp
+DEPLOY_SSH ?= ssh
 
 .PHONY: check-deploy-config help bump-protocol-version clean clean-go-cache deploy dev dist-clean frontend generate-protocol-version init package package-linux-x86_64 promote test test-backend test-frontend vendor-backend
 
@@ -88,8 +90,7 @@ package-linux-x86_64: generate-protocol-version clean-go-cache
 	powershell -NoProfile -ExecutionPolicy Bypass -Command "$$env:GOOS = 'linux'; $$env:GOARCH = 'amd64'; $$env:CGO_ENABLED = '0'; Push-Location backend; try { go build -mod=vendor -buildvcs=false -o ../dist/jena-backend-linux-x86_64 ./cmd/jena-backend } finally { Pop-Location }"
 
 deploy: check-deploy-config package-linux-x86_64
-	scp "$(DEPLOY_BINARY)" "$(DEPLOY_USER)@$(DEPLOY_HOST):$(DEPLOY_REMOTE_BINARY)"
-	ssh "$(DEPLOY_USER)@$(DEPLOY_HOST)" "deploy-jena $(DEPLOY_ENV) $(DEPLOY_REMOTE_BINARY) $(DEPLOY_ID)"
+	powershell -NoProfile -ExecutionPolicy Bypass -File scripts/deploy-jena.ps1 -Binary '$(DEPLOY_BINARY)' -User '$(DEPLOY_USER)' -HostName '$(DEPLOY_HOST)' -RemoteBinary '$(DEPLOY_REMOTE_BINARY)' -TargetEnvironment '$(DEPLOY_ENV)' -DeploymentId '$(DEPLOY_ID)' -ScpCommand '$(DEPLOY_SCP)' -SshCommand '$(DEPLOY_SSH)'
 
 promote: check-deploy-config
-	ssh "$(DEPLOY_USER)@$(DEPLOY_HOST)" "promote-jena"
+	powershell -NoProfile -ExecutionPolicy Bypass -File scripts/promote-jena.ps1 -User '$(DEPLOY_USER)' -HostName '$(DEPLOY_HOST)' -SshCommand '$(DEPLOY_SSH)'

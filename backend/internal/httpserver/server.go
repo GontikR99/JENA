@@ -7,12 +7,20 @@ import (
 	"io/fs"
 	"net/http"
 	"path"
+	"regexp"
 	"strings"
 
 	"jena/backend/internal/config"
 	"jena/backend/internal/logging"
 	"jena/backend/internal/staticfiles"
 )
+
+const (
+	immutableCacheControl = "public, max-age=31536000, immutable"
+	noCacheControl        = "no-cache"
+)
+
+var workboxFilePattern = regexp.MustCompile(`^workbox-[^/]+\.js$`)
 
 type Server struct {
 	appFS  fs.FS
@@ -123,6 +131,8 @@ func serveEmbeddedPath(
 		return
 	}
 
+	response.Header().Set("Cache-Control", cacheControlForStaticPath(filePath))
+
 	http.ServeContent(
 		response,
 		request,
@@ -130,4 +140,12 @@ func serveEmbeddedPath(
 		fileInfo.ModTime(),
 		bytes.NewReader(data),
 	)
+}
+
+func cacheControlForStaticPath(filePath string) string {
+	if strings.HasPrefix(filePath, "assets/") || workboxFilePattern.MatchString(filePath) {
+		return immutableCacheControl
+	}
+
+	return noCacheControl
 }

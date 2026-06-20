@@ -6,3 +6,7 @@ DEPLOY_USER ?= your-user
 DEPLOY_HOST ?= your-host
 DEPLOY_REMOTE_BINARY ?= /tmp/jena-backend
 DEPLOY_ENV ?= test
+
+# Override these if ssh/scp are not on PATH or installed in a standard Windows OpenSSH location.
+DEPLOY_SCP ?= scp
+DEPLOY_SSH ?= ssh
