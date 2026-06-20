@@ -4,12 +4,20 @@ EMBEDDED_STATIC_DIR ?= backend/internal/staticfiles/app
 FRONTEND_NODE_MODULES_DIR ?= frontend/node_modules
 PROTOCOL_VERSION_FILE ?= protocol-version.txt
 
-.PHONY: help bump-protocol-version clean clean-go-cache dev dist-clean frontend generate-protocol-version init package package-linux-x86_64 test test-backend test-frontend vendor-backend
+-include deploy.local.mk
+
+DEPLOY_BINARY ?= dist/jena-backend-linux-x86_64
+DEPLOY_ENV ?= test
+DEPLOY_ID ?= $(shell powershell -NoProfile -Command "Get-Date -Format 'yyyy-MM-dd-HHmmss'")
+DEPLOY_REMOTE_BINARY ?= /tmp/jena-backend
+
+.PHONY: check-deploy-config help bump-protocol-version clean clean-go-cache deploy dev dist-clean frontend generate-protocol-version init package package-linux-x86_64 promote test test-backend test-frontend vendor-backend
 
 help:
 	@echo Available targets:
 	@echo   bump-protocol-version Increment the frontend/backend protocol compatibility version
 	@echo   clean          Remove generated frontend, embedded static, package output directories, and Go build cache
+	@echo   deploy         Build Linux binary, copy it to the configured deploy host, and run deploy-jena
 	@echo   dev            Run the Go backend server
 	@echo   dist-clean     Run clean and remove frontend node_modules and backend vendor
 	@echo   frontend       Run the Vite frontend dev server
@@ -17,10 +25,14 @@ help:
 	@echo   init           Install frontend node_modules and rebuild backend vendor
 	@echo   package        Embed the frontend, test the backend, and create dist/jena-backend.exe
 	@echo   package-linux-x86_64 Embed the frontend, test the backend, and create dist/jena-backend-linux-x86_64
+	@echo   promote        Promote the configured test deployment to live
 	@echo   test           Run frontend and backend tests
 	@echo   test-backend   Run backend Go tests
 	@echo   test-frontend  Run frontend Vitest tests
 	@echo   vendor-backend Tidy Go modules and rebuild backend/vendor
+
+check-deploy-config:
+	powershell -NoProfile -ExecutionPolicy Bypass -Command "if ('$(DEPLOY_USER)' -eq '' -or '$(DEPLOY_HOST)' -eq '') { throw 'Set DEPLOY_USER and DEPLOY_HOST in deploy.local.mk or on the make command line. See deploy.example.mk.' }"
 
 bump-protocol-version:
 	powershell -NoProfile -ExecutionPolicy Bypass -File scripts/generate-protocol-version.ps1 -ProtocolVersionFile '$(PROTOCOL_VERSION_FILE)' -Bump
@@ -74,3 +86,10 @@ package-linux-x86_64: generate-protocol-version clean-go-cache
 	cd backend && go test -mod=vendor ./...
 	powershell -NoProfile -ExecutionPolicy Bypass -Command "New-Item -ItemType Directory -Force dist | Out-Null"
 	powershell -NoProfile -ExecutionPolicy Bypass -Command "$$env:GOOS = 'linux'; $$env:GOARCH = 'amd64'; $$env:CGO_ENABLED = '0'; Push-Location backend; try { go build -mod=vendor -buildvcs=false -o ../dist/jena-backend-linux-x86_64 ./cmd/jena-backend } finally { Pop-Location }"
+
+deploy: check-deploy-config package-linux-x86_64
+	scp "$(DEPLOY_BINARY)" "$(DEPLOY_USER)@$(DEPLOY_HOST):$(DEPLOY_REMOTE_BINARY)"
+	ssh "$(DEPLOY_USER)@$(DEPLOY_HOST)" "deploy-jena $(DEPLOY_ENV) $(DEPLOY_REMOTE_BINARY) $(DEPLOY_ID)"
+
+promote: check-deploy-config
+	ssh "$(DEPLOY_USER)@$(DEPLOY_HOST)" "promote-jena"
