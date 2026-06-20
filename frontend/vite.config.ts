@@ -50,6 +50,10 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,webp}'],
+        // Critical: never app-shell backend/JENA service endpoints.
+        navigateFallbackDenylist: [
+          /^\/_jena(?:\/|$)/,
+        ],
       },
     }),
   ],
