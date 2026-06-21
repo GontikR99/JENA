@@ -12,6 +12,7 @@ import {
 import { MessageBroker } from './MessageBroker'
 
 const matcherCompileDelayMs = 25
+const defaultPatternNamespace = 'default'
 
 interface Re2PatternRegistration {
   compiledPattern: RE2JS
@@ -39,10 +40,11 @@ interface PatternSetState {
 export class MatcherService {
   private readonly broker: MessageBroker
   private fallbackRegistrations: JavaScriptPatternRegistration[] = []
-  private readonly compilingPatterns = new Set<string>()
-  private readonly pendingPatterns = new Map<string, ValidatedPatternRegistration>()
-  private re2Registrations: Re2PatternRegistration[] = []
-  private readonly registeredPatterns = new Set<string>()
+  private needsCompile = false
+  private readonly patternNamespaces = new Map<
+    string,
+    Map<string, ValidatedPatternRegistration>
+  >()
   private readonly unregister: Array<() => void>
   private compilePromise: Promise<void> | null = null
   private compileTimer: ReturnType<typeof globalThis.setTimeout> | null = null
@@ -59,6 +61,7 @@ export class MatcherService {
     this.unregister = [
       this.broker.register('matcher-service', {
         'add-patterns': this.addPatterns,
+        'replace-patterns': this.replacePatterns,
         flush: this.flush,
       }),
       fileWatcher.observe({
@@ -83,10 +86,10 @@ export class MatcherService {
       throw new Error('Invalid add-patterns request.')
     }
 
+    const namespace = normalizePatternNamespace(params.namespace)
+    const namespacePatterns = this.getNamespacePatterns(namespace)
     const novelRegistrations = getNovelRegistrations(
-      this.registeredPatterns,
-      this.pendingPatterns,
-      this.compilingPatterns,
+      namespacePatterns,
       params.patterns,
     )
 
@@ -99,8 +102,30 @@ export class MatcherService {
     )
 
     validatedRegistrations.forEach((registration) => {
-      this.pendingPatterns.set(registration.originalPattern, registration)
+      namespacePatterns.set(registration.originalPattern, registration)
     })
+    this.scheduleCompile()
+
+    return {}
+  }
+
+  private readonly replacePatterns = (params: unknown) => {
+    if (!isReplacePatternsRequest(params)) {
+      throw new Error('Invalid replace-patterns request.')
+    }
+
+    const namespace = normalizePatternNamespace(params.namespace)
+    const validatedRegistrations = getUniqueRegistrations(params.patterns).map(
+      (registration) => validatePatternRegistration(registration),
+    )
+    const namespacePatterns = new Map(
+      validatedRegistrations.map((registration) => [
+        registration.originalPattern,
+        registration,
+      ]),
+    )
+
+    this.patternNamespaces.set(namespace, namespacePatterns)
     this.scheduleCompile()
 
     return {}
@@ -170,6 +195,8 @@ export class MatcherService {
   }
 
   private scheduleCompile() {
+    this.needsCompile = true
+
     if (this.compileTimer) {
       return
     }
@@ -190,47 +217,28 @@ export class MatcherService {
 
     if (this.compilePromise) {
       await this.compilePromise
-      if (this.pendingPatterns.size > 0) {
+      if (this.needsCompile) {
         await this.flushPendingPatterns()
       }
       return
     }
 
-    if (this.pendingPatterns.size === 0) {
+    if (!this.needsCompile) {
       return
     }
 
-    const pendingRegistrations = [...this.pendingPatterns.values()]
-    this.pendingPatterns.clear()
-    pendingRegistrations.forEach((registration) => {
-      this.compilingPatterns.add(registration.originalPattern)
-    })
-    const nextRe2Registrations = [
-      ...this.re2Registrations,
-      ...pendingRegistrations.filter(isRe2PatternRegistration),
-    ]
-    const nextFallbackRegistrations = [
-      ...this.fallbackRegistrations,
-      ...pendingRegistrations.filter(isJavaScriptPatternRegistration),
-    ]
+    this.needsCompile = false
+    const nextRegistrations = this.getMergedRegistrations()
+    const nextRe2Registrations = nextRegistrations.filter(isRe2PatternRegistration)
+    const nextFallbackRegistrations = nextRegistrations.filter(
+      isJavaScriptPatternRegistration,
+    )
 
     this.compilePromise = Promise.resolve()
       .then(() => compilePatternSet(nextRe2Registrations))
       .then((nextPatternSetState) => {
         this.fallbackRegistrations = nextFallbackRegistrations
-        this.re2Registrations = nextRe2Registrations
-        pendingRegistrations.forEach((registration) => {
-          this.registeredPatterns.add(registration.originalPattern)
-          this.compilingPatterns.delete(registration.originalPattern)
-        })
         this.patternSetState = nextPatternSetState
-      })
-      .catch((error: unknown) => {
-        pendingRegistrations.forEach((registration) => {
-          this.compilingPatterns.delete(registration.originalPattern)
-          this.pendingPatterns.set(registration.originalPattern, registration)
-        })
-        throw error
       })
       .finally(() => {
         this.compilePromise = null
@@ -238,9 +246,32 @@ export class MatcherService {
 
     await this.compilePromise
 
-    if (this.pendingPatterns.size > 0) {
+    if (this.needsCompile) {
       this.scheduleCompile()
     }
+  }
+
+  private getNamespacePatterns(namespace: string) {
+    const existingPatterns = this.patternNamespaces.get(namespace)
+    if (existingPatterns) {
+      return existingPatterns
+    }
+
+    const patterns = new Map<string, ValidatedPatternRegistration>()
+    this.patternNamespaces.set(namespace, patterns)
+    return patterns
+  }
+
+  private getMergedRegistrations() {
+    const registrations = new Map<string, ValidatedPatternRegistration>()
+
+    this.patternNamespaces.forEach((namespacePatterns) => {
+      namespacePatterns.forEach((registration) => {
+        registrations.set(registration.originalPattern, registration)
+      })
+    })
+
+    return [...registrations.values()]
   }
 }
 
@@ -317,9 +348,7 @@ function getCaptureValue(value: unknown) {
 }
 
 function getNovelRegistrations(
-  registeredPatterns: Set<string>,
-  pendingPatterns: Map<string, ValidatedPatternRegistration>,
-  compilingPatterns: Set<string>,
+  namespacePatterns: Map<string, ValidatedPatternRegistration>,
   registrations: RegexPatternRegistration[],
 ) {
   const seenInRequest = new Set<string>()
@@ -327,9 +356,7 @@ function getNovelRegistrations(
 
   registrations.forEach((registration) => {
     if (
-      registeredPatterns.has(registration.pattern) ||
-      pendingPatterns.has(registration.pattern) ||
-      compilingPatterns.has(registration.pattern) ||
+      namespacePatterns.has(registration.pattern) ||
       seenInRequest.has(registration.pattern)
     ) {
       return
@@ -340,6 +367,16 @@ function getNovelRegistrations(
   })
 
   return novelRegistrations
+}
+
+function getUniqueRegistrations(registrations: RegexPatternRegistration[]) {
+  const uniqueRegistrations = new Map<string, RegexPatternRegistration>()
+
+  registrations.forEach((registration) => {
+    uniqueRegistrations.set(registration.pattern, registration)
+  })
+
+  return [...uniqueRegistrations.values()]
 }
 
 function validatePatternRegistration(
@@ -382,16 +419,39 @@ function isJavaScriptPatternRegistration(
 
 function isAddPatternsRequest(
   value: unknown,
-): value is { patterns: RegexPatternRegistration[] } {
+): value is { namespace?: string; patterns: RegexPatternRegistration[] } {
   if (!value || typeof value !== 'object' || !('patterns' in value)) {
     return false
   }
 
   const candidate = value as Partial<{
+    namespace: unknown
     patterns: unknown
   }>
 
   return (
+    (candidate.namespace === undefined ||
+      typeof candidate.namespace === 'string') &&
+    Array.isArray(candidate.patterns) &&
+    candidate.patterns.every(isRegexPatternRegistration)
+  )
+}
+
+function isReplacePatternsRequest(
+  value: unknown,
+): value is { namespace: string; patterns: RegexPatternRegistration[] } {
+  if (!value || typeof value !== 'object' || !('patterns' in value)) {
+    return false
+  }
+
+  const candidate = value as Partial<{
+    namespace: unknown
+    patterns: unknown
+  }>
+
+  return (
+    typeof candidate.namespace === 'string' &&
+    candidate.namespace.trim().length > 0 &&
     Array.isArray(candidate.patterns) &&
     candidate.patterns.every(isRegexPatternRegistration)
   )
@@ -410,4 +470,11 @@ function isRegexPatternRegistration(
     typeof candidate.pattern === 'string' &&
     candidate.pattern.length > 0
   )
+}
+
+function normalizePatternNamespace(namespace: string | undefined) {
+  const normalized = namespace?.trim()
+  return normalized && normalized.length > 0
+    ? normalized
+    : defaultPatternNamespace
 }

@@ -38,6 +38,7 @@ describe('TriggerStopService', () => {
         'worker.matcher-service',
         'add-patterns',
         {
+          namespace: 'stop',
           patterns: [{ pattern: triggerStopPattern }],
         },
       )

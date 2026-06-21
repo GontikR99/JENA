@@ -13,6 +13,7 @@ export function TriggerStopService() {
 
   useEffect(() => {
     void call('worker.matcher-service', 'add-patterns', {
+      namespace: 'stop',
       patterns: [{ pattern: triggerStopPattern }],
     }).catch((error: unknown) => {
       console.warn('[TriggerStopService] stop pattern registration failed', {

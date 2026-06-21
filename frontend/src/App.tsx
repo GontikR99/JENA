@@ -62,12 +62,12 @@ function AuthenticatedApp() {
     <>
       <WorkerBridge />
       <TriggerStoreProvider>
-        <AlertCoordinationService />
         <TriggerStopService />
         <SubscribedTriggerManagerProvider>
           <UserTriggerManagerProvider>
             <LocalCharactersProvider>
               <TriggerRuntimeProvider>
+                <AlertCoordinationService />
                 <AlertEventCoordinatorProvider>
                   <TriggerTimerRuntimeProvider>
                     <BroadcastReflector />

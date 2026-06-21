@@ -8,13 +8,24 @@ import {
   createEmptyTrigger,
   withCanonicalTriggerId,
   type JenaTrigger,
+  type JenaResolvedTrigger,
 } from '../../shared/triggers'
 import { AlertCoordinationService } from '../alerts/AlertCoordinationService'
 
 const hookState = vi.hoisted(() => ({
+  localCharacters: [
+    {
+      active: true,
+      characterName: 'Mesozoic',
+      serverName: 'Bristlebane',
+      zone: 'Guild Lobby',
+    },
+  ],
   listeners: new Map<string, (message: { payload: unknown }) => void>(),
   rpc: vi.fn(),
   send: vi.fn(),
+  subscribedTriggers: [] as JenaTrigger[],
+  userTriggers: [] as JenaResolvedTrigger[],
 }))
 
 vi.mock('../../shared/messageBrokerHooks', () => ({
@@ -57,9 +68,73 @@ vi.mock('../../settings/speechVoiceContext', () => ({
   }),
 }))
 
+vi.mock('../../characters/LocalCharactersProvider', () => ({
+  useLocalCharacters: () => hookState.localCharacters,
+}))
+
+vi.mock('../model/UserTriggerManager', () => ({
+  useTriggerManager: () => ({
+    getTriggerAlertRegistration: (
+      triggerId: string,
+      character: { characterName: string; serverName: string },
+    ) => {
+      const resolvedTrigger = hookState.userTriggers.find(
+        (candidate) => candidate.trigger.id === triggerId,
+      )
+
+      if (!resolvedTrigger) {
+        return null
+      }
+
+      return {
+        broadcastMode: resolvedTrigger.broadcastMode,
+        enabled: resolvedTrigger.enabledFor.some((enabledCharacter) => {
+          return (
+            enabledCharacter.characterName === character.characterName &&
+            enabledCharacter.serverName === character.serverName
+          )
+        }),
+        source: 'user',
+      }
+    },
+    triggers: hookState.userTriggers,
+  }),
+}))
+
+vi.mock('../model/SubscribedTriggerManager', () => ({
+  useSubscribedTriggerManager: () => ({
+    getTriggerAlertRegistrations: () => [],
+    snapshots: hookState.subscribedTriggers.length
+      ? [
+          {
+            digest: 'test-digest',
+            id: 'test-subscription',
+            ownerDisplayName: 'Publisher',
+            records: hookState.subscribedTriggers.map((trigger) => ({
+              broadcastToSubscribers: false,
+              triggerId: trigger.id,
+            })),
+            triggers: hookState.subscribedTriggers.map((trigger) => ({
+              broadcastToSubscribers: false,
+              trigger,
+            })),
+          },
+        ]
+      : [],
+  }),
+}))
+
 describe('AlertCoordinationService', () => {
   beforeEach(() => {
     hookState.listeners.clear()
+    hookState.localCharacters = [
+      {
+        active: true,
+        characterName: 'Mesozoic',
+        serverName: 'Bristlebane',
+        zone: 'Guild Lobby',
+      },
+    ]
     hookState.rpc.mockReset()
     hookState.rpc.mockImplementation((endpoint: string, method: string) => {
       if (endpoint === 'worker.character-presence' && method === 'getCharacters') {
@@ -78,15 +153,15 @@ describe('AlertCoordinationService', () => {
       return Promise.resolve({})
     })
     hookState.send.mockReset()
+    hookState.subscribedTriggers = []
+    hookState.userTriggers = []
   })
 
   it('emits substituted clipboard text on trigger matches', async () => {
     const trigger = createTrigger()
+    hookState.userTriggers = [resolveTrigger(trigger)]
 
     render(<AlertCoordinationService />)
-    emit('trigger-store.triggers-seen', {
-      triggers: [trigger],
-    })
     await flushPatternRegistration()
     emit('matcher.match-found', createMatch())
 
@@ -126,23 +201,48 @@ describe('AlertCoordinationService', () => {
       matchText: '^Boss begins casting (?<spell>.+)$',
       name: 'Second Trigger',
     })
+    hookState.userTriggers = [
+      resolveTrigger(firstTrigger),
+      resolveTrigger(secondTrigger),
+    ]
 
     render(<AlertCoordinationService />)
-    emit('trigger-store.triggers-seen', {
-      triggers: [firstTrigger, secondTrigger],
-    })
     await flushPatternRegistration()
 
     expect(hookState.rpc).toHaveBeenCalledWith(
       'worker.matcher-service',
-      'add-patterns',
+      'replace-patterns',
       {
+        namespace: 'alerts',
         patterns: [
           expect.objectContaining({ pattern: expect.any(String) }),
           expect.objectContaining({ pattern: expect.any(String) }),
         ],
       },
     )
+  })
+
+  it('registers early enders for disabled triggers', async () => {
+    const trigger = createTriggerWithEarlyEnder()
+    hookState.userTriggers = [
+      {
+        ...resolveTrigger(trigger),
+        enabledFor: [],
+      },
+    ]
+
+    render(<AlertCoordinationService />)
+    await flushPatternRegistration()
+
+    const registrationCall = getAlertPatternRegistrationCall()
+    expect(registrationCall?.[2]).toEqual({
+      namespace: 'alerts',
+      patterns: [
+        expect.objectContaining({
+          pattern: expect.stringContaining('early end'),
+        }),
+      ],
+    })
   })
 })
 
@@ -157,8 +257,22 @@ function emit(destination: string, payload: unknown) {
 
 async function flushPatternRegistration() {
   await act(async () => {
-    await new Promise((resolve) => globalThis.setTimeout(resolve, 0))
+    await new Promise((resolve) => globalThis.setTimeout(resolve, 150))
   })
+}
+
+function resolveTrigger(trigger: JenaTrigger): JenaResolvedTrigger {
+  return {
+    broadcastMode: 'private',
+    enabledFor: [
+      {
+        characterName: 'Mesozoic',
+        serverName: 'Bristlebane',
+      },
+    ],
+    publish: false,
+    trigger,
+  }
 }
 
 function createTrigger({
@@ -220,10 +334,31 @@ function createTrigger({
   })
 }
 
-function createMatch(): RegexMatchFoundMessage {
-  const patternRegistrationCall = hookState.rpc.mock.calls.find(([endpoint, method]) => {
-    return endpoint === 'worker.matcher-service' && method === 'add-patterns'
+function createTriggerWithEarlyEnder(): JenaTrigger {
+  return withCanonicalTriggerId({
+    ...createTrigger({
+      name: 'Disabled Early Ender Trigger',
+    }),
+    timer: {
+      durationMs: 10_000,
+      earlyEnders: [
+        {
+          isRegex: false,
+          text: 'early end',
+        },
+      ],
+      endedAction: null,
+      name: 'Timer',
+      startBehavior: 'restart',
+      type: 'countdown',
+      warningAction: null,
+      warningSeconds: 0,
+    },
   })
+}
+
+function createMatch(): RegexMatchFoundMessage {
+  const patternRegistrationCall = getAlertPatternRegistrationCall()
   const pattern = patternRegistrationCall?.[2]?.patterns?.[0]?.pattern
   if (typeof pattern !== 'string') {
     throw new Error('Trigger pattern was not registered')
@@ -250,4 +385,14 @@ function createMatch(): RegexMatchFoundMessage {
     text,
     timestamp: '2026-06-17T12:00:00Z',
   }
+}
+
+function getAlertPatternRegistrationCall() {
+  return hookState.rpc.mock.calls.find(([endpoint, method, params]) => {
+    return (
+      endpoint === 'worker.matcher-service' &&
+      method === 'replace-patterns' &&
+      params?.namespace === 'alerts'
+    )
+  })
 }

@@ -414,6 +414,14 @@ export interface RpcEndpoints {
   'worker.matcher-service': {
     'add-patterns': {
       request: {
+        namespace?: string
+        patterns: RegexPatternRegistration[]
+      }
+      response: Record<string, never>
+    }
+    'replace-patterns': {
+      request: {
+        namespace: string
         patterns: RegexPatternRegistration[]
       }
       response: Record<string, never>

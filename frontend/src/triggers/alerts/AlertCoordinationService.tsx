@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef } from 'react'
 import type {
   CharacterPresence,
   CharacterPresenceCharactersMessage,
@@ -7,12 +7,18 @@ import type {
   TriggerAlertMatchedMessage,
   TriggerTimerActionPayload,
   TriggerEarlyEnderMatchedMessage,
-  TriggerStoreTriggersSeenMessage,
 } from '../../shared/messages'
 import { useListen, useRpc, useSender } from '../../shared/messageBrokerHooks'
 import { useSettings } from '../../settings/settingsContext'
 import { useSpeechVoices } from '../../settings/speechVoiceContext'
-import type { JenaTimerAction, JenaTrigger } from '../../shared/triggers'
+import type {
+  JenaCharacterServer,
+  JenaTimerAction,
+  JenaTrigger,
+} from '../../shared/triggers'
+import { useLocalCharacters } from '../../characters/LocalCharactersProvider'
+import { useSubscribedTriggerManager } from '../model/SubscribedTriggerManager'
+import { useTriggerManager } from '../model/UserTriggerManager'
 import {
   compileAlertMatcher,
   createAlertMatchContext,
@@ -22,6 +28,9 @@ import {
   type AlertCompiledPattern,
   type AlertMatchContext,
 } from './alertPatternCompiler'
+
+const alertPatternNamespace = 'alerts'
+const alertPatternReplacementDelayMs = 100
 
 interface AlertPatternBinding {
   compiledPattern: AlertCompiledPattern
@@ -33,36 +42,74 @@ interface AlertPatternBinding {
 export function AlertCoordinationService() {
   const call = useRpc('alert-coordination-service')
   const send = useSender('alert-coordination-service')
+  const localCharacters = useLocalCharacters()
   const { machineSettings } = useSettings()
   const { voiceByURI } = useSpeechVoices()
+  const {
+    getTriggerAlertRegistration: getUserTriggerAlertRegistration,
+    triggers: userTriggers,
+  } = useTriggerManager()
+  const {
+    getTriggerAlertRegistrations: getSubscribedTriggerAlertRegistrations,
+    snapshots: subscriptionSnapshots,
+  } = useSubscribedTriggerManager()
   const sessionIdRef = useRef(createAlertPatternSessionId())
-  const indexedTriggerIdsRef = useRef(new Set<string>())
   const patternIndexRef = useRef(new Map<string, AlertPatternBinding[]>())
-  const pendingPatternsRef = useRef(new Set<string>())
   const patternFlushTimerRef =
     useRef<ReturnType<typeof globalThis.setTimeout> | null>(null)
-  const registeredPatternsRef = useRef(new Set<string>())
+  const lastAlertBindingSignatureRef = useRef('')
   const localCharactersRef = useRef<CharacterPresence[]>([])
   const triggerCountersRef = useRef(new Map<string, number>())
+  const activeLocalCharacters = useMemo(
+    () =>
+      localCharacters
+        .filter((character) => character.active)
+        .map(characterPresenceToTriggerCharacter),
+    [localCharacters],
+  )
+  const loadedTriggers = useMemo(() => {
+    return dedupeTriggers([
+      ...userTriggers.map((resolvedTrigger) => resolvedTrigger.trigger),
+      ...subscriptionSnapshots.flatMap((snapshot) =>
+        snapshot.triggers.map((resolvedTrigger) => resolvedTrigger.trigger),
+      ),
+    ])
+  }, [subscriptionSnapshots, userTriggers])
 
-  const flushPendingPatterns = useCallback(() => {
+  const replaceAlertPatterns = useCallback(() => {
     patternFlushTimerRef.current = null
-    const patterns = [...pendingPatternsRef.current]
-    pendingPatternsRef.current.clear()
+    const bindings = getAlertPatternBindings({
+      activeLocalCharacters,
+      getSubscribedTriggerAlertRegistrations,
+      getUserTriggerAlertRegistration,
+      sessionId: sessionIdRef.current,
+      triggers: loadedTriggers,
+    })
+    const signature = getAlertBindingSignature(bindings)
 
-    if (patterns.length === 0) {
+    if (signature === lastAlertBindingSignatureRef.current) {
       return
     }
 
-    void call('worker.matcher-service', 'add-patterns', {
-      patterns: patterns.map((pattern) => ({ pattern })),
+    lastAlertBindingSignatureRef.current = signature
+    patternIndexRef.current = getPatternIndex(bindings)
+
+    void call('worker.matcher-service', 'replace-patterns', {
+      namespace: alertPatternNamespace,
+      patterns: getUniqueBindingPatterns(bindings).map((pattern) => ({ pattern })),
     }).catch((error: unknown) => {
       console.warn('[AlertCoordinationService] pattern registration failed', {
         error,
-        patternCount: patterns.length,
+        patternCount: bindings.length,
       })
     })
-  }, [call])
+  }, [
+    activeLocalCharacters,
+    call,
+    getSubscribedTriggerAlertRegistrations,
+    getUserTriggerAlertRegistration,
+    loadedTriggers,
+  ])
 
   const schedulePatternFlush = useCallback(() => {
     if (patternFlushTimerRef.current !== null) {
@@ -70,42 +117,10 @@ export function AlertCoordinationService() {
     }
 
     patternFlushTimerRef.current = globalThis.setTimeout(
-      flushPendingPatterns,
-      0,
+      replaceAlertPatterns,
+      alertPatternReplacementDelayMs,
     )
-  }, [flushPendingPatterns])
-
-  const registerTrigger = useCallback(
-    (trigger: JenaTrigger) => {
-      if (indexedTriggerIdsRef.current.has(trigger.id)) {
-        return
-      }
-
-      indexedTriggerIdsRef.current.add(trigger.id)
-      const bindings = getTriggerPatternBindings(trigger, sessionIdRef.current)
-      let hasNovelPattern = false
-
-      bindings.forEach((binding) => {
-        const pattern = binding.compiledPattern.pattern
-        const existingBindings = patternIndexRef.current.get(pattern) ?? []
-
-        patternIndexRef.current.set(pattern, [...existingBindings, binding])
-
-        if (registeredPatternsRef.current.has(pattern)) {
-          return
-        }
-
-        registeredPatternsRef.current.add(pattern)
-        pendingPatternsRef.current.add(pattern)
-        hasNovelPattern = true
-      })
-
-      if (hasNovelPattern) {
-        schedulePatternFlush()
-      }
-    },
-    [schedulePatternFlush],
-  )
+  }, [replaceAlertPatterns])
 
   const handleMatchFound = useCallback(
     (match: RegexMatchFoundMessage) => {
@@ -155,11 +170,6 @@ export function AlertCoordinationService() {
     [machineSettings.tts, send, voiceByURI],
   )
 
-  useListen('trigger-store.triggers-seen', (message) => {
-    const payload = message.payload as TriggerStoreTriggersSeenMessage
-
-    payload.triggers.forEach(registerTrigger)
-  })
   useListen('character-presence.characters', (message) => {
     const payload = message.payload as CharacterPresenceCharactersMessage
     localCharactersRef.current = payload.characters
@@ -167,6 +177,10 @@ export function AlertCoordinationService() {
   useListen('matcher.match-found', (message) => {
     handleMatchFound(message.payload as RegexMatchFoundMessage)
   })
+
+  useEffect(() => {
+    schedulePatternFlush()
+  }, [schedulePatternFlush])
 
   useEffect(() => {
     let cancelled = false
@@ -201,32 +215,141 @@ export function AlertCoordinationService() {
   return null
 }
 
-function getTriggerPatternBindings(
-  trigger: JenaTrigger,
-  sessionId: string,
-): AlertPatternBinding[] {
-  const bindings: AlertPatternBinding[] = [
-    {
-      compiledPattern: compileAlertMatcher(trigger.match, sessionId),
-      kind: 'trigger',
-      trigger,
-    },
-  ]
+function getAlertPatternBindings({
+  activeLocalCharacters,
+  getSubscribedTriggerAlertRegistrations,
+  getUserTriggerAlertRegistration,
+  sessionId,
+  triggers,
+}: {
+  activeLocalCharacters: JenaCharacterServer[]
+  getSubscribedTriggerAlertRegistrations: (
+    triggerId: string,
+    character: JenaCharacterServer,
+  ) => Array<{ enabled: boolean }>
+  getUserTriggerAlertRegistration: (
+    triggerId: string,
+    character: JenaCharacterServer,
+  ) => { enabled: boolean } | null
+  sessionId: string
+  triggers: JenaTrigger[]
+}) {
+  const bindings: AlertPatternBinding[] = []
 
-  trigger.timer?.earlyEnders.forEach((earlyEnder, earlyEnderIndex) => {
-    if (earlyEnder.text.length === 0) {
-      return
+  triggers.forEach((trigger) => {
+    if (
+      activeLocalCharacters.some((character) =>
+        isTriggerEnabledForCharacter({
+          character,
+          getSubscribedTriggerAlertRegistrations,
+          getUserTriggerAlertRegistration,
+          trigger,
+        }),
+      )
+    ) {
+      bindings.push({
+        compiledPattern: compileAlertMatcher(trigger.match, sessionId),
+        kind: 'trigger',
+        trigger,
+      })
     }
 
-    bindings.push({
-      compiledPattern: compileAlertMatcher(earlyEnder, sessionId),
-      earlyEnderIndex,
-      kind: 'earlyEnder',
-      trigger,
-    })
+    bindings.push(...getTimerEarlyEnderPatternBindings(trigger, sessionId))
   })
 
   return bindings
+}
+
+function isTriggerEnabledForCharacter({
+  character,
+  getSubscribedTriggerAlertRegistrations,
+  getUserTriggerAlertRegistration,
+  trigger,
+}: {
+  character: JenaCharacterServer
+  getSubscribedTriggerAlertRegistrations: (
+    triggerId: string,
+    character: JenaCharacterServer,
+  ) => Array<{ enabled: boolean }>
+  getUserTriggerAlertRegistration: (
+    triggerId: string,
+    character: JenaCharacterServer,
+  ) => { enabled: boolean } | null
+  trigger: JenaTrigger
+}) {
+  if (getUserTriggerAlertRegistration(trigger.id, character)?.enabled) {
+    return true
+  }
+
+  return getSubscribedTriggerAlertRegistrations(trigger.id, character).some(
+    (registration) => registration.enabled,
+  )
+}
+
+function getTimerEarlyEnderPatternBindings(
+  trigger: JenaTrigger,
+  sessionId: string,
+) {
+  return (
+    trigger.timer?.earlyEnders.flatMap((earlyEnder, earlyEnderIndex) => {
+      if (earlyEnder.text.length === 0) {
+        return []
+      }
+
+      return [
+        {
+          compiledPattern: compileAlertMatcher(earlyEnder, sessionId),
+          earlyEnderIndex,
+          kind: 'earlyEnder' as const,
+          trigger,
+        },
+      ]
+    }) ?? []
+  )
+}
+
+function getPatternIndex(bindings: AlertPatternBinding[]) {
+  const index = new Map<string, AlertPatternBinding[]>()
+
+  bindings.forEach((binding) => {
+    const pattern = binding.compiledPattern.pattern
+    const existingBindings = index.get(pattern) ?? []
+
+    index.set(pattern, [...existingBindings, binding])
+  })
+
+  return index
+}
+
+function getUniqueBindingPatterns(bindings: AlertPatternBinding[]) {
+  return [...new Set(bindings.map((binding) => binding.compiledPattern.pattern))]
+}
+
+function getAlertBindingSignature(bindings: AlertPatternBinding[]) {
+  return bindings
+    .map((binding) =>
+      [
+        binding.kind,
+        binding.trigger.id,
+        binding.earlyEnderIndex ?? '',
+        binding.compiledPattern.pattern,
+      ].join('\0'),
+    )
+    .sort()
+    .join('\x01')
+}
+
+function dedupeTriggers(triggers: JenaTrigger[]) {
+  return [...new Map(triggers.map((trigger) => [trigger.id, trigger])).values()]
+}
+
+function characterPresenceToTriggerCharacter(
+  character: CharacterPresence,
+): JenaCharacterServer {
+  return {
+    characterName: character.characterName,
+    serverName: character.serverName,
+  }
 }
 
 function createTriggerAlertPayload(

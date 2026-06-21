@@ -403,6 +403,7 @@ export function SubscribedTriggerManagerProvider({
 
   useEffect(() => {
     void call('worker.matcher-service', 'add-patterns', {
+      namespace: 'subscriptions',
       patterns: [{ pattern: subscriptionPattern }],
     }).catch((error: unknown) => {
       console.warn(

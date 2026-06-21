@@ -69,6 +69,7 @@ export function TriggerShareCoordinator({
 
   useEffect(() => {
     void call('worker.matcher-service', 'add-patterns', {
+      namespace: 'share',
       patterns: [{ pattern: sharePattern }],
     }).catch((error: unknown) => {
       console.warn('[TriggerShareCoordinator] share pattern registration failed', error)

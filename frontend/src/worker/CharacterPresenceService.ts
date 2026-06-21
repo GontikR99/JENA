@@ -156,6 +156,7 @@ export class CharacterPresenceService {
       'matcher-service',
       'add-patterns',
       {
+        namespace: 'presence',
         patterns: [zoneEnteredPattern, whoZonePattern],
       },
     )

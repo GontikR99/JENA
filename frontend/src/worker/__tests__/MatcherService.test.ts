@@ -284,6 +284,93 @@ describe('MatcherService', () => {
       },
     ])
   })
+
+  it('replaces only the requested pattern namespace', async () => {
+    const { broker, fileWatcher } = createHarness()
+    const receivedPatterns: string[] = []
+
+    broker.listen('client.matcher.match-found', (message) => {
+      receivedPatterns.push((message.payload as RegexMatchFoundMessage).pattern)
+    })
+
+    await broker.call('test.matcher-service', 'matcher-service', 'add-patterns', {
+      namespace: 'stable',
+      patterns: [
+        {
+          pattern: 'stable',
+        },
+      ],
+    })
+    await broker.call('test.matcher-service', 'matcher-service', 'replace-patterns', {
+      namespace: 'alerts',
+      patterns: [
+        {
+          pattern: 'old alert',
+        },
+      ],
+    })
+    await broker.call('test.matcher-service', 'matcher-service', 'flush', {})
+    await broker.call('test.matcher-service', 'matcher-service', 'replace-patterns', {
+      namespace: 'alerts',
+      patterns: [
+        {
+          pattern: 'new alert',
+        },
+      ],
+    })
+    await broker.call('test.matcher-service', 'matcher-service', 'flush', {})
+
+    fileWatcher.emit({
+      characterName: 'Testcharacter',
+      serverName: 'Testserver',
+      text: 'stable old alert new alert',
+      timestamp: 'Fri Oct 24 13:33:11 2025',
+    })
+    await flushAsyncWork()
+
+    expect(receivedPatterns).toEqual(['stable', 'new alert'])
+  })
+
+  it('keeps the previous namespace when replacement contains an invalid regex', async () => {
+    const { broker, fileWatcher } = createHarness()
+    const receivedPatterns: string[] = []
+
+    broker.listen('client.matcher.match-found', (message) => {
+      receivedPatterns.push((message.payload as RegexMatchFoundMessage).pattern)
+    })
+
+    await broker.call('test.matcher-service', 'matcher-service', 'replace-patterns', {
+      namespace: 'alerts',
+      patterns: [
+        {
+          pattern: 'old alert',
+        },
+      ],
+    })
+    await broker.call('test.matcher-service', 'matcher-service', 'flush', {})
+
+    await expect(
+      broker.call('test.matcher-service', 'matcher-service', 'replace-patterns', {
+        namespace: 'alerts',
+        patterns: [
+          {
+            pattern: '(',
+          },
+        ],
+      }),
+    ).rejects.toThrow()
+
+    await broker.call('test.matcher-service', 'matcher-service', 'flush', {})
+    fileWatcher.emit({
+      characterName: 'Testcharacter',
+      serverName: 'Testserver',
+      text: 'old alert',
+      timestamp: 'Fri Oct 24 13:33:11 2025',
+    })
+    await flushAsyncWork()
+
+    expect(receivedPatterns).toEqual(['old alert'])
+  })
 })
 
 function createHarness() {
