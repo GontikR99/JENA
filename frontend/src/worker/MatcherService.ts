@@ -233,12 +233,17 @@ export class MatcherService {
     const nextFallbackRegistrations = nextRegistrations.filter(
       isJavaScriptPatternRegistration,
     )
+    const compileStartedAtMs = performance.now()
 
     this.compilePromise = Promise.resolve()
       .then(() => compilePatternSet(nextRe2Registrations))
       .then((nextPatternSetState) => {
         this.fallbackRegistrations = nextFallbackRegistrations
         this.patternSetState = nextPatternSetState
+        const durationMs = Math.round(performance.now() - compileStartedAtMs)
+        console.info(
+          `[MatcherService] full RE2Set compile completed: namespaces=${this.patternNamespaces.size} totalPatterns=${nextRegistrations.length} re2Patterns=${nextRe2Registrations.length} fallbackPatterns=${nextFallbackRegistrations.length} durationMs=${durationMs}`,
+        )
       })
       .finally(() => {
         this.compilePromise = null
