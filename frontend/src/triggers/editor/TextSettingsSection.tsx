@@ -80,15 +80,21 @@ export function TextSettingsSection({
           }
           state={clipboardTextEnabled ? 'enabled' : 'disabled'}
         />
-        <Form.Control
-          disabled={disabled || !clipboardTextEnabled}
-          onChange={(event) =>
-            updateClipboard({ text: event.currentTarget.value })
-          }
-          size="sm"
-          type="text"
-          value={state.clipboard.text}
-        />
+        <div className="trigger-editor-text-control-stack">
+          <Form.Control
+            disabled={disabled || !clipboardTextEnabled}
+            onChange={(event) =>
+              updateClipboard({ text: event.currentTarget.value })
+            }
+            size="sm"
+            type="text"
+            value={state.clipboard.text}
+          />
+          <small className="trigger-editor-companion-note">
+            (requires{' '}
+            <a href="/downloads/jena-companion-setup.exe">companion app</a>)
+          </small>
+        </div>
       </div>
     </Section>
   )
