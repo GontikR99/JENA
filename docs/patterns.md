@@ -41,8 +41,8 @@ Examples:
 
 ## Output Variables
 
-Display text, text-to-speech text, and timer names can reference captured
-values using brace syntax:
+Display text, text-to-speech text, clipboard text, timer names, and timer
+action text can reference captured values using brace syntax:
 
 ```text
 {C}
@@ -116,3 +116,10 @@ Output variables can use these modifiers:
 ```
 
 Modifiers affect output fields only. They are not pattern syntax.
+
+## Clipboard Output
+
+Clipboard trigger action text uses the same output substitution rules as other
+output fields. Clipboard writes require the optional JENA Companion app; without
+the companion, browser-only JENA will still match the trigger but cannot
+reliably place the text on the system clipboard.
