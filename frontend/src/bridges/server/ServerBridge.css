@@ -29,3 +29,20 @@
   color: #cbd5e1;
   font-size: 0.9rem;
 }
+
+.server-bridge-reload-button {
+  background: #f8fafc;
+  border: 1px solid #fff;
+  border-radius: 6px;
+  color: #111827;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+  margin-top: 1rem;
+  padding: 0.45rem 0.85rem;
+}
+
+.server-bridge-reload-button:focus-visible,
+.server-bridge-reload-button:hover {
+  background: #dbeafe;
+}

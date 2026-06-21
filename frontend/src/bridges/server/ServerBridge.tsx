@@ -79,6 +79,13 @@ export function ServerConnectionGlass({
               This page was loaded with an older app version. Reload the page to
               reconnect to the server.
             </div>
+            <button
+              className="server-bridge-reload-button"
+              onClick={forceReload}
+              type="button"
+            >
+              Force reload
+            </button>
           </>
         ) : (
           <>
@@ -91,6 +98,13 @@ export function ServerConnectionGlass({
       </div>
     </div>
   )
+}
+
+function forceReload() {
+  const url = new URL(window.location.href)
+
+  url.searchParams.set('jenaReload', Date.now().toString())
+  window.location.replace(url.toString())
 }
 
 class ServerBridgeController {
