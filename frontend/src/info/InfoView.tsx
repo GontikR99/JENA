@@ -38,8 +38,8 @@ export function InfoView() {
         <h2>What JENA Adds</h2>
         <div className="info-feature-grid">
           <FeatureBlock
-            title="Web-only"
-            text="JENA runs in the browser. There is nothing to install on each machine beyond opening the app and choosing your EverQuest folder."
+            title="Browser first"
+            text="JENA's core trigger features run in the browser. For timers, text alerts, speech, publish, subscribe, and broadcast, just open the app and choose your EverQuest folder."
           />
           <FeatureBlock
             title="Publish triggers"
@@ -57,8 +57,9 @@ export function InfoView() {
             title="Companion app"
             text={
               <>
-                Clipboard trigger actions need the optional JENA Companion app.
-                Install it once and leave it running in the Windows system tray.{' '}
+                Clipboard trigger actions are the optional exception: they need
+                the JENA Companion app. Install it once and leave it running in
+                the Windows system tray.{' '}
                 <a href="/downloads/jena-companion-setup.exe">
                   Download JENA Companion
                 </a>

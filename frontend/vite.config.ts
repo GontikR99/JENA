@@ -53,6 +53,7 @@ export default defineConfig({
         // Critical: never app-shell backend/JENA service endpoints.
         navigateFallbackDenylist: [
           /^\/_jena(?:\/|$)/,
+          /^\/downloads(?:\/|$)/,
         ],
       },
     }),
