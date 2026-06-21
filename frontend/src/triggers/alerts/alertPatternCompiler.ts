@@ -1,4 +1,7 @@
-import type { RegexMatchFoundMessage } from '../../shared/messages'
+import type {
+  AlertCaptureSnapshot,
+  RegexMatchFoundMessage,
+} from '../../shared/messages'
 import type { JenaTriggerMatcher } from '../../shared/triggers'
 
 export type AlertCompiledPatternKind = 'literal' | 'regex'
@@ -115,6 +118,26 @@ export function createAlertMatchContext(
     positionalCaptures,
     repeated: options.repeated,
     timerWarnTimeValue: options.timerWarnTimeValue,
+  }
+}
+
+export function createAlertCaptureSnapshot(
+  compiledPattern: AlertCompiledPattern,
+  context: AlertMatchContext,
+): AlertCaptureSnapshot {
+  const capturesByKey: Record<string, string> = {}
+
+  compiledPattern.captureBindings.forEach((binding) => {
+    const value = context.capturesByKey[binding.key]
+    if (value !== undefined) {
+      capturesByKey[binding.key] ??= value
+    }
+  })
+
+  return {
+    capturesByKey,
+    namedCaptures: context.namedCaptures,
+    positionalCaptures: context.positionalCaptures,
   }
 }
 

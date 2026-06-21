@@ -2,4 +2,4 @@
 
 package protocolversion
 
-const ProtocolVersion = 2
+const ProtocolVersion = 3

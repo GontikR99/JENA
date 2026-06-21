@@ -171,6 +171,15 @@ describe('AlertCoordinationService', () => {
         characterName: 'Mesozoic',
         clipboardText: 'Copy Fireball for Mesozoic',
         displayText: 'Display Fireball in Guild Lobby',
+        matchCaptures: {
+          capturesByKey: {
+            C: 'Mesozoic',
+          },
+          namedCaptures: {
+            spell: 'Fireball',
+          },
+          positionalCaptures: ['Fireball'],
+        },
         speechProfile: {
           pitch: 1.2,
           rate: 0.9,
@@ -243,6 +252,33 @@ describe('AlertCoordinationService', () => {
         }),
       ],
     })
+  })
+
+  it('emits early ender match captures for timer validation', async () => {
+    const trigger = createTriggerWithEarlyEnder({
+      earlyEnderText: '^early end (?<effect>.+) for {S}$',
+      isRegex: true,
+    })
+    hookState.userTriggers = [resolveTrigger(trigger)]
+
+    render(<AlertCoordinationService />)
+    await flushPatternRegistration()
+    emit('matcher.match-found', createEarlyEnderMatch())
+
+    expect(hookState.send).toHaveBeenCalledWith(
+      'alert.timer-early-ended',
+      expect.objectContaining({
+        matchCaptures: {
+          capturesByKey: {
+            S: 'Mesozoic',
+          },
+          namedCaptures: {
+            effect: 'Fireball',
+          },
+          positionalCaptures: ['Fireball'],
+        },
+      }),
+    )
   })
 })
 
@@ -334,7 +370,10 @@ function createTrigger({
   })
 }
 
-function createTriggerWithEarlyEnder(): JenaTrigger {
+function createTriggerWithEarlyEnder({
+  earlyEnderText = 'early end',
+  isRegex = false,
+} = {}): JenaTrigger {
   return withCanonicalTriggerId({
     ...createTrigger({
       name: 'Disabled Early Ender Trigger',
@@ -343,8 +382,8 @@ function createTriggerWithEarlyEnder(): JenaTrigger {
       durationMs: 10_000,
       earlyEnders: [
         {
-          isRegex: false,
-          text: 'early end',
+          isRegex,
+          text: earlyEnderText,
         },
       ],
       endedAction: null,
@@ -355,6 +394,40 @@ function createTriggerWithEarlyEnder(): JenaTrigger {
       warningSeconds: 0,
     },
   })
+}
+
+function createEarlyEnderMatch(): RegexMatchFoundMessage {
+  const patternRegistrationCall = getAlertPatternRegistrationCall()
+  const pattern = patternRegistrationCall?.[2]?.patterns?.find(
+    (registration: { pattern?: unknown }) =>
+      typeof registration.pattern === 'string' &&
+      registration.pattern.includes('early end'),
+  )?.pattern
+  if (typeof pattern !== 'string') {
+    throw new Error('Early ender pattern was not registered')
+  }
+  const text = 'early end Fireball for Mesozoic'
+  const match = new RegExp(pattern, 'i').exec(text)
+  if (!match) {
+    throw new Error(`Pattern did not match: ${pattern}`)
+  }
+
+  return {
+    captures: {
+      named: Object.fromEntries(
+        Object.entries(match.groups ?? {}).map(([name, value]) => [
+          name,
+          value ?? null,
+        ]),
+      ),
+      positional: match.slice(1).map((value) => value ?? null),
+    },
+    characterName: 'Mesozoic',
+    pattern,
+    serverName: 'Bristlebane',
+    text,
+    timestamp: '2026-06-17T12:00:01Z',
+  }
 }
 
 function createMatch(): RegexMatchFoundMessage {

@@ -7,6 +7,7 @@ import {
   type ReactNode,
 } from 'react'
 import type {
+  AlertCaptureSnapshot,
   TriggerTimerActionKind,
   TriggerTimerActionMessage,
   TriggerTimerActionPayload,
@@ -184,6 +185,7 @@ function upsertRuntimeTimer(
         durationMs: timer.durationMs,
         endedAction: event.alert.timerEndedAction,
         generation: runtimeTimer.generation + 1,
+        matchCaptures: getAlertCaptureSnapshot(event.alert.matchCaptures),
         serverName: event.alert.serverName,
         speechProfile: event.alert.speechProfile,
         startedAtMs,
@@ -208,6 +210,7 @@ function upsertRuntimeTimer(
       generation: 0,
       id: createTimerId(),
       lastCycleIndex: null,
+      matchCaptures: getAlertCaptureSnapshot(event.alert.matchCaptures),
       serverName: event.alert.serverName,
       speechProfile: event.alert.speechProfile,
       startedAtMs,
@@ -433,11 +436,56 @@ function doesEarlyEnderMatchTimer(
     return false
   }
 
-  return true
+  return doCaptureConstraintsMatchTimer(
+    getAlertCaptureSnapshot(event.alert.matchCaptures),
+    timer.matchCaptures,
+  )
 }
 
 function isSameText(left: string, right: string) {
   return left.localeCompare(right, undefined, { sensitivity: 'accent' }) === 0
+}
+
+function doCaptureConstraintsMatchTimer(
+  constraints: AlertCaptureSnapshot,
+  timerCaptures: AlertCaptureSnapshot,
+) {
+  return (
+    doRecordConstraintsMatch(constraints.capturesByKey, timerCaptures.capturesByKey) &&
+    doRecordConstraintsMatch(constraints.namedCaptures, timerCaptures.namedCaptures) &&
+    doPositionalConstraintsMatch(
+      constraints.positionalCaptures,
+      timerCaptures.positionalCaptures,
+    )
+  )
+}
+
+function doRecordConstraintsMatch(
+  constraints: Record<string, string>,
+  timerCaptures: Record<string, string>,
+) {
+  return Object.entries(constraints).every(([key, value]) => {
+    return timerCaptures[key] === value
+  })
+}
+
+function doPositionalConstraintsMatch(
+  constraints: string[],
+  timerCaptures: string[],
+) {
+  return constraints.every((value, index) => timerCaptures[index] === value)
+}
+
+function getAlertCaptureSnapshot(
+  captures: AlertCaptureSnapshot | undefined,
+): AlertCaptureSnapshot {
+  return captures ?? emptyAlertCaptureSnapshot
+}
+
+const emptyAlertCaptureSnapshot: AlertCaptureSnapshot = {
+  capturesByKey: {},
+  namedCaptures: {},
+  positionalCaptures: [],
 }
 
 function withoutUndefinedValues<TValue extends Record<string, unknown>>(

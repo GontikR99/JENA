@@ -48,7 +48,7 @@ func TestReflectAlertScopesSubscriptionIDToSubscriberFanout(t *testing.T) {
 
 	request := ReflectAlertRequest{
 		Alert: json.RawMessage(
-			`{"trigger":{"id":"11111111-1111-1111-1111-111111111111"}}`,
+			`{"matchCaptures":{"capturesByKey":{"S":"Viral Decay"},"namedCaptures":{"effect":"Viral Decay"},"positionalCaptures":["Viral Decay"]},"trigger":{"id":"11111111-1111-1111-1111-111111111111"}}`,
 		),
 		EventID:           "event-1",
 		Kind:              "triggerMatched",
@@ -73,6 +73,7 @@ func TestReflectAlertScopesSubscriptionIDToSubscriberFanout(t *testing.T) {
 	if userDelivery.SubscriptionID != "" {
 		t.Fatalf("user fanout subscriptionId %q, want empty", userDelivery.SubscriptionID)
 	}
+	assertDeliveryPreservedMatchCaptures(t, userDelivery)
 
 	subDelivery, ok := deliveries["sub.discord:123.alert.broadcast"]
 	if !ok {
@@ -85,6 +86,7 @@ func TestReflectAlertScopesSubscriptionIDToSubscriberFanout(t *testing.T) {
 			subscriptionID,
 		)
 	}
+	assertDeliveryPreservedMatchCaptures(t, subDelivery)
 }
 
 type serviceFixture struct {
@@ -213,4 +215,32 @@ func insertPublisherSubscription(
 
 func ptr[T any](value T) *T {
 	return &value
+}
+
+func assertDeliveryPreservedMatchCaptures(t *testing.T, delivery reflectedAlert) {
+	t.Helper()
+
+	var alert struct {
+		MatchCaptures struct {
+			CapturesByKey      map[string]string `json:"capturesByKey"`
+			NamedCaptures      map[string]string `json:"namedCaptures"`
+			PositionalCaptures []string          `json:"positionalCaptures"`
+		} `json:"matchCaptures"`
+	}
+	if err := json.Unmarshal(delivery.Alert, &alert); err != nil {
+		t.Fatalf("json.Unmarshal delivery alert returned error: %v", err)
+	}
+	if got := alert.MatchCaptures.CapturesByKey["S"]; got != "Viral Decay" {
+		t.Fatalf("capturesByKey[S] = %q, want Viral Decay", got)
+	}
+	if got := alert.MatchCaptures.NamedCaptures["effect"]; got != "Viral Decay" {
+		t.Fatalf("namedCaptures[effect] = %q, want Viral Decay", got)
+	}
+	if len(alert.MatchCaptures.PositionalCaptures) != 1 ||
+		alert.MatchCaptures.PositionalCaptures[0] != "Viral Decay" {
+		t.Fatalf(
+			"positionalCaptures = %#v, want [Viral Decay]",
+			alert.MatchCaptures.PositionalCaptures,
+		)
+	}
 }

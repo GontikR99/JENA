@@ -53,10 +53,17 @@ export interface RegexMatchFoundMessage {
   timestamp: string
 }
 
+export interface AlertCaptureSnapshot {
+  capturesByKey: Record<string, string>
+  namedCaptures: Record<string, string>
+  positionalCaptures: string[]
+}
+
 export interface TriggerAlertMatchedMessage {
   characterName: string
   clipboardText?: string
   displayText?: string
+  matchCaptures?: AlertCaptureSnapshot
   serverName: string
   speechProfile?: TriggerSpeechProfile
   speechText?: string
@@ -97,6 +104,7 @@ export interface TriggerTimerActionMessage extends TriggerTimerActionPayload {
 
 export interface TriggerEarlyEnderMatchedMessage {
   characterName: string
+  matchCaptures?: AlertCaptureSnapshot
   serverName: string
   text: string
   timerName?: string

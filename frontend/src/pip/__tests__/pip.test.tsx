@@ -3,6 +3,7 @@
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type {
+  AlertCaptureSnapshot,
   TriggerTimerActionMessage,
   TriggerTimerActionPayload,
 } from '../../shared/messages'
@@ -275,6 +276,100 @@ describe('Pip', () => {
     expect(screen.queryByText('[Mesozoic] Endable Timer')).not.toBeInTheDocument()
   })
 
+  it('removes timers when early ender captures match the original trigger captures', () => {
+    renderPip()
+
+    act(() => {
+      emitTriggerMatch({
+        matchCaptures: createCaptureSnapshot({
+          capturesByKey: {
+            S: 'Viral Decay',
+          },
+          namedCaptures: {
+            effect: 'Viral Decay',
+          },
+          positionalCaptures: ['Viral Decay'],
+        }),
+        timer: createTimer({ startBehavior: 'restart' }),
+        timerName: 'Captured Timer',
+      })
+    })
+
+    expect(screen.getByText('Captured Timer')).toBeInTheDocument()
+
+    act(() => {
+      emitTimerEarlyEnder({
+        matchCaptures: createCaptureSnapshot({
+          capturesByKey: {
+            S: 'Viral Decay',
+          },
+          namedCaptures: {
+            effect: 'Viral Decay',
+          },
+          positionalCaptures: ['Viral Decay'],
+        }),
+      })
+    })
+
+    expect(screen.queryByText('Captured Timer')).not.toBeInTheDocument()
+  })
+
+  it('keeps timers when early ender captures differ from the original trigger captures', () => {
+    renderPip()
+
+    act(() => {
+      emitTriggerMatch({
+        matchCaptures: createCaptureSnapshot({
+          capturesByKey: {
+            S: 'Viral Decay',
+          },
+        }),
+        timer: createTimer({ startBehavior: 'restart' }),
+        timerName: 'Captured Timer',
+      })
+    })
+
+    expect(screen.getByText('Captured Timer')).toBeInTheDocument()
+
+    act(() => {
+      emitTimerEarlyEnder({
+        matchCaptures: createCaptureSnapshot({
+          capturesByKey: {
+            S: 'Mana Drain',
+          },
+        }),
+      })
+    })
+
+    expect(screen.getByText('Captured Timer')).toBeInTheDocument()
+  })
+
+  it('keeps timers when early ender captures are missing from the original trigger captures', () => {
+    renderPip()
+
+    act(() => {
+      emitTriggerMatch({
+        matchCaptures: createCaptureSnapshot(),
+        timer: createTimer({ startBehavior: 'restart' }),
+        timerName: 'Captured Timer',
+      })
+    })
+
+    expect(screen.getByText('Captured Timer')).toBeInTheDocument()
+
+    act(() => {
+      emitTimerEarlyEnder({
+        matchCaptures: createCaptureSnapshot({
+          capturesByKey: {
+            S: 'Viral Decay',
+          },
+        }),
+      })
+    })
+
+    expect(screen.getByText('Captured Timer')).toBeInTheDocument()
+  })
+
   it('clears timers and text when a stop request arrives', () => {
     renderPip()
 
@@ -325,12 +420,14 @@ describe('Pip', () => {
 
 function emitTriggerMatch({
   displayText,
+  matchCaptures,
   timer,
   timerEndedAction,
   timerName,
   timerWarningAction,
 }: {
   displayText?: string
+  matchCaptures?: AlertCaptureSnapshot
   timer?: JenaTrigger['timer']
   timerEndedAction?: TriggerTimerActionPayload
   timerName?: string
@@ -343,6 +440,7 @@ function emitTriggerMatch({
       alert: {
         characterName: 'Mesozoic',
         displayText,
+        matchCaptures,
         serverName: 'Bristlebane',
         text: 'log line',
         timerEndedAction,
@@ -390,13 +488,20 @@ function createTimerAction({
   }
 }
 
-function emitTimerEarlyEnder({ timerName }: { timerName?: string }) {
+function emitTimerEarlyEnder({
+  matchCaptures,
+  timerName,
+}: {
+  matchCaptures?: AlertCaptureSnapshot
+  timerName?: string
+}) {
   const trigger = createTrigger(createTimer({ startBehavior: 'restart' }))
 
   hookState.earlyEnderListeners.forEach((listener) => {
     listener({
       alert: {
         characterName: 'Mesozoic',
+        matchCaptures,
         serverName: 'Bristlebane',
         text: 'end timer',
         timerName,
@@ -409,6 +514,18 @@ function emitTimerEarlyEnder({ timerName }: { timerName?: string }) {
       trigger,
     })
   })
+}
+
+function createCaptureSnapshot({
+  capturesByKey = {},
+  namedCaptures = {},
+  positionalCaptures = [],
+}: Partial<AlertCaptureSnapshot> = {}): AlertCaptureSnapshot {
+  return {
+    capturesByKey,
+    namedCaptures,
+    positionalCaptures,
+  }
 }
 
 function emitTriggerStop() {

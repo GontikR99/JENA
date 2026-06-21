@@ -21,6 +21,7 @@ import { useSubscribedTriggerManager } from '../model/SubscribedTriggerManager'
 import { useTriggerManager } from '../model/UserTriggerManager'
 import {
   compileAlertMatcher,
+  createAlertCaptureSnapshot,
   createAlertMatchContext,
   createAlertPatternSessionId,
   substituteAlertTemplate,
@@ -149,6 +150,7 @@ export function AlertCoordinationService() {
             binding.trigger,
             match,
             context,
+            binding.compiledPattern,
             createSpeechProfile(machineSettings.tts, voiceByURI),
           )
 
@@ -161,6 +163,7 @@ export function AlertCoordinationService() {
           binding.trigger,
           match,
           context,
+          binding.compiledPattern,
         )
 
         console.log('[AlertCoordinationService] timer early ender matched', payload)
@@ -356,6 +359,7 @@ function createTriggerAlertPayload(
   trigger: JenaTrigger,
   match: RegexMatchFoundMessage,
   context: AlertMatchContext,
+  compiledPattern: AlertCompiledPattern,
   speechProfile: TriggerSpeechProfile,
 ): TriggerAlertMatchedMessage {
   return withoutUndefinedValues({
@@ -366,6 +370,7 @@ function createTriggerAlertPayload(
     displayText: trigger.actions.display.enabled
       ? substituteAlertTemplate(trigger.actions.display.text, context)
       : undefined,
+    matchCaptures: createAlertCaptureSnapshot(compiledPattern, context),
     serverName: match.serverName,
     speechProfile,
     speechText: trigger.actions.speech.enabled
@@ -426,9 +431,11 @@ function createTimerEarlyEnderPayload(
   trigger: JenaTrigger,
   match: RegexMatchFoundMessage,
   context: AlertMatchContext,
+  compiledPattern: AlertCompiledPattern,
 ): TriggerEarlyEnderMatchedMessage {
   return withoutUndefinedValues({
     characterName: match.characterName,
+    matchCaptures: createAlertCaptureSnapshot(compiledPattern, context),
     serverName: match.serverName,
     text: match.text,
     timerName: trigger.timer

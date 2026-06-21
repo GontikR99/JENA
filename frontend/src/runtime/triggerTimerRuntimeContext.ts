@@ -1,5 +1,6 @@
 import { createContext, useContext } from 'react'
 import type {
+  AlertCaptureSnapshot,
   TriggerSpeechProfile,
   TriggerTimerActionPayload,
 } from '../shared/messages'
@@ -15,6 +16,7 @@ export interface RuntimeTimer {
   generation: number
   id: string
   lastCycleIndex: number | null
+  matchCaptures: AlertCaptureSnapshot
   serverName: string
   speechProfile?: TriggerSpeechProfile
   startedAtMs: number
