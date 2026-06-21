@@ -240,6 +240,7 @@ export interface EndpointMessages {
   'alert.stop-requested': TriggerStopRequestedMessage
   'alert.trigger-matched': TriggerAlertMatchedMessage
   'character-presence.characters': CharacterPresenceCharactersMessage
+  'companion.clipboard.write-text': CompanionClipboardWriteTextMessage
   'file-watcher.characters': FileWatcherCharactersMessage
   'log-search.done': LogSearchDoneMessage
   'log-search.match-found': LogSearchMatchMessage
@@ -248,6 +249,10 @@ export interface EndpointMessages {
   'subscriptions.updated': SubscriptionUpdatedMessage
   'trigger-store.triggers-seen': TriggerStoreTriggersSeenMessage
   'user-trigger-store.updated': JenaUserTriggerUpdate
+}
+
+export interface CompanionClipboardWriteTextMessage {
+  text: string
 }
 
 export interface EverQuestLogFile {
@@ -278,6 +283,25 @@ export interface LogSearchDoneMessage {
 }
 
 export interface RpcEndpoints {
+  'companion.clipboard': {
+    writeText: {
+      request: {
+        text: string
+      }
+      response: Record<string, never>
+    }
+  }
+  'companion.status': {
+    getStatus: {
+      request: Record<string, never>
+      response: {
+        appName: string
+        capabilities: string[]
+        protocolVersion: number
+        version: string
+      }
+    }
+  }
   'server.auth': {
     getSession: {
       request: Record<string, never>
@@ -571,6 +595,7 @@ export type RpcResponse<
 export const WorkerEndpointPrefix = 'worker.'
 export const ServerEndpointPrefix = 'server.'
 export const ClientEndpointPrefix = 'client.'
+export const CompanionEndpointPrefix = 'companion.'
 
 export function createBusMessage<TPayload>({
   correlationId,
@@ -708,6 +733,18 @@ export function addClientEndpointPrefix(endpoint: Endpoint) {
   return endpoint.startsWith(ClientEndpointPrefix)
     ? endpoint
     : `${ClientEndpointPrefix}${endpoint}`
+}
+
+export function stripCompanionEndpointPrefix(endpoint: Endpoint) {
+  return endpoint.startsWith(CompanionEndpointPrefix)
+    ? endpoint.slice(CompanionEndpointPrefix.length)
+    : endpoint
+}
+
+export function addCompanionEndpointPrefix(endpoint: Endpoint) {
+  return endpoint.startsWith(CompanionEndpointPrefix)
+    ? endpoint
+    : `${CompanionEndpointPrefix}${endpoint}`
 }
 
 function isSerializedError(value: unknown): value is SerializedError {

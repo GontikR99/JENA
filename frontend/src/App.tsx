@@ -13,6 +13,7 @@ import { LocalCharactersProvider } from './characters/LocalCharactersProvider'
 import { AuthProvider } from './auth/AuthProvider'
 import { useAuth } from './auth/authContext'
 import { AuthScreen } from './auth/AuthScreen'
+import { CompanionProvider } from './companion/CompanionProvider'
 import { TriggerShareCoordinator } from './sharing/TriggerShareCoordinator'
 import { SettingsProvider } from './settings/SettingsProvider'
 import { SpeechVoiceProvider } from './settings/SpeechVoiceProvider'
@@ -24,6 +25,7 @@ import { TriggerTimerRuntimeProvider } from './runtime/TriggerTimerRuntime'
 import { AlertCoordinationService } from './triggers/alerts/AlertCoordinationService'
 import { AlertEventCoordinatorProvider } from './triggers/alerts/AlertEventCoordinator'
 import { BroadcastReflector } from './triggers/alerts/BroadcastReflector'
+import { TriggerClipboardService } from './triggers/alerts/TriggerClipboardService'
 import { TriggerSpeechService } from './triggers/alerts/TriggerSpeechService'
 import { TriggerStopService } from './triggers/alerts/TriggerStopService'
 import { TriggerStoreProvider } from './triggers/model/TriggerStore'
@@ -40,9 +42,11 @@ export function App() {
       <AuthProvider>
         <SpeechVoiceProvider>
           <SettingsProvider>
-            <ServerBridge onStatusChange={setServerBridgeStatus} />
-            <AuthenticatedApp />
-            <ServerConnectionGlass status={serverBridgeStatus} />
+            <CompanionProvider>
+              <ServerBridge onStatusChange={setServerBridgeStatus} />
+              <AuthenticatedApp />
+              <ServerConnectionGlass status={serverBridgeStatus} />
+            </CompanionProvider>
             <Toaster position="top-right" />
           </SettingsProvider>
         </SpeechVoiceProvider>
@@ -71,6 +75,7 @@ function AuthenticatedApp() {
                 <AlertEventCoordinatorProvider>
                   <TriggerTimerRuntimeProvider>
                     <BroadcastReflector />
+                    <TriggerClipboardService />
                     <TriggerSpeechService />
                     <TriggerLogProvider>
                       <TriggerShareCoordinator>

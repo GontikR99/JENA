@@ -1,0 +1,31 @@
+{
+  "name": "jena-companion",
+  "productName": "JENA Companion",
+  "version": "0.1.0",
+  "description": "Optional local companion app for JENA clipboard and overlay features.",
+  "author": "JENA contributors",
+  "license": "AGPL-3.0-only",
+  "private": true,
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "npm run generate-assets && tsc -p tsconfig.json",
+    "dev": "npm run build && electron-forge start",
+    "generate-assets": "node scripts/generate-assets.mjs",
+    "make": "npm run build && electron-forge make",
+    "start": "electron-forge start",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "electron-squirrel-startup": "^1.0.1",
+    "ws": "^8.18.3"
+  },
+  "devDependencies": {
+    "@electron-forge/cli": "^7.10.2",
+    "@electron-forge/maker-squirrel": "^7.10.2",
+    "@types/node": "^24.12.3",
+    "@types/ws": "^8.18.1",
+    "electron": "^40.0.0",
+    "typescript": "~6.0.2",
+    "vitest": "^4.1.8"
+  }
+}

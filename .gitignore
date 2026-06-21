@@ -7,6 +7,8 @@ dist/
 **/dist/
 dist-ssr/
 **/dist-ssr/
+companion/out/
+companion/generated/
 backend/static/
 backend/internal/staticfiles/app/*
 !backend/internal/staticfiles/app/.gitkeep

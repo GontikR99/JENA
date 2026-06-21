@@ -53,6 +53,19 @@ export function InfoView() {
             title="Broadcast alerts"
             text="Broadcasting lets one matching log line help more than one client. This is useful when your focused screen, speaker, or whole group needs to know about an event."
           />
+          <FeatureBlock
+            title="Companion app"
+            text={
+              <>
+                Clipboard trigger actions need the optional JENA Companion app.
+                Install it once and leave it running in the Windows system tray.{' '}
+                <a href="/downloads/jena-companion-setup.exe">
+                  Download JENA Companion
+                </a>
+                .
+              </>
+            }
+          />
         </div>
       </div>
 
@@ -210,7 +223,13 @@ export function InfoView() {
   )
 }
 
-function FeatureBlock({ title, text }: { title: string; text: string }) {
+function FeatureBlock({
+  title,
+  text,
+}: {
+  title: string
+  text: ReactNode
+}) {
   return (
     <article className="info-feature-block">
       <h3>{title}</h3>
