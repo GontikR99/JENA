@@ -18,6 +18,7 @@ const logSearchChunkSizeBytes = 512 * 1024
 const logSearchMaxMatches = 5000
 const logSearchMaxBinarySearchIterations = 64
 const logSearchProbeBytes = 4096
+const logSearchReadRetryCount = 3
 const logSearchYieldLineInterval = 250
 
 interface TailTask {
@@ -45,6 +46,11 @@ interface StartLogSearchRequest {
   serverName: string
   startMs: number
   useRegex: boolean
+}
+
+interface LogSearchFileSnapshot {
+  endOffset: number
+  file: File
 }
 
 export interface EverQuestLogLineRecord {
@@ -196,12 +202,20 @@ export class FileWatcher {
         throw new Error('Log file was not found.')
       }
 
-      const startOffset = await findLogSearchStartOffset(file, request.startMs)
-      const scanResult = await this.scanLogFile({
+      const searchFile: LogSearchFileSnapshot = {
+        endOffset: file.size,
         file,
+      }
+      const startOffset = await this.findLogSearchStartOffset(
+        logFile,
+        searchFile,
+        request.startMs,
+      )
+      const scanResult = await this.scanLogFile({
         logFile,
         matcher,
         request,
+        searchFile,
         startOffset,
         task,
       })
@@ -216,6 +230,10 @@ export class FileWatcher {
         truncated,
       })
     } catch (error) {
+      console.error(
+        `[FileWatcher] log search failed searchId=${request.searchId} character=${request.characterName} server=${request.serverName} startMs=${request.startMs} endMs=${request.endMs} useRegex=${request.useRegex}`,
+        error,
+      )
       this.sendLogSearchDone({
         error: getErrorMessage(error),
         matchCount,
@@ -231,17 +249,17 @@ export class FileWatcher {
   }
 
   private async scanLogFile({
-    file,
     logFile,
     matcher,
     request,
+    searchFile,
     startOffset,
     task,
   }: {
-    file: File
     logFile: EverQuestLogFile
     matcher: (text: string) => boolean
     request: StartLogSearchRequest
+    searchFile: LogSearchFileSnapshot
     startOffset: number
     task: ActiveLogSearch
   }) {
@@ -251,9 +269,17 @@ export class FileWatcher {
     let matchCount = 0
     let truncated = false
 
-    while (offset < file.size && !task.canceled) {
-      const chunkEnd = Math.min(file.size, offset + logSearchChunkSizeBytes)
-      const chunkText = await file.slice(offset, chunkEnd).text()
+    while (offset < searchFile.endOffset && !task.canceled) {
+      const chunkEnd = Math.min(
+        searchFile.endOffset,
+        offset + logSearchChunkSizeBytes,
+      )
+      const chunkText = await this.readSearchFileText(
+        logFile,
+        searchFile,
+        offset,
+        chunkEnd,
+      )
       offset = chunkEnd
 
       const combinedText = `${pendingText}${chunkText}`
@@ -347,6 +373,156 @@ export class FileWatcher {
     }
 
     return { matchCount, truncated }
+  }
+
+  private async findLogSearchStartOffset(
+    logFile: EverQuestLogFile,
+    searchFile: LogSearchFileSnapshot,
+    startMs: number,
+  ) {
+    let low = 0
+    let high = searchFile.endOffset
+
+    for (let index = 0; index < logSearchMaxBinarySearchIterations; index += 1) {
+      if (low >= high) {
+        break
+      }
+
+      const midpoint = Math.floor((low + high) / 2)
+      const probe = await this.readLineAtOrAfter(logFile, searchFile, midpoint)
+
+      if (!probe) {
+        if (high === midpoint) {
+          break
+        }
+        high = midpoint
+        continue
+      }
+
+      if (!probe.parsedLine) {
+        const nextLow = Math.max(low + 1, probe.nextOffset)
+        if (nextLow <= low || nextLow > high) {
+          break
+        }
+        low = nextLow
+        continue
+      }
+
+      if (probe.parsedLine.timestampMs < startMs) {
+        const nextLow = Math.max(low + 1, probe.nextOffset)
+        if (nextLow <= low) {
+          break
+        }
+        low = nextLow
+        continue
+      }
+
+      if (probe.lineStart >= high) {
+        break
+      }
+      high = probe.lineStart
+    }
+
+    return low
+  }
+
+  private async readLineAtOrAfter(
+    logFile: EverQuestLogFile,
+    searchFile: LogSearchFileSnapshot,
+    offset: number,
+  ) {
+    const safeOffset = Math.max(
+      0,
+      Math.min(searchFile.endOffset, Math.floor(offset)),
+    )
+    const chunkStart = safeOffset
+    const chunkEnd = Math.min(
+      searchFile.endOffset,
+      chunkStart + logSearchProbeBytes,
+    )
+    const chunk = await this.readSearchFileText(
+      logFile,
+      searchFile,
+      chunkStart,
+      chunkEnd,
+    )
+
+    if (!chunk) {
+      return null
+    }
+
+    let lineStartInChunk = 0
+    if (chunkStart > 0) {
+      const firstNewlineIndex = chunk.indexOf('\n')
+      if (firstNewlineIndex < 0) {
+        return null
+      }
+      lineStartInChunk = firstNewlineIndex + 1
+    }
+
+    if (lineStartInChunk >= chunk.length) {
+      return null
+    }
+
+    const lineEndInChunk = chunk.indexOf('\n', lineStartInChunk)
+    if (lineEndInChunk < 0 && chunkEnd < searchFile.endOffset) {
+      return null
+    }
+
+    const rawLine = trimLineEnding(
+      lineEndInChunk >= 0
+        ? chunk.slice(lineStartInChunk, lineEndInChunk)
+        : chunk.slice(lineStartInChunk),
+    )
+    const lineStart = chunkStart + lineStartInChunk
+    const nextOffset =
+      lineEndInChunk >= 0 ? chunkStart + lineEndInChunk + 1 : chunkEnd
+
+    return {
+      lineStart,
+      nextOffset,
+      parsedLine: parseEverQuestLogLineWithTimestamp(rawLine),
+      rawLine,
+    }
+  }
+
+  private async readSearchFileText(
+    logFile: EverQuestLogFile,
+    searchFile: LogSearchFileSnapshot,
+    startOffset: number,
+    endOffset: number,
+  ) {
+    for (let attempt = 0; attempt <= logSearchReadRetryCount; attempt += 1) {
+      try {
+        return await searchFile.file.slice(startOffset, endOffset).text()
+      } catch (error) {
+        if (
+          !isNotReadableError(error) ||
+          attempt >= logSearchReadRetryCount
+        ) {
+          throw error
+        }
+
+        console.warn(
+          `[FileWatcher] log search file snapshot became unreadable; retrying searchIdRange=${startOffset}-${endOffset} file=${logFile.fileName} attempt=${attempt + 1}`,
+          error,
+        )
+
+        const nextFile = await this.getLogFile(logFile)
+        if (!nextFile) {
+          throw new Error('Log file was not found while retrying search read.')
+        }
+        if (nextFile.size < endOffset) {
+          throw new Error(
+            'Log file became smaller while search was in progress.',
+          )
+        }
+
+        searchFile.file = nextFile
+      }
+    }
+
+    throw new Error('Unable to read log file.')
   }
 
   private async getSearchLogFile(request: StartLogSearchRequest) {
@@ -810,98 +986,6 @@ function createLogSearchMatcher(query: string, useRegex: boolean) {
   return (text: string) => text.toLocaleLowerCase().includes(normalizedQuery)
 }
 
-async function findLogSearchStartOffset(file: File, startMs: number) {
-  let low = 0
-  let high = file.size
-
-  for (let index = 0; index < logSearchMaxBinarySearchIterations; index += 1) {
-    if (low >= high) {
-      break
-    }
-
-    const midpoint = Math.floor((low + high) / 2)
-    const probe = await readLineAtOrAfter(file, midpoint)
-
-    if (!probe) {
-      if (high === midpoint) {
-        break
-      }
-      high = midpoint
-      continue
-    }
-
-    if (!probe.parsedLine) {
-      const nextLow = Math.max(low + 1, probe.nextOffset)
-      if (nextLow <= low || nextLow > high) {
-        break
-      }
-      low = nextLow
-      continue
-    }
-
-    if (probe.parsedLine.timestampMs < startMs) {
-      const nextLow = Math.max(low + 1, probe.nextOffset)
-      if (nextLow <= low) {
-        break
-      }
-      low = nextLow
-      continue
-    }
-
-    if (probe.lineStart >= high) {
-      break
-    }
-    high = probe.lineStart
-  }
-
-  return low
-}
-
-async function readLineAtOrAfter(file: File, offset: number) {
-  const safeOffset = Math.max(0, Math.min(file.size, Math.floor(offset)))
-  const chunkStart = safeOffset
-  const chunkEnd = Math.min(file.size, chunkStart + logSearchProbeBytes)
-  const chunk = await file.slice(chunkStart, chunkEnd).text()
-
-  if (!chunk) {
-    return null
-  }
-
-  let lineStartInChunk = 0
-  if (chunkStart > 0) {
-    const firstNewlineIndex = chunk.indexOf('\n')
-    if (firstNewlineIndex < 0) {
-      return null
-    }
-    lineStartInChunk = firstNewlineIndex + 1
-  }
-
-  if (lineStartInChunk >= chunk.length) {
-    return null
-  }
-
-  const lineEndInChunk = chunk.indexOf('\n', lineStartInChunk)
-  if (lineEndInChunk < 0 && chunkEnd < file.size) {
-    return null
-  }
-
-  const rawLine = trimLineEnding(
-    lineEndInChunk >= 0
-      ? chunk.slice(lineStartInChunk, lineEndInChunk)
-      : chunk.slice(lineStartInChunk),
-  )
-  const lineStart = chunkStart + lineStartInChunk
-  const nextOffset =
-    lineEndInChunk >= 0 ? chunkStart + lineEndInChunk + 1 : chunkEnd
-
-  return {
-    lineStart,
-    nextOffset,
-    parsedLine: parseEverQuestLogLineWithTimestamp(rawLine),
-    rawLine,
-  }
-}
-
 function parseEverQuestLogLineWithTimestamp(line: string) {
   const match =
     /^\[(Sun|Mon|Tue|Wed|Thu|Fri|Sat) (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{1,2}) (\d{2}):(\d{2}):(\d{2}) (\d{4})]\s?(.*)$/.exec(
@@ -955,6 +1039,13 @@ function yieldToEventLoop() {
 
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error)
+}
+
+function isNotReadableError(error: unknown) {
+  return (
+    error instanceof Error &&
+    error.name === 'NotReadableError'
+  )
 }
 
 const monthNames = [

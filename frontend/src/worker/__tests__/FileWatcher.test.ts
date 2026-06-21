@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type {
   FileSystemDirectoryHandleLike,
   FileSystemFileHandleLike,
@@ -8,6 +8,8 @@ import { MessageBroker, MessageBus } from '../../shared/messageBroker'
 import type {
   EverQuestCharacter,
   FileWatcherCharactersMessage,
+  LogSearchDoneMessage,
+  LogSearchMatchMessage,
 } from '../../shared/messages'
 import { installInstance, type Deps } from '../di'
 import {
@@ -177,6 +179,115 @@ describe('FileWatcher', () => {
     expect(receivedLines).toEqual([])
     expect(logsDirectory.valuesCallCount).toBe(valuesCallCountAfterClear)
   })
+
+  it('logs search failures before reporting the failed search', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const { broker, fileWatcher, logsDirectory, setFileHandle } = createHarness([
+      'eqlog_Arias_bertox.txt',
+    ])
+    const ariasLog = logsDirectory.getFile('eqlog_Arias_bertox.txt')
+    const doneMessages: LogSearchDoneMessage[] = []
+
+    broker.listen('client.log-search.done', (message) => {
+      doneMessages.push(message.payload as LogSearchDoneMessage)
+    })
+
+    await setFileHandle()
+    await waitFor(() => logsDirectory.valuesCallCount >= 1)
+    ariasLog.failReadsWith(
+      new DOMException(
+        'The requested file could not be read, typically due to permission problems that have occurred after a reference to a file was acquired.',
+        'NotReadableError',
+      ),
+    )
+
+    await broker.call('test.file-watcher', 'file-watcher', 'startLogSearch', {
+      characterName: 'Arias',
+      endMs: new Date(2026, 5, 14, 11, 0, 0).getTime(),
+      query: 'Ready',
+      searchId: 'search-1',
+      serverName: 'bertox',
+      startMs: new Date(2026, 5, 14, 10, 0, 0).getTime(),
+      useRegex: false,
+    })
+
+    await waitFor(() => doneMessages.length === 1)
+    fileWatcher.dispose()
+
+    expect(doneMessages[0]).toEqual(expect.objectContaining({
+      error:
+        'The requested file could not be read, typically due to permission problems that have occurred after a reference to a file was acquired.',
+      matchCount: 0,
+      searchId: 'search-1',
+      status: 'error',
+    }))
+    expect(consoleError).toHaveBeenCalledWith(
+      expect.stringContaining(
+        '[FileWatcher] log search failed searchId=search-1 character=Arias server=bertox',
+      ),
+      expect.any(DOMException),
+    )
+
+    consoleError.mockRestore()
+  })
+
+  it('retries search reads from a fresh file while keeping the original end offset', async () => {
+    const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const { broker, fileWatcher, logsDirectory, setFileHandle } = createHarness([
+      'eqlog_Arias_bertox.txt',
+    ])
+    const ariasLog = logsDirectory.getFile('eqlog_Arias_bertox.txt')
+    const doneMessages: LogSearchDoneMessage[] = []
+    const matchMessages: LogSearchMatchMessage[] = []
+
+    ariasLog.append("[Sun Jun 14 10:00:00 2026] Ready one.\n")
+
+    broker.listen('client.log-search.done', (message) => {
+      doneMessages.push(message.payload as LogSearchDoneMessage)
+    })
+    broker.listen('client.log-search.match-found', (message) => {
+      matchMessages.push(message.payload as LogSearchMatchMessage)
+    })
+
+    await setFileHandle()
+    await waitFor(() => logsDirectory.valuesCallCount >= 1)
+    const notReadableError = new DOMException(
+      'The requested file could not be read, typically due to permission problems that have occurred after a reference to a file was acquired.',
+      'NotReadableError',
+    )
+    ariasLog.failNextSliceReadWith(notReadableError)
+    ariasLog.failNextSliceReadWith(notReadableError)
+    ariasLog.failNextSliceReadWith(notReadableError, () => {
+      ariasLog.append("[Sun Jun 14 10:00:01 2026] Ready two.\n")
+    })
+    await broker.call('test.file-watcher', 'file-watcher', 'startLogSearch', {
+      characterName: 'Arias',
+      endMs: new Date(2026, 5, 14, 11, 0, 0).getTime(),
+      query: 'Ready',
+      searchId: 'search-2',
+      serverName: 'bertox',
+      startMs: new Date(2026, 5, 14, 9, 0, 0).getTime(),
+      useRegex: false,
+    })
+
+    await waitFor(() => doneMessages.length === 1)
+    fileWatcher.dispose()
+
+    expect(doneMessages[0]).toEqual(expect.objectContaining({
+      matchCount: 1,
+      searchId: 'search-2',
+      status: 'complete',
+    }))
+    expect(matchMessages.map((message) => message.text)).toEqual(['Ready one.'])
+    expect(consoleWarn).toHaveBeenCalledWith(
+      expect.stringContaining(
+        '[FileWatcher] log search file snapshot became unreadable',
+      ),
+      expect.any(DOMException),
+    )
+
+    consoleWarn.mockRestore()
+  })
 })
 
 function createHarness(logFileNames: string[]) {
@@ -245,6 +356,11 @@ function wait(milliseconds: number) {
 class FakeFileHandle implements FileSystemFileHandleLike {
   readonly kind = 'file'
   readonly name: string
+  private readonly nextSliceReadErrors: Array<{
+    error: unknown
+    onReadFailure?: () => void
+  }> = []
+  private readError: unknown = null
   private text: string
 
   constructor(name: string, text = '') {
@@ -256,8 +372,67 @@ class FakeFileHandle implements FileSystemFileHandleLike {
     this.text += text
   }
 
+  failReadsWith(error: unknown) {
+    this.readError = error
+  }
+
+  failNextSliceReadWith(error: unknown, onReadFailure?: () => void) {
+    this.nextSliceReadErrors.push({
+      error,
+      onReadFailure,
+    })
+  }
+
   async getFile() {
+    if (this.readError) {
+      throw this.readError
+    }
+
+    const nextSliceReadError = this.nextSliceReadErrors.shift()
+    if (nextSliceReadError) {
+      const { error, onReadFailure } = nextSliceReadError
+
+      return new FakeUnreadableSliceFile(
+        [this.text],
+        this.name,
+        error,
+        onReadFailure,
+      )
+    }
+
     return new File([this.text], this.name)
+  }
+}
+
+class FakeUnreadableSliceFile extends File {
+  private hasFailed = false
+  private readonly onReadFailure?: () => void
+  private readonly readError: unknown
+
+  constructor(
+    fileBits: BlobPart[],
+    fileName: string,
+    readError: unknown,
+    onReadFailure?: () => void,
+  ) {
+    super(fileBits, fileName)
+    this.onReadFailure = onReadFailure
+    this.readError = readError
+  }
+
+  override slice(start?: number, end?: number, contentType?: string): Blob {
+    const blob = super.slice(start, end, contentType)
+    if (this.hasFailed) {
+      return blob
+    }
+
+    this.hasFailed = true
+    return {
+      text: async () => {
+        this.onReadFailure?.()
+        throw this.readError
+      },
+    } as unknown as Blob
   }
 }
 
