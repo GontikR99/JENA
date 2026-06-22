@@ -12,6 +12,7 @@ import (
 	"jena/backend/internal/app"
 	"jena/backend/internal/authservice"
 	"jena/backend/internal/broadcastservice"
+	"jena/backend/internal/characterstore"
 	"jena/backend/internal/config"
 	"jena/backend/internal/database"
 	"jena/backend/internal/eventbus"
@@ -95,6 +96,13 @@ func run(args []string) error {
 
 	worldwidePresenceService := worldwidepresenceservice.New(bus, installedLogger)
 	app.Install(container, worldwidePresenceService)
+
+	characterStore, err := characterstore.New(context.Background(), bus, db, authService)
+	if err != nil {
+		return err
+	}
+	defer characterStore.Dispose()
+	app.Install(container, characterStore)
 
 	triggerStore, err := triggerstore.New(context.Background(), bus, db, installedLogger)
 	if err != nil {

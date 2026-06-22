@@ -3,6 +3,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react'
@@ -11,6 +12,10 @@ import type {
   CharacterPresenceCharactersMessage,
 } from '../shared/messages'
 import { useListen, useRpc } from '../shared/messageBrokerHooks'
+import type { JenaCharacterServer } from '../shared/triggers'
+import { useAuth } from '../auth/authContext'
+
+const characterSyncIntervalMs = 60_000
 
 const LocalCharactersContext = createContext<CharacterPresence[] | null>(null)
 
@@ -18,16 +23,26 @@ interface LocalCharactersProviderProps {
   children: ReactNode
 }
 
+interface CharacterIdentity {
+  characterName: string
+  serverName: string
+}
+
 export function LocalCharactersProvider({
   children,
 }: LocalCharactersProviderProps) {
-  const callWorker = useRpc('local-characters-provider')
-  const [charactersByKey, setCharactersByKey] = useState<
+  const { status } = useAuth()
+  const call = useRpc('local-characters-provider')
+  const [localCharactersByKey, setLocalCharactersByKey] = useState<
     Map<string, CharacterPresence>
   >(() => new Map())
+  const [serverCharactersByKey, setServerCharactersByKey] = useState<
+    Map<string, JenaCharacterServer>
+  >(() => new Map())
+  const localCharactersByKeyRef = useRef(localCharactersByKey)
 
   useListen('character-presence.characters', (message) => {
-    setCharactersByKey(
+    setLocalCharactersByKey(
       getCharactersByKey(
         (message.payload as CharacterPresenceCharactersMessage).characters,
       ),
@@ -37,10 +52,10 @@ export function LocalCharactersProvider({
   useEffect(() => {
     let isCurrent = true
 
-    void callWorker('worker.character-presence', 'getCharacters', {})
+    void call('worker.character-presence', 'getCharacters', {})
       .then(({ characters }) => {
         if (isCurrent) {
-          setCharactersByKey(getCharactersByKey(characters))
+          setLocalCharactersByKey(getCharactersByKey(characters))
         }
       })
       .catch((error: unknown) => {
@@ -50,11 +65,64 @@ export function LocalCharactersProvider({
     return () => {
       isCurrent = false
     }
-  }, [callWorker])
+  }, [call])
+
+  useEffect(() => {
+    localCharactersByKeyRef.current = localCharactersByKey
+  }, [localCharactersByKey])
+
+  useEffect(() => {
+    if (status !== 'authenticated') {
+      setServerCharactersByKey(new Map())
+      return
+    }
+
+    let isCurrent = true
+
+    const syncCharacters = async () => {
+      const characters = [...localCharactersByKeyRef.current.values()].map(
+        toCharacterServer,
+      )
+
+      try {
+        const response = await call(
+          'server.character-store',
+          'syncCharacters',
+          { characters },
+        )
+        if (isCurrent) {
+          setServerCharactersByKey(
+            getServerCharactersByKey(response.characters),
+          )
+        }
+      } catch (error) {
+        if (isCurrent) {
+          console.warn(
+            '[LocalCharactersProvider] unable to sync user characters',
+            error,
+          )
+        }
+      }
+    }
+
+    void syncCharacters()
+    const intervalId = globalThis.setInterval(
+      () => void syncCharacters(),
+      characterSyncIntervalMs,
+    )
+
+    return () => {
+      isCurrent = false
+      globalThis.clearInterval(intervalId)
+    }
+  }, [call, status])
 
   const characters = useMemo(
-    () => sortCharactersForDisplay([...charactersByKey.values()]),
-    [charactersByKey],
+    () =>
+      sortCharactersForDisplay(
+        mergeCharacters(serverCharactersByKey, localCharactersByKey),
+      ),
+    [localCharactersByKey, serverCharactersByKey],
   )
 
   return (
@@ -84,7 +152,42 @@ function getCharactersByKey(characters: CharacterPresence[]) {
   )
 }
 
-function getCharacterKey(character: CharacterPresence) {
+function getServerCharactersByKey(characters: JenaCharacterServer[]) {
+  return new Map(
+    characters.map((character) => [getCharacterKey(character), character]),
+  )
+}
+
+export function mergeCharacters(
+  serverCharactersByKey: Map<string, JenaCharacterServer>,
+  localCharactersByKey: Map<string, CharacterPresence>,
+) {
+  const merged = new Map<string, CharacterPresence>()
+
+  for (const [key, character] of serverCharactersByKey) {
+    merged.set(key, {
+      active: false,
+      characterName: character.characterName,
+      serverName: character.serverName,
+      zone: '',
+    })
+  }
+
+  for (const [key, character] of localCharactersByKey) {
+    merged.set(key, character)
+  }
+
+  return [...merged.values()]
+}
+
+function toCharacterServer(character: CharacterPresence): JenaCharacterServer {
+  return {
+    characterName: character.characterName,
+    serverName: character.serverName,
+  }
+}
+
+function getCharacterKey(character: CharacterIdentity) {
   return `${character.serverName.trim().toLocaleLowerCase()}\0${character.characterName.trim().toLocaleLowerCase()}`
 }
 

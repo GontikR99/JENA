@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import type { CharacterPresence } from '../../shared/messages'
-import { sortCharactersForDisplay } from '../LocalCharactersProvider'
+import type { JenaCharacterServer } from '../../shared/triggers'
+import {
+  mergeCharacters,
+  sortCharactersForDisplay,
+} from '../LocalCharactersProvider'
 
 describe('LocalCharactersProvider helpers', () => {
   it('sorts active characters before inactive characters', () => {
@@ -16,6 +20,49 @@ describe('LocalCharactersProvider helpers', () => {
       character('Suuloti', false),
     ])
   })
+
+  it('includes server roster characters as inactive characters', () => {
+    expect(
+      mergeCharacters(
+        characterServersByKey([
+          { characterName: 'Joram', serverName: 'Fangbreaker' },
+        ]),
+        new Map(),
+      ),
+    ).toEqual([
+      {
+        active: false,
+        characterName: 'Joram',
+        serverName: 'Fangbreaker',
+        zone: '',
+      },
+    ])
+  })
+
+  it('uses local presence over server roster rows', () => {
+    expect(
+      mergeCharacters(
+        characterServersByKey([
+          { characterName: 'jephine', serverName: 'fangbreaker' },
+        ]),
+        charactersByKey([
+          {
+            active: true,
+            characterName: 'Jephine',
+            serverName: 'Fangbreaker',
+            zone: 'Tacvi',
+          },
+        ]),
+      ),
+    ).toEqual([
+      {
+        active: true,
+        characterName: 'Jephine',
+        serverName: 'Fangbreaker',
+        zone: 'Tacvi',
+      },
+    ])
+  })
 })
 
 function character(
@@ -28,4 +75,22 @@ function character(
     serverName: 'Bristlebane',
     zone: '',
   }
+}
+
+function charactersByKey(characters: CharacterPresence[]) {
+  return new Map(
+    characters.map((entry) => [
+      `${entry.serverName.toLocaleLowerCase()}\0${entry.characterName.toLocaleLowerCase()}`,
+      entry,
+    ]),
+  )
+}
+
+function characterServersByKey(characters: JenaCharacterServer[]) {
+  return new Map(
+    characters.map((entry) => [
+      `${entry.serverName.toLocaleLowerCase()}\0${entry.characterName.toLocaleLowerCase()}`,
+      entry,
+    ]),
+  )
 }

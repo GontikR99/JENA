@@ -159,6 +159,14 @@ export interface CharacterPresenceCharactersMessage {
   characters: CharacterPresence[]
 }
 
+export interface UserCharacterSyncRequest {
+  characters: JenaCharacterServer[]
+}
+
+export interface UserCharacterSyncResponse {
+  characters: JenaCharacterServer[]
+}
+
 export interface AuthenticatedUser {
   avatarUrl?: string
   discordId: string
@@ -349,6 +357,12 @@ export interface RpcEndpoints {
         userBroadcastMode?: 'boxes' | 'subscribers'
       }
       response: Record<string, never>
+    }
+  }
+  'server.character-store': {
+    syncCharacters: {
+      request: UserCharacterSyncRequest
+      response: UserCharacterSyncResponse
     }
   }
   'server.subscriptions': {

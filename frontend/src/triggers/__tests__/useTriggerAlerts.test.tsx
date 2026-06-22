@@ -330,6 +330,7 @@ describe('useTriggerAlerts', () => {
   it('applies character name decoration to trigger match hook callbacks by default', () => {
     const callback = vi.fn()
     const alert = createTriggerAlert({
+      clipboardText: 'Clipboard alert',
       displayText: 'Display alert',
       speechText: 'Speech alert',
       timerName: 'Timer alert',
@@ -342,9 +343,27 @@ describe('useTriggerAlerts', () => {
     expect(callback).toHaveBeenCalledTimes(1)
     const event = callback.mock.calls[0]?.[0] as TriggerMatchEvent
     expect(event.origin).toBe('local')
+    expect(event.alert.clipboardText).toBe('Clipboard alert')
     expect(event.alert.displayText).toBe('[Mesozoic] Display alert')
     expect(event.alert.speechText).toBe('[Mesozoic] Speech alert')
     expect(event.alert.timerName).toBe('Timer alert')
+  })
+
+  it('does not apply character name decoration to clipboard text', () => {
+    const callback = vi.fn()
+    hookState.includeCharacterNameForTriggerMatches = 'always'
+
+    renderHook(() => useOnTriggerMatch(callback), { wrapper })
+    emit(
+      'alert.trigger-matched',
+      createTriggerAlert({
+        clipboardText: 'Clipboard alert',
+      }),
+    )
+
+    expect(callback).toHaveBeenCalledTimes(1)
+    const event = callback.mock.calls[0]?.[0] as TriggerMatchEvent
+    expect(event.alert.clipboardText).toBe('Clipboard alert')
   })
 
   it('can opt out of trigger match hook decoration', () => {
