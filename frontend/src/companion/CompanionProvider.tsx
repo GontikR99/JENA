@@ -84,7 +84,6 @@ export function CompanionProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (status !== 'open') {
-      setInfo(null)
       return
     }
 
@@ -118,18 +117,20 @@ export function CompanionProvider({ children }: { children: ReactNode }) {
     [broker],
   )
 
+  const effectiveInfo = status === 'open' ? info : null
+
   const value = useMemo(
     () => ({
-      appName: info?.appName ?? null,
-      appVersion: info?.version ?? null,
-      capabilities: info?.capabilities ?? [],
-      isAvailable: status === 'open' && info !== null,
-      protocolVersion: info?.protocolVersion ?? null,
+      appName: effectiveInfo?.appName ?? null,
+      appVersion: effectiveInfo?.version ?? null,
+      capabilities: effectiveInfo?.capabilities ?? [],
+      isAvailable: effectiveInfo !== null,
+      protocolVersion: effectiveInfo?.protocolVersion ?? null,
       refresh,
       status,
       writeClipboardText,
     }),
-    [info, refresh, status, writeClipboardText],
+    [effectiveInfo, refresh, status, writeClipboardText],
   )
 
   return (

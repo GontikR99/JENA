@@ -10,11 +10,13 @@ import ProgressBar from 'react-bootstrap/ProgressBar'
 import toast from 'react-hot-toast'
 import type { CharacterPresence } from '../../shared/messages'
 import {
-  BINARY,
   FourStateCheckbox,
-  QUATERNARY,
   type FourStateCheckboxState,
 } from '../../shared/widgets/FourStateCheckbox'
+import {
+  BINARY,
+  QUATERNARY,
+} from '../../shared/widgets/fourStateCheckboxModes'
 import {
   getJenaCharacterServerKey,
   type JenaCharacterServer,

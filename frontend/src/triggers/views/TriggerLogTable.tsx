@@ -14,6 +14,7 @@ export function TriggerLogTable({
   records,
 }: TriggerLogTableProps) {
   const scrollRef = useRef<HTMLDivElement | null>(null)
+  // eslint-disable-next-line react-hooks/incompatible-library
   const rowVirtualizer = useVirtualizer({
     count: records.length,
     estimateSize: () => rowHeightPx,

@@ -18,5 +18,24 @@ export default defineConfig([
     languageOptions: {
       globals: globals.browser,
     },
+    rules: {
+      'react-refresh/only-export-components': [
+        'error',
+        {
+          allowConstantExport: true,
+          allowExportNames: [
+            'useAlertEventCoordinator',
+            'useCompanion',
+            'useLocalCharacters',
+            'useSubscribedTriggerManager',
+            'useTriggerLog',
+            'useTriggerManager',
+            'useTriggerRuntime',
+            'useTriggerStore',
+            'useTriggerStoreProgress',
+          ],
+        },
+      ],
+    },
   },
 ])

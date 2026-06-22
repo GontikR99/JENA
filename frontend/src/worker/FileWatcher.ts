@@ -512,11 +512,14 @@ export class FileWatcher {
 
         const nextFile = await this.getLogFile(logFile)
         if (!nextFile) {
-          throw new Error('Log file was not found while retrying search read.')
+          throw new Error('Log file was not found while retrying search read.', {
+            cause: error,
+          })
         }
         if (nextFile.size < endOffset) {
           throw new Error(
             'Log file became smaller while search was in progress.',
+            { cause: error },
           )
         }
 

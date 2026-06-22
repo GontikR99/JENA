@@ -117,6 +117,7 @@ export function useTriggerStore() {
   return store
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export class WriteThroughTriggerStore implements TriggerStoreApi {
   private readonly cachedTriggers = new Map<JenaTriggerId, JenaTrigger>()
   private readonly cache: TriggerCache
@@ -555,6 +556,7 @@ async function resolvePendingTriggers(
   return resolvedTriggers
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export class InMemoryTriggerCache implements TriggerCache {
   private readonly triggers = new Map<JenaTriggerId, JenaTrigger>()
 

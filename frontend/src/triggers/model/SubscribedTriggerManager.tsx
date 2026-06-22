@@ -320,6 +320,70 @@ export function SubscribedTriggerManagerProvider({
     [publishState],
   )
 
+  function removeSubscriptionLocally(subscriptionId: string) {
+    subscriptionIdsRef.current.delete(subscriptionId)
+    snapshotsRef.current.delete(subscriptionId)
+    defaultEnablementRef.current = defaultEnablementRef.current.filter(
+      (record) => record.subscriptionId !== subscriptionId,
+    )
+    triggerEnablementRef.current = triggerEnablementRef.current.filter(
+      (record) => record.subscriptionId !== subscriptionId,
+    )
+  }
+
+  function upsertSubscriptionDefaultEnablementLocally(
+    subscriptionId: string,
+    character: JenaCharacterServer,
+    mode: SubscriptionDefaultEnablementMode,
+  ) {
+    subscriptionIdsRef.current.add(subscriptionId)
+    const recordKey = getCharacterRecordKey(subscriptionId, character)
+    defaultEnablementRef.current = [
+      ...defaultEnablementRef.current.filter(
+        (record) =>
+          getCharacterRecordKey(record.subscriptionId, record.character) !==
+          recordKey,
+      ),
+      {
+        character,
+        mode,
+        subscriptionId,
+      },
+    ]
+  }
+
+  function upsertSubscribedTriggerEnablementLocally(
+    subscriptionId: string,
+    triggerId: JenaTriggerId,
+    character: JenaCharacterServer,
+    mode: SubscribedTriggerEnablementMode,
+  ) {
+    subscriptionIdsRef.current.add(subscriptionId)
+    const recordKey = getTriggerRecordKey(subscriptionId, triggerId, character)
+    triggerEnablementRef.current = triggerEnablementRef.current.filter(
+      (record) =>
+        getTriggerRecordKey(
+          record.subscriptionId,
+          record.triggerId,
+          record.character,
+        ) !== recordKey,
+    )
+
+    if (mode === 'inherit') {
+      return
+    }
+
+    triggerEnablementRef.current = [
+      ...triggerEnablementRef.current,
+      {
+        character,
+        mode,
+        subscriptionId,
+        triggerId,
+      },
+    ]
+  }
+
   const syncSubscriptions = useCallback(async () => {
     const subscriptionIds = [...subscriptionIdsRef.current]
     if (subscriptionIds.length === 0) {
@@ -618,68 +682,6 @@ export function SubscribedTriggerManagerProvider({
       state,
     ],
   )
-
-  function removeSubscriptionLocally(subscriptionId: string) {
-    subscriptionIdsRef.current.delete(subscriptionId)
-    snapshotsRef.current.delete(subscriptionId)
-    defaultEnablementRef.current = defaultEnablementRef.current.filter(
-      (record) => record.subscriptionId !== subscriptionId,
-    )
-    triggerEnablementRef.current = triggerEnablementRef.current.filter(
-      (record) => record.subscriptionId !== subscriptionId,
-    )
-  }
-
-  function upsertSubscriptionDefaultEnablementLocally(
-    subscriptionId: string,
-    character: JenaCharacterServer,
-    mode: SubscriptionDefaultEnablementMode,
-  ) {
-    subscriptionIdsRef.current.add(subscriptionId)
-    const recordKey = getCharacterRecordKey(subscriptionId, character)
-    defaultEnablementRef.current = [
-      ...defaultEnablementRef.current.filter(
-        (record) => getCharacterRecordKey(record.subscriptionId, record.character) !== recordKey,
-      ),
-      {
-        character,
-        mode,
-        subscriptionId,
-      },
-    ]
-  }
-
-  function upsertSubscribedTriggerEnablementLocally(
-    subscriptionId: string,
-    triggerId: JenaTriggerId,
-    character: JenaCharacterServer,
-    mode: SubscribedTriggerEnablementMode,
-  ) {
-    subscriptionIdsRef.current.add(subscriptionId)
-    const recordKey = getTriggerRecordKey(subscriptionId, triggerId, character)
-    triggerEnablementRef.current = triggerEnablementRef.current.filter(
-      (record) =>
-        getTriggerRecordKey(
-          record.subscriptionId,
-          record.triggerId,
-          record.character,
-        ) !== recordKey,
-    )
-
-    if (mode === 'inherit') {
-      return
-    }
-
-    triggerEnablementRef.current = [
-      ...triggerEnablementRef.current,
-      {
-        character,
-        mode,
-        subscriptionId,
-        triggerId,
-      },
-    ]
-  }
 
   return (
     <SubscribedTriggerManagerContext.Provider value={value}>

@@ -1,4 +1,5 @@
 import './FourStateCheckbox.css'
+import { QUATERNARY } from './fourStateCheckboxModes'
 
 export type FourStateCheckboxState =
   | 'disabled'
@@ -10,21 +11,6 @@ export interface FourStateCheckboxMode {
   cycleOrder: readonly FourStateCheckboxState[]
   mixedNextState: FourStateCheckboxState
 }
-
-export const BINARY = {
-  cycleOrder: ['disabled', 'enabled'],
-  mixedNextState: 'enabled',
-} satisfies FourStateCheckboxMode
-
-export const TERNARY = {
-  cycleOrder: ['disabled', 'enabled'],
-  mixedNextState: 'enabled',
-} satisfies FourStateCheckboxMode
-
-export const QUATERNARY = {
-  cycleOrder: ['inherit', 'enabled', 'disabled'],
-  mixedNextState: 'inherit',
-} satisfies FourStateCheckboxMode
 
 export interface FourStateCheckboxProps {
   ariaLabel?: string

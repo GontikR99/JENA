@@ -17,7 +17,8 @@ import type {
 } from '../shared/messages'
 import { createMessageId } from '../shared/messages'
 import { useListen, useRpc } from '../shared/messageBrokerHooks'
-import { BINARY, FourStateCheckbox } from '../shared/widgets/FourStateCheckbox'
+import { FourStateCheckbox } from '../shared/widgets/FourStateCheckbox'
+import { BINARY } from '../shared/widgets/fourStateCheckboxModes'
 import './SearchView.css'
 
 type SearchStatus = 'canceled' | 'complete' | 'error' | 'idle' | 'running'
@@ -97,6 +98,7 @@ export function SearchView() {
     () => sortResults(results, sortStack),
     [results, sortStack],
   )
+  // eslint-disable-next-line react-hooks/incompatible-library
   const rowVirtualizer = useVirtualizer({
     count: visibleResults.length,
     estimateSize: () => rowHeightPx,

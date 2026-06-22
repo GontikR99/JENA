@@ -3,7 +3,8 @@ import type {
   JenaClipboardAction,
   JenaTextAction,
 } from '../../shared/triggers'
-import { BINARY, FourStateCheckbox } from '../../shared/widgets/FourStateCheckbox'
+import { FourStateCheckbox } from '../../shared/widgets/FourStateCheckbox'
+import { BINARY } from '../../shared/widgets/fourStateCheckboxModes'
 import { Section } from './Section'
 
 interface TextSettingsSectionProps {

@@ -9,7 +9,8 @@ import {
   type TriggerEditorTimerState,
 } from './triggerEditorModel'
 import type { JenaTimerEarlyEnder } from '../../shared/triggers'
-import { BINARY, FourStateCheckbox } from '../../shared/widgets/FourStateCheckbox'
+import { FourStateCheckbox } from '../../shared/widgets/FourStateCheckbox'
+import { BINARY } from '../../shared/widgets/fourStateCheckboxModes'
 
 interface TimerTabProps {
   onChange: (timer: TriggerEditorTimerState) => void

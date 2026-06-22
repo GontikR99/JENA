@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import Button from 'react-bootstrap/Button'
 import Form from 'react-bootstrap/Form'
 import type { JenaSpeechAction } from '../../shared/triggers'
 import type { CharacterPresence } from '../../shared/messages'
-import { BINARY, FourStateCheckbox } from '../../shared/widgets/FourStateCheckbox'
+import { FourStateCheckbox } from '../../shared/widgets/FourStateCheckbox'
+import { BINARY } from '../../shared/widgets/fourStateCheckboxModes'
 import { Section } from './Section'
 import type { TriggerEditorAudioMode } from './triggerEditorModel'
 
@@ -39,17 +40,11 @@ export function AudioSettingsSection({
   const [selectedCharacterKey, setSelectedCharacterKey] = useState(
     characterOptions[0]?.key ?? '',
   )
-
-  useEffect(() => {
-    if (
-      selectedCharacterKey &&
-      characterOptions.some((option) => option.key === selectedCharacterKey)
-    ) {
-      return
-    }
-
-    setSelectedCharacterKey(characterOptions[0]?.key ?? '')
-  }, [characterOptions, selectedCharacterKey])
+  const effectiveSelectedCharacterKey = characterOptions.some(
+    (option) => option.key === selectedCharacterKey,
+  )
+    ? selectedCharacterKey
+    : characterOptions[0]?.key ?? ''
 
   function setMode(mode: TriggerEditorAudioMode) {
     onChange?.({
@@ -70,7 +65,7 @@ export function AudioSettingsSection({
 
   function handleTestSpeech() {
     const selectedCharacter = characterOptions.find(
-      (option) => option.key === selectedCharacterKey,
+      (option) => option.key === effectiveSelectedCharacterKey,
     )?.character
 
     if (selectedCharacter) {
@@ -138,7 +133,7 @@ export function AudioSettingsSection({
             disabled={characterOptions.length === 0}
             onChange={(event) => setSelectedCharacterKey(event.currentTarget.value)}
             size="sm"
-            value={selectedCharacterKey}
+            value={effectiveSelectedCharacterKey}
           >
             {characterOptions.length > 0 ? (
               characterOptions.map(({ character, key }) => (

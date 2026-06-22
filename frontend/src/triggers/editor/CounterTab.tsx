@@ -1,4 +1,5 @@
-import { BINARY, FourStateCheckbox } from '../../shared/widgets/FourStateCheckbox'
+import { FourStateCheckbox } from '../../shared/widgets/FourStateCheckbox'
+import { BINARY } from '../../shared/widgets/fourStateCheckboxModes'
 import { DurationInput } from './DurationInput'
 
 export function CounterTab() {

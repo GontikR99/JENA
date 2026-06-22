@@ -107,11 +107,7 @@ export function TriggerSpeechService() {
     currentUtteranceRef.current = utterance
     synthesis.speak(utterance)
   }, [
-    machineSettings.tts.pitch,
-    machineSettings.tts.rate,
-    machineSettings.tts.useBroadcasterSpeechProfile,
-    machineSettings.tts.voiceURI,
-    machineSettings.tts.volume,
+    machineSettings.tts,
     voiceByURI,
     warnUnsupported,
   ])

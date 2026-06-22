@@ -1,5 +1,6 @@
 import type { CharacterPresence } from '../../shared/messages'
-import { BINARY, FourStateCheckbox } from '../../shared/widgets/FourStateCheckbox'
+import { FourStateCheckbox } from '../../shared/widgets/FourStateCheckbox'
+import { BINARY } from '../../shared/widgets/fourStateCheckboxModes'
 import { AudioSettingsSection } from './AudioSettingsSection'
 import { DurationInput } from './DurationInput'
 import { TextSettingsSection } from './TextSettingsSection'

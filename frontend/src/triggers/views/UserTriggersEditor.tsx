@@ -26,9 +26,9 @@ import {
 } from '../../shared/triggers'
 import {
   FourStateCheckbox,
-  TERNARY,
   type FourStateCheckboxState,
 } from '../../shared/widgets/FourStateCheckbox'
+import { TERNARY } from '../../shared/widgets/fourStateCheckboxModes'
 import { IconTriStateToggle } from '../../shared/widgets/IconTriStateToggle'
 import type { IconTriStateToggleState } from '../../shared/widgets/IconTriStateToggle'
 import { TriggerEditorDialog } from '../editor/TriggerEditorDialog'
@@ -2770,11 +2770,30 @@ function formatDuration(durationMs: number) {
 function sanitizeExportFileName(value: string) {
   const sanitized = value
     .trim()
-    .replace(/[<>:"/\\|?*\u0000-\u001f]/g, '-')
+    .split('')
+    .map((character) =>
+      isInvalidExportFileNameCharacter(character) ? '-' : character,
+    )
+    .join('')
     .replace(/\s+/g, ' ')
     .replace(/[. ]+$/g, '')
 
   return sanitized || 'jena-triggers'
+}
+
+function isInvalidExportFileNameCharacter(character: string) {
+  return (
+    character.charCodeAt(0) < 32 ||
+    character === '<' ||
+    character === '>' ||
+    character === ':' ||
+    character === '"' ||
+    character === '/' ||
+    character === '\\' ||
+    character === '|' ||
+    character === '?' ||
+    character === '*'
+  )
 }
 
 function downloadBytes(bytes: Uint8Array, fileName: string) {

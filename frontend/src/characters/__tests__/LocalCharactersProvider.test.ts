@@ -4,7 +4,7 @@ import type { JenaCharacterServer } from '../../shared/triggers'
 import {
   mergeCharacters,
   sortCharactersForDisplay,
-} from '../LocalCharactersProvider'
+} from '../localCharacterHelpers'
 
 describe('LocalCharactersProvider helpers', () => {
   it('sorts active characters before inactive characters', () => {

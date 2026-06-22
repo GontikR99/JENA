@@ -15,6 +15,11 @@ import type {
 import { useListen, useRpc } from '../shared/messageBrokerHooks'
 import type { JenaCharacterServer } from '../shared/triggers'
 import { useAuth } from '../auth/authContext'
+import {
+  getCharacterKey,
+  mergeCharacters,
+  sortCharactersForDisplay,
+} from './localCharacterHelpers'
 
 const characterSyncIntervalMs = 60_000
 
@@ -22,11 +27,6 @@ const LocalCharactersContext = createContext<CharacterPresence[] | null>(null)
 
 interface LocalCharactersProviderProps {
   children: ReactNode
-}
-
-interface CharacterIdentity {
-  characterName: string
-  serverName: string
 }
 
 export function LocalCharactersProvider({
@@ -74,7 +74,6 @@ export function LocalCharactersProvider({
 
   useEffect(() => {
     if (status !== 'authenticated') {
-      setServerCharactersByKey(new Map())
       return
     }
 
@@ -118,12 +117,20 @@ export function LocalCharactersProvider({
     }
   }, [call, status])
 
+  const effectiveServerCharactersByKey = useMemo(() => {
+    if (status !== 'authenticated') {
+      return new Map<string, JenaCharacterServer>()
+    }
+
+    return serverCharactersByKey
+  }, [serverCharactersByKey, status])
+
   const characters = useMemo(
     () =>
       sortCharactersForDisplay(
-        mergeCharacters(serverCharactersByKey, localCharactersByKey),
+        mergeCharacters(effectiveServerCharactersByKey, localCharactersByKey),
       ),
-    [localCharactersByKey, serverCharactersByKey],
+    [effectiveServerCharactersByKey, localCharactersByKey],
   )
 
   return (
@@ -143,10 +150,6 @@ export function useLocalCharacters() {
   return characters
 }
 
-export function sortCharactersForDisplay(characters: CharacterPresence[]) {
-  return [...characters].sort(compareCharactersForDisplay)
-}
-
 function getCharactersByKey(characters: CharacterPresence[]) {
   return new Map(
     characters.map((character) => [getCharacterKey(character), character]),
@@ -159,29 +162,6 @@ function getServerCharactersByKey(characters: JenaCharacterServer[]) {
   )
 }
 
-export function mergeCharacters(
-  serverCharactersByKey: Map<string, JenaCharacterServer>,
-  localCharactersByKey: Map<string, CharacterPresence>,
-) {
-  const merged = new Map<string, CharacterPresence>()
-
-  for (const [key, character] of serverCharactersByKey) {
-    merged.set(key, {
-      active: false,
-      characterName: character.characterName,
-      lastLogWriteMs: 0,
-      serverName: character.serverName,
-      zone: '',
-    })
-  }
-
-  for (const [key, character] of localCharactersByKey) {
-    merged.set(key, character)
-  }
-
-  return [...merged.values()]
-}
-
 function toCharacterServer(
   character: CharacterPresence,
 ): UserCharacterSyncRecord {
@@ -190,30 +170,4 @@ function toCharacterServer(
     lastLogWriteMs: character.lastLogWriteMs,
     serverName: character.serverName,
   }
-}
-
-function getCharacterKey(character: CharacterIdentity) {
-  return `${character.serverName.trim().toLocaleLowerCase()}\0${character.characterName.trim().toLocaleLowerCase()}`
-}
-
-function compareCharactersForDisplay(
-  left: CharacterPresence,
-  right: CharacterPresence,
-) {
-  if (left.active !== right.active) {
-    return left.active ? -1 : 1
-  }
-
-  const characterComparison = left.characterName.localeCompare(
-    right.characterName,
-    undefined,
-    { sensitivity: 'base' },
-  )
-  if (characterComparison !== 0) {
-    return characterComparison
-  }
-
-  return left.serverName.localeCompare(right.serverName, undefined, {
-    sensitivity: 'base',
-  })
 }
