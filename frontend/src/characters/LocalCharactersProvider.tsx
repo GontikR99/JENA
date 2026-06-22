@@ -10,6 +10,7 @@ import {
 import type {
   CharacterPresence,
   CharacterPresenceCharactersMessage,
+  UserCharacterSyncRecord,
 } from '../shared/messages'
 import { useListen, useRpc } from '../shared/messageBrokerHooks'
 import type { JenaCharacterServer } from '../shared/triggers'
@@ -168,6 +169,7 @@ export function mergeCharacters(
     merged.set(key, {
       active: false,
       characterName: character.characterName,
+      lastLogWriteMs: 0,
       serverName: character.serverName,
       zone: '',
     })
@@ -180,9 +182,12 @@ export function mergeCharacters(
   return [...merged.values()]
 }
 
-function toCharacterServer(character: CharacterPresence): JenaCharacterServer {
+function toCharacterServer(
+  character: CharacterPresence,
+): UserCharacterSyncRecord {
   return {
     characterName: character.characterName,
+    lastLogWriteMs: character.lastLogWriteMs,
     serverName: character.serverName,
   }
 }

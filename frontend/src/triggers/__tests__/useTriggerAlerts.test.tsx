@@ -31,6 +31,7 @@ const hookState = vi.hoisted(() => ({
   localCharacters: [] as Array<{
     active: boolean
     characterName: string
+    lastLogWriteMs: number
     serverName: string
     zone: string
   }>,
@@ -469,6 +470,7 @@ describe('useTriggerAlerts', () => {
       {
         active: true,
         characterName: 'Mesozoic',
+        lastLogWriteMs: 1,
         serverName: 'Bristlebane',
         zone: 'Guild Lobby',
       },
@@ -500,6 +502,7 @@ describe('useTriggerAlerts', () => {
       {
         active: false,
         characterName: 'Mesozoic',
+        lastLogWriteMs: 1,
         serverName: 'Bristlebane',
         zone: 'Guild Lobby',
       },
@@ -527,6 +530,7 @@ describe('useTriggerAlerts', () => {
       {
         active: false,
         characterName: 'Mesozoic',
+        lastLogWriteMs: 1,
         serverName: 'Bristlebane',
         zone: 'Guild Lobby',
       },

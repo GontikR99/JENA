@@ -38,6 +38,7 @@ const resolvedTriggers: JenaResolvedTrigger[] = [
 const selectedCharacter: CharacterPresence = {
   active: true,
   characterName: 'Mesozoic',
+  lastLogWriteMs: 1,
   serverName: 'Bristlebane',
   zone: 'Yxtta',
 }

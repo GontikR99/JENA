@@ -25,6 +25,7 @@ const hookState = vi.hoisted(() => ({
   localCharacters: [] as Array<{
     active: boolean
     characterName: string
+    lastLogWriteMs: number
     serverName: string
     zone: string
   }>,
@@ -240,6 +241,7 @@ describe('broadcast timer runtime integration', () => {
       {
         active: true,
         characterName: 'Mesozoic',
+        lastLogWriteMs: 1,
         serverName: 'Bristlebane',
         zone: 'Guild Lobby',
       },

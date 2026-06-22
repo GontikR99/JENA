@@ -14,6 +14,8 @@ import { CharacterPresenceService } from '../CharacterPresenceService'
 import { MatcherService } from '../MatcherService'
 import { MessageBroker as WorkerMessageBroker } from '../MessageBroker'
 
+const lastLogWriteMs = new Date(2026, 5, 22, 12, 0, 0).getTime()
+
 describe('CharacterPresenceService', () => {
   afterEach(() => {
     vi.useRealTimers()
@@ -35,7 +37,12 @@ describe('CharacterPresenceService', () => {
 
     broker.send('file-watcher', 'file-watcher.characters', {
       characters: [
-        { active: true, characterName: 'Arias', serverName: 'bertox' },
+        {
+          active: true,
+          characterName: 'Arias',
+          lastLogWriteMs,
+          serverName: 'bertox',
+        },
       ],
     } satisfies FileWatcherCharactersMessage)
     await flushAsyncWork()
@@ -45,6 +52,7 @@ describe('CharacterPresenceService', () => {
         {
           active: true,
           characterName: 'Arias',
+          lastLogWriteMs,
           serverName: 'bertox',
           zone: '',
         },
@@ -60,7 +68,12 @@ describe('CharacterPresenceService', () => {
 
     broker.send('file-watcher', 'file-watcher.characters', {
       characters: [
-        { active: true, characterName: 'Arias', serverName: 'bertox' },
+        {
+          active: true,
+          characterName: 'Arias',
+          lastLogWriteMs,
+          serverName: 'bertox',
+        },
       ],
     } satisfies FileWatcherCharactersMessage)
 
@@ -93,7 +106,12 @@ describe('CharacterPresenceService', () => {
 
     broker.send('file-watcher', 'file-watcher.characters', {
       characters: [
-        { active: true, characterName: 'Arias', serverName: 'bertox' },
+        {
+          active: true,
+          characterName: 'Arias',
+          lastLogWriteMs,
+          serverName: 'bertox',
+        },
       ],
     } satisfies FileWatcherCharactersMessage)
 
@@ -140,6 +158,7 @@ describe('CharacterPresenceService', () => {
     expect(result.characters).toContainEqual({
       active: true,
       characterName: 'Arias',
+      lastLogWriteMs,
       serverName: 'bertox',
       zone: 'The Nexus',
     })
@@ -152,7 +171,12 @@ describe('CharacterPresenceService', () => {
 
     broker.send('file-watcher', 'file-watcher.characters', {
       characters: [
-        { active: true, characterName: 'suuloti', serverName: 'bertox' },
+        {
+          active: true,
+          characterName: 'suuloti',
+          lastLogWriteMs,
+          serverName: 'bertox',
+        },
       ],
     } satisfies FileWatcherCharactersMessage)
 
@@ -198,7 +222,12 @@ describe('CharacterPresenceService', () => {
 
     broker.send('file-watcher', 'file-watcher.characters', {
       characters: [
-        { active: true, characterName: 'Arias', serverName: 'bertox' },
+        {
+          active: true,
+          characterName: 'Arias',
+          lastLogWriteMs,
+          serverName: 'bertox',
+        },
       ],
     } satisfies FileWatcherCharactersMessage)
     await flushMicrotasks()

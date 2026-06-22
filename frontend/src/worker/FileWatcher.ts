@@ -1,5 +1,6 @@
 import type {
   FileSystemDirectoryHandleLike,
+  FileSystemFileHandleLike,
   FileSystemHandleLike,
 } from '../shared/fileSystemAccess'
 import type {
@@ -14,6 +15,7 @@ import { MessageBroker } from './MessageBroker'
 const directoryScanIntervalMs = 100
 const tailIntervalMs = 10
 const characterActiveWindowMs = 30 * 60 * 1000
+export const stalePresenceLogFileMaxAgeMs = 90 * 24 * 60 * 60 * 1000
 const logSearchChunkSizeBytes = 512 * 1024
 const logSearchMaxMatches = 5000
 const logSearchMaxBinarySearchIterations = 64
@@ -1076,17 +1078,23 @@ export async function enumerateEverQuestLogs(
   const logs: EverQuestLogFile[] = []
 
   for await (const handle of logsDirectoryHandle.values()) {
-    if (handle.kind !== 'file') {
+    if (handle.kind !== 'file' || !('getFile' in handle)) {
       continue
     }
 
-    const logFile = parseEverQuestLogFileName(handle.name)
+    const fileHandle = handle as FileSystemFileHandleLike
+    const logFile = parseEverQuestLogFileName(fileHandle.name)
 
     if (!logFile) {
       continue
     }
 
-    logs.push(logFile)
+    const file = await fileHandle.getFile()
+
+    logs.push({
+      ...logFile,
+      lastLogWriteMs: file.lastModified,
+    })
   }
 
   return sortLogs(logs)
@@ -1106,7 +1114,9 @@ async function getLogsDirectoryHandle(
   }
 }
 
-function parseEverQuestLogFileName(fileName: string): EverQuestLogFile | null {
+function parseEverQuestLogFileName(
+  fileName: string,
+): Omit<EverQuestLogFile, 'lastLogWriteMs'> | null {
   const match = /^eqlog_([^_]+)_(.+)\.txt$/i.exec(fileName)
 
   if (!match) {
@@ -1145,12 +1155,18 @@ function getCharactersFromLogs(
   activeCharacterKeys: Set<string>,
 ): EverQuestCharacter[] {
   const charactersByKey = new Map<string, EverQuestCharacter>()
+  const cutoffMs = Date.now() - stalePresenceLogFileMaxAgeMs
 
   logs.forEach((log) => {
+    if (log.lastLogWriteMs < cutoffMs) {
+      return
+    }
+
     const key = getCharacterKey(log)
     const character = {
       active: activeCharacterKeys.has(key),
       characterName: log.characterName,
+      lastLogWriteMs: log.lastLogWriteMs,
       serverName: log.serverName,
     }
 
@@ -1163,7 +1179,7 @@ function getCharactersFromLogs(
 function getCharactersSignature(characters: EverQuestCharacter[]) {
   return characters
     .map((character) => {
-      return `${getCharacterKey(character)}\0${character.active ? '1' : '0'}`
+      return `${getCharacterKey(character)}\0${character.active ? '1' : '0'}\0${character.lastLogWriteMs}`
     })
     .join('\0')
 }

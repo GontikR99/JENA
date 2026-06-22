@@ -17,6 +17,7 @@ const hookState = vi.hoisted(() => ({
     {
       active: true,
       characterName: 'Mesozoic',
+      lastLogWriteMs: 1,
       serverName: 'Bristlebane',
       zone: 'Guild Lobby',
     },
@@ -131,6 +132,7 @@ describe('AlertCoordinationService', () => {
       {
         active: true,
         characterName: 'Mesozoic',
+        lastLogWriteMs: 1,
         serverName: 'Bristlebane',
         zone: 'Guild Lobby',
       },
@@ -143,6 +145,7 @@ describe('AlertCoordinationService', () => {
             {
               active: true,
               characterName: 'Mesozoic',
+              lastLogWriteMs: 1,
               serverName: 'Bristlebane',
               zone: 'Guild Lobby',
             },

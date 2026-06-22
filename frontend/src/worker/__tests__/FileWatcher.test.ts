@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type {
   FileSystemDirectoryHandleLike,
   FileSystemFileHandleLike,
@@ -14,11 +14,16 @@ import type {
 import { installInstance, type Deps } from '../di'
 import {
   FileWatcher,
+  stalePresenceLogFileMaxAgeMs,
   type EverQuestLogLineRecord,
 } from '../FileWatcher'
 import { MessageBroker as WorkerMessageBroker } from '../MessageBroker'
 
 describe('FileWatcher', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
   it('starts directory scanning when a file handle is set and answers getCharacters from cache', async () => {
     const {
       broker,
@@ -44,8 +49,18 @@ describe('FileWatcher', () => {
     const cachedResult = await getCharacters(broker)
 
     expect(firstResult.characters).toEqual([
-      { active: false, characterName: 'Arias', serverName: 'bertox' },
-      { active: false, characterName: 'Brell', serverName: 'seru' },
+      {
+        active: false,
+        characterName: 'Arias',
+        lastLogWriteMs: expect.any(Number),
+        serverName: 'bertox',
+      },
+      {
+        active: false,
+        characterName: 'Brell',
+        lastLogWriteMs: expect.any(Number),
+        serverName: 'seru',
+      },
     ])
     expect(secondResult).toEqual(firstResult)
     expect(cachedResult).toEqual(firstResult)
@@ -76,13 +91,28 @@ describe('FileWatcher', () => {
     expect(receivedMessages).toEqual([
       {
         characters: [
-          { active: false, characterName: 'Arias', serverName: 'bertox' },
+          {
+            active: false,
+            characterName: 'Arias',
+            lastLogWriteMs: expect.any(Number),
+            serverName: 'bertox',
+          },
         ],
       },
       {
         characters: [
-          { active: false, characterName: 'Arias', serverName: 'bertox' },
-          { active: false, characterName: 'Brell', serverName: 'seru' },
+          {
+            active: false,
+            characterName: 'Arias',
+            lastLogWriteMs: expect.any(Number),
+            serverName: 'bertox',
+          },
+          {
+            active: false,
+            characterName: 'Brell',
+            lastLogWriteMs: expect.any(Number),
+            serverName: 'seru',
+          },
         ],
       },
     ])
@@ -138,10 +168,51 @@ describe('FileWatcher', () => {
     ])
     expect(receivedMessages.at(-1)).toEqual({
       characters: [
-        { active: true, characterName: 'Arias', serverName: 'bertox' },
-        { active: false, characterName: 'Brell', serverName: 'seru' },
+        {
+          active: true,
+          characterName: 'Arias',
+          lastLogWriteMs: expect.any(Number),
+          serverName: 'bertox',
+        },
+        {
+          active: false,
+          characterName: 'Brell',
+          lastLogWriteMs: expect.any(Number),
+          serverName: 'seru',
+        },
       ],
     })
+  })
+
+  it('omits logs older than the presence freshness cutoff from character presence', async () => {
+    const freshLastModifiedMs = Date.now()
+
+    const { broker, fileWatcher, logsDirectory, setFileHandle } = createHarness(
+      [],
+    )
+    logsDirectory.addFile('eqlog_Arias_bertox.txt', '', freshLastModifiedMs)
+    logsDirectory.addFile(
+      'eqlog_Brell_seru.txt',
+      '',
+      Date.now() - stalePresenceLogFileMaxAgeMs - 1,
+    )
+
+    await setFileHandle()
+    await waitFor(async () => {
+      return (await getCharacters(broker)).characters.length === 1
+    })
+
+    const result = await getCharacters(broker)
+    fileWatcher.dispose()
+
+    expect(result.characters).toEqual([
+      {
+        active: false,
+        characterName: 'Arias',
+        lastLogWriteMs: freshLastModifiedMs,
+        serverName: 'bertox',
+      },
+    ])
   })
 
   it('stops directory scanning and tailing when the file handle is cleared', async () => {
@@ -361,15 +432,18 @@ class FakeFileHandle implements FileSystemFileHandleLike {
     onReadFailure?: () => void
   }> = []
   private readError: unknown = null
+  private lastModified: number
   private text: string
 
-  constructor(name: string, text = '') {
+  constructor(name: string, text = '', lastModified = Date.now()) {
     this.name = name
+    this.lastModified = lastModified
     this.text = text
   }
 
   append(text: string) {
     this.text += text
+    this.lastModified = Date.now()
   }
 
   failReadsWith(error: unknown) {
@@ -400,7 +474,9 @@ class FakeFileHandle implements FileSystemFileHandleLike {
       )
     }
 
-    return new File([this.text], this.name)
+    return new File([this.text], this.name, {
+      lastModified: this.lastModified,
+    })
   }
 }
 
@@ -450,8 +526,8 @@ class FakeDirectoryHandle implements FileSystemDirectoryHandleLike {
     this.handles.set(handle.name, handle)
   }
 
-  addFile(name: string, text = '') {
-    const handle = new FakeFileHandle(name, text)
+  addFile(name: string, text = '', lastModified = Date.now()) {
+    const handle = new FakeFileHandle(name, text, lastModified)
     this.handles.set(name, handle)
     return handle
   }

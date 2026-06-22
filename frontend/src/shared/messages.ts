@@ -141,6 +141,7 @@ export interface TriggerSpeechPreviewRequestedMessage {
 export interface EverQuestCharacter {
   active: boolean
   characterName: string
+  lastLogWriteMs: number
   serverName: string
 }
 
@@ -151,6 +152,7 @@ export interface FileWatcherCharactersMessage {
 export interface CharacterPresence {
   active: boolean
   characterName: string
+  lastLogWriteMs: number
   serverName: string
   zone: string
 }
@@ -160,11 +162,15 @@ export interface CharacterPresenceCharactersMessage {
 }
 
 export interface UserCharacterSyncRequest {
-  characters: JenaCharacterServer[]
+  characters: UserCharacterSyncRecord[]
 }
 
 export interface UserCharacterSyncResponse {
   characters: JenaCharacterServer[]
+}
+
+export interface UserCharacterSyncRecord extends JenaCharacterServer {
+  lastLogWriteMs: number
 }
 
 export interface AuthenticatedUser {
@@ -266,6 +272,7 @@ export interface CompanionClipboardWriteTextMessage {
 export interface EverQuestLogFile {
   characterName: string
   fileName: string
+  lastLogWriteMs: number
   serverName: string
 }
 

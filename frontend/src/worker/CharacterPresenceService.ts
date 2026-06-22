@@ -75,6 +75,7 @@ export class CharacterPresenceService {
       this.charactersByKey.set(key, {
         active: character.active,
         characterName: character.characterName,
+        lastLogWriteMs: character.lastLogWriteMs,
         serverName: character.serverName,
         zone: existingCharacter?.zone ?? '',
       })
@@ -112,6 +113,7 @@ export class CharacterPresenceService {
     this.charactersByKey.set(key, {
       active: existingCharacter?.active ?? true,
       characterName: message.characterName,
+      lastLogWriteMs: existingCharacter?.lastLogWriteMs ?? Date.now(),
       serverName: message.serverName,
       zone,
     })
@@ -140,6 +142,7 @@ export class CharacterPresenceService {
     this.charactersByKey.set(key, {
       active: existingCharacter?.active ?? true,
       characterName: existingCharacter?.characterName ?? message.characterName,
+      lastLogWriteMs: existingCharacter?.lastLogWriteMs ?? Date.now(),
       serverName: existingCharacter?.serverName ?? message.serverName,
       zone,
     })

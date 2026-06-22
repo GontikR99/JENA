@@ -10,12 +10,14 @@ const characters: CharacterPresence[] = [
   {
     active: true,
     characterName: 'Mesozoic',
+    lastLogWriteMs: 1,
     serverName: 'Bristlebane',
     zone: 'Yxtta',
   },
   {
     active: false,
     characterName: 'Suuloti',
+    lastLogWriteMs: 1,
     serverName: 'Bristlebane',
     zone: '',
   },

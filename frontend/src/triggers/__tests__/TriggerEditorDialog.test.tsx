@@ -13,6 +13,7 @@ const hookState = vi.hoisted(() => ({
   character: {
     active: true,
     characterName: 'Mesozoic',
+    lastLogWriteMs: 1,
     serverName: 'Bristlebane',
     zone: 'Yxtta',
   },

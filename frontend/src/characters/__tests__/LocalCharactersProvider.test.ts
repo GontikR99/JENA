@@ -33,6 +33,7 @@ describe('LocalCharactersProvider helpers', () => {
       {
         active: false,
         characterName: 'Joram',
+        lastLogWriteMs: 0,
         serverName: 'Fangbreaker',
         zone: '',
       },
@@ -49,6 +50,7 @@ describe('LocalCharactersProvider helpers', () => {
           {
             active: true,
             characterName: 'Jephine',
+            lastLogWriteMs: 1,
             serverName: 'Fangbreaker',
             zone: 'Tacvi',
           },
@@ -58,6 +60,7 @@ describe('LocalCharactersProvider helpers', () => {
       {
         active: true,
         characterName: 'Jephine',
+        lastLogWriteMs: 1,
         serverName: 'Fangbreaker',
         zone: 'Tacvi',
       },
@@ -72,6 +75,7 @@ function character(
   return {
     active,
     characterName,
+    lastLogWriteMs: 1,
     serverName: 'Bristlebane',
     zone: '',
   }
