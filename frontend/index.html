@@ -5,10 +5,114 @@
     <link rel="icon" type="image/png" href="/favicon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#111111" />
-    <title>Jephine's Event Notification Apparatus</title>
+    <meta
+      name="description"
+      content="JENA is a web-based EverQuest trigger tool for log-driven timers, alerts, published trigger subscriptions, and broadcast alerts."
+    />
+    <link rel="canonical" href="https://jena.tools/" />
+    <meta property="og:title" content="JENA - Web-Based EverQuest Trigger Alerts and Timers" />
+    <meta
+      property="og:description"
+      content="Run EverQuest trigger timers and alerts in the browser, publish and subscribe to trigger sets, and broadcast useful alerts across boxes or subscribers."
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://jena.tools/" />
+    <meta property="og:image" content="https://jena.tools/pwa-icon-512.png" />
+    <style>
+      .seo-fallback {
+        box-sizing: border-box;
+        max-width: 960px;
+        margin: 0 auto;
+        padding: 32px 20px 56px;
+        color: #222;
+        font-family:
+          system-ui,
+          -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          sans-serif;
+        line-height: 1.55;
+      }
+
+      .seo-fallback h1,
+      .seo-fallback h2 {
+        line-height: 1.15;
+      }
+
+      .seo-fallback h1 {
+        margin: 0 0 16px;
+        font-size: 2.5rem;
+      }
+
+      .seo-fallback h2 {
+        margin: 28px 0 8px;
+        font-size: 1.35rem;
+      }
+
+      .seo-fallback a {
+        color: #0b5ed7;
+      }
+    </style>
+    <title>JENA - Web-Based EverQuest Trigger Alerts and Timers</title>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <!-- Keep this crawler-visible summary aligned with frontend/src/info/InfoView.tsx. React replaces it after startup. -->
+      <main class="seo-fallback">
+        <h1>JENA: EverQuest triggers in your browser</h1>
+        <p>
+          Jephine's Event Notification Apparatus is a web-based EverQuest trigger tool. It reads local
+          EverQuest log files from a directory you choose, watches for matching trigger text, and shows
+          timers, text alerts, speech alerts, and other trigger actions while you play.
+        </p>
+        <p>
+          To get started, open or choose your EverQuest directory, then start triggers. JENA opens a
+          small overlay window that can be moved over your EverQuest window to display active timers and
+          alerts.
+        </p>
+
+        <h2>Web-only trigger monitoring</h2>
+        <p>
+          JENA runs in the browser and does not require a full desktop trigger program. The optional
+          JENA Companion app is available only for browser-limited features such as native clipboard
+          support.
+        </p>
+
+        <h2>Publish triggers</h2>
+        <p>
+          Logged-in users can publish their selected trigger set and receive a shareable subscription
+          code. When the publisher changes published triggers, subscribers receive updated trigger
+          information automatically.
+        </p>
+
+        <h2>Subscribe to triggers</h2>
+        <p>
+          Anyone can subscribe to a published trigger set with a JENA subscription code. Subscriptions
+          can be trusted for automatic future trigger updates, reviewed trigger by trigger, or removed
+          entirely.
+        </p>
+
+        <h2>Broadcast alerts</h2>
+        <p>
+          Trigger broadcasts can share important alerts across your own boxes or to subscribers. This is
+          useful when one character sees an event that other characters or raid members should react to,
+          such as a raid mechanic, mask click, emote, or timer event.
+        </p>
+
+        <h2>GINA package import and export</h2>
+        <p>
+          JENA can import GINA trigger package files and export trigger packages, making it easier to
+          move existing EverQuest trigger collections into or out of JENA.
+        </p>
+
+        <h2>Companion app</h2>
+        <p>
+          Clipboard actions require the optional Windows companion app because browsers intentionally
+          restrict background clipboard writes. The companion installer is available at
+          <a href="/downloads/jena-companion-setup.exe">/downloads/jena-companion-setup.exe</a>.
+        </p>
+      </main>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

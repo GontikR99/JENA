@@ -1,0 +1,6 @@
+User-agent: *
+Allow: /
+Disallow: /_jena/
+Disallow: /downloads/
+
+Sitemap: https://jena.tools/sitemap.xml
