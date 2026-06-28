@@ -1,22 +1,30 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { MouseEvent } from 'react'
-import { ControlledMenu, MenuItem, useMenuState } from '@szhsin/react-menu'
+import {
+  ControlledMenu,
+  MenuDivider,
+  MenuItem,
+  useMenuState,
+} from '@szhsin/react-menu'
 import { Radio, RadioOff, X } from 'lucide-react'
 import Alert from 'react-bootstrap/Alert'
 import Button from 'react-bootstrap/Button'
+import ButtonGroup from 'react-bootstrap/ButtonGroup'
 import Card from 'react-bootstrap/Card'
+import Dropdown from 'react-bootstrap/Dropdown'
 import Modal from 'react-bootstrap/Modal'
 import ProgressBar from 'react-bootstrap/ProgressBar'
 import toast from 'react-hot-toast'
-import type { CharacterPresence } from '../../shared/messages'
+import type {
+  CharacterPresence,
+  SubscribedTriggerEnablementMode,
+  SubscriptionDefaultEnablementMode,
+} from '../../shared/messages'
 import {
   FourStateCheckbox,
   type FourStateCheckboxState,
 } from '../../shared/widgets/FourStateCheckbox'
-import {
-  BINARY,
-  QUATERNARY,
-} from '../../shared/widgets/fourStateCheckboxModes'
+import { BINARY } from '../../shared/widgets/fourStateCheckboxModes'
 import {
   getJenaCharacterServerKey,
   type JenaCharacterServer,
@@ -78,6 +86,7 @@ interface TreeTriggerItem {
 
 interface MenuTarget {
   item: TreeItem | null
+  scope: 'selection' | 'subscription'
   subscription: SubscribedTriggerSnapshot | null
 }
 
@@ -90,6 +99,8 @@ interface AdoptSession {
   totalBatches: number
   totalCount: number
 }
+
+type InheritBadgeState = 'all' | 'none' | 'some'
 
 export function SubscribedTriggersView({
   revealRequest,
@@ -116,6 +127,7 @@ export function SubscribedTriggersView({
   )
   const [menuTarget, setMenuTarget] = useState<MenuTarget>({
     item: null,
+    scope: 'selection',
     subscription: null,
   })
   const [anchorPoint, setAnchorPoint] = useState({ x: 0, y: 0 })
@@ -268,7 +280,7 @@ export function SubscribedTriggersView({
   ) {
     event.preventDefault()
     event.stopPropagation()
-    setMenuTarget({ item, subscription })
+    setMenuTarget({ item, scope: 'selection', subscription })
     setAnchorPoint({ x: event.clientX, y: event.clientY })
 
     if (item) {
@@ -288,6 +300,17 @@ export function SubscribedTriggersView({
       })
     }
 
+    setMenuOpen(true)
+  }
+
+  function openSubscriptionContextMenu(
+    event: MouseEvent,
+    subscription: SubscribedTriggerSnapshot,
+  ) {
+    event.preventDefault()
+    event.stopPropagation()
+    setMenuTarget({ item: null, scope: 'subscription', subscription })
+    setAnchorPoint({ x: event.clientX, y: event.clientY })
     setMenuOpen(true)
   }
 
@@ -392,7 +415,7 @@ export function SubscribedTriggersView({
     item: TreeTriggerItem,
     state: FourStateCheckboxState,
   ) {
-    if (!selectedCharacterRecord || state === 'mixed') {
+    if (!selectedCharacterRecord || state === 'mixed' || state === 'inherit') {
       return
     }
 
@@ -409,7 +432,7 @@ export function SubscribedTriggersView({
     item: TreeGroupItem,
     state: FourStateCheckboxState,
   ) {
-    if (!selectedCharacterRecord || state === 'mixed') {
+    if (!selectedCharacterRecord || state === 'mixed' || state === 'inherit') {
       return
     }
 
@@ -420,6 +443,27 @@ export function SubscribedTriggersView({
         triggerId,
         selectedCharacterRecord,
         state,
+      )
+    }
+  }
+
+  async function handleSelectionEnablement(
+    mode: SubscribedTriggerEnablementMode,
+  ) {
+    if (!selectedCharacterRecord || !menuTarget.subscription) {
+      return
+    }
+
+    const triggerIds = getTriggerIdsForSelection(
+      menuTarget.subscription,
+      effectiveMenuSelection,
+    )
+    for (const triggerId of triggerIds) {
+      await setSubscribedTriggerEnablement(
+        menuTarget.subscription.id,
+        triggerId,
+        selectedCharacterRecord,
+        mode,
       )
     }
   }
@@ -514,14 +558,10 @@ export function SubscribedTriggersView({
       return
     }
 
-    const itemKeys = getEffectiveMenuSelection(
-      menuTarget.item,
-      selection,
-      menuTarget.subscription.id,
-    )
+    const itemKeys = getEffectiveMenuSelection(menuTarget, selection)
     if (itemKeys.length > 0) {
       void adoptTriggers(
-        getAdoptDialogTitle(itemKeys),
+        getAdoptDialogTitle(menuTarget, itemKeys),
         getTriggersForSelection(
           menuTarget.subscription,
           itemKeys,
@@ -530,52 +570,114 @@ export function SubscribedTriggersView({
     }
   }
 
-  function getDefaultEnabled(subscriptionId: string) {
+  function getSubscriptionDefaultMode(
+    subscriptionId: string,
+  ): SubscriptionDefaultEnablementMode {
     if (!selectedCharacterKey) {
-      return false
+      return 'disabled'
     }
 
     return (
       defaultEnablementByKey.get(`${subscriptionId}\0${selectedCharacterKey}`) ===
       'enabled'
+        ? 'enabled'
+        : 'disabled'
     )
   }
 
-  function getTriggerOverrideState(item: TreeTriggerItem): FourStateCheckboxState {
+  function getTriggerOverrideMode(
+    item: TreeTriggerItem,
+  ): SubscribedTriggerEnablementMode {
+    return getTriggerOverrideModeById(item.subscriptionId, item.id)
+  }
+
+  function getTriggerEffectiveState(
+    item: TreeTriggerItem,
+  ): FourStateCheckboxState {
+    return getTriggerEffectiveStateById(item.subscriptionId, item.id)
+  }
+
+  function getTriggerEffectiveStateById(
+    subscriptionId: string,
+    triggerId: JenaTriggerId,
+  ): FourStateCheckboxState {
+    const overrideMode = getTriggerOverrideModeById(subscriptionId, triggerId)
+    if (overrideMode !== 'inherit') {
+      return overrideMode
+    }
+
+    return getSubscriptionDefaultMode(subscriptionId) === 'enabled'
+      ? 'enabled'
+      : 'disabled'
+  }
+
+  function getTriggerOverrideModeById(
+    subscriptionId: string,
+    triggerId: JenaTriggerId,
+  ): SubscribedTriggerEnablementMode {
     if (!selectedCharacterKey) {
       return 'inherit'
     }
 
     return (
       triggerEnablementByKey.get(
-        `${item.subscriptionId}\0${item.id}\0${selectedCharacterKey}`,
+        `${subscriptionId}\0${triggerId}\0${selectedCharacterKey}`,
       ) ?? 'inherit'
     )
   }
 
-  function getGroupOverrideState(
+  function getGroupEffectiveState(
     subscription: SubscribedTriggerSnapshot,
     item: TreeGroupItem,
   ): FourStateCheckboxState {
     if (!selectedCharacterKey) {
-      return 'inherit'
+      return 'disabled'
     }
 
     const triggerIds = getTriggerIdsUnderPath(subscription.triggers, item.path)
     if (triggerIds.length === 0) {
-      return 'inherit'
+      return 'disabled'
     }
 
     const states = new Set(
-      triggerIds.map(
-        (triggerId) =>
-          triggerEnablementByKey.get(
-            `${subscription.id}\0${triggerId}\0${selectedCharacterKey}`,
-          ) ?? 'inherit',
+      triggerIds.map((triggerId) =>
+        getTriggerEffectiveStateById(subscription.id, triggerId),
       ),
     )
 
     return states.size === 1 ? ([...states][0] as FourStateCheckboxState) : 'mixed'
+  }
+
+  function getTriggerInheritBadgeState(item: TreeTriggerItem): InheritBadgeState {
+    return getTriggerOverrideMode(item) === 'inherit' ? 'all' : 'none'
+  }
+
+  function getGroupInheritBadgeState(
+    subscription: SubscribedTriggerSnapshot,
+    item: TreeGroupItem,
+  ): InheritBadgeState {
+    if (!selectedCharacterKey) {
+      return 'all'
+    }
+
+    const triggerIds = getTriggerIdsUnderPath(subscription.triggers, item.path)
+    if (triggerIds.length === 0) {
+      return 'none'
+    }
+
+    const inheritCount = triggerIds.filter((triggerId) => {
+      return (
+        (triggerEnablementByKey.get(
+          `${subscription.id}\0${triggerId}\0${selectedCharacterKey}`,
+        ) ?? 'inherit') === 'inherit'
+      )
+    }).length
+
+    if (inheritCount === 0) {
+      return 'none'
+    }
+
+    return inheritCount === triggerIds.length ? 'all' : 'some'
   }
 
   const menuTrigger =
@@ -583,9 +685,8 @@ export function SubscribedTriggersView({
   const menuGroup =
     menuTarget.item?.type === 'group' ? menuTarget.item : null
   const effectiveMenuSelection = getEffectiveMenuSelection(
-    menuTarget.item,
+    menuTarget,
     selection,
-    menuTarget.subscription?.id ?? null,
   )
 
   return (
@@ -610,30 +711,52 @@ export function SubscribedTriggersView({
           <div className="subscribed-triggers-list">
             {orderedSnapshots.map((subscription) => {
               const treeItems = treeItemsBySubscription.get(subscription.id) ?? []
-              const defaultEnabled = getDefaultEnabled(subscription.id)
+              const defaultMode = getSubscriptionDefaultMode(subscription.id)
+              const trustPublisher = defaultMode === 'enabled'
 
               return (
                 <Card className="subscribed-triggers-card" key={subscription.id}>
-                  <Card.Header className="subscribed-triggers-card-header">
-                    <FourStateCheckbox
-                      ariaLabel={`Enable ${subscription.ownerDisplayName} by default`}
-                      className="subscribed-triggers-default-checkbox"
-                      disabled={!selectedCharacterRecord}
-                      mode={BINARY}
-                      onChange={(nextState) => {
-                        void handleDefaultToggle(
-                          subscription,
-                          nextState === 'enabled',
-                        )
-                      }}
-                      state={defaultEnabled ? 'enabled' : 'disabled'}
-                      stopPropagation
-                      title={
-                        selectedCharacterRecord
-                          ? 'Enable by default'
-                          : 'Select a character to change enablement'
-                      }
-                    />
+                  <Card.Header
+                    className="subscribed-triggers-card-header"
+                    onContextMenu={(event) =>
+                      openSubscriptionContextMenu(event, subscription)
+                    }
+                  >
+                    <Dropdown as={ButtonGroup} className="subscribed-triggers-policy">
+                      <Dropdown.Toggle
+                        disabled={!selectedCharacterRecord}
+                        id={`subscription-policy-${subscription.id}`}
+                        size="sm"
+                        title={
+                          selectedCharacterRecord
+                            ? trustPublisher
+                              ? 'New triggers from this publisher are enabled automatically unless you turn them off.'
+                              : 'New triggers from this publisher stay off until you enable them.'
+                            : 'Select a character to change enablement'
+                        }
+                        variant="outline-secondary"
+                      >
+                        Trust: {trustPublisher ? 'Trust publisher' : 'Review first'}
+                      </Dropdown.Toggle>
+                      <Dropdown.Menu>
+                        <Dropdown.Item
+                          active={!trustPublisher}
+                          onClick={() => {
+                            void handleDefaultToggle(subscription, false)
+                          }}
+                        >
+                          Review first
+                        </Dropdown.Item>
+                        <Dropdown.Item
+                          active={trustPublisher}
+                          onClick={() => {
+                            void handleDefaultToggle(subscription, true)
+                          }}
+                        >
+                          Trust publisher
+                        </Dropdown.Item>
+                      </Dropdown.Menu>
+                    </Dropdown>
                     <span className="subscribed-triggers-publisher-name">
                       {subscription.ownerDisplayName || 'Anonymous publisher'}
                     </span>
@@ -681,11 +804,15 @@ export function SubscribedTriggersView({
                           item.type === 'group' ? (
                             <SubscribedGroupRow
                               checkboxDisabled={!selectedCharacterRecord}
-                              checkboxState={getGroupOverrideState(
+                              checkboxState={getGroupEffectiveState(
                                 subscription,
                                 item,
                               )}
                               collapsed={!expandedGroupIds.has(item.id)}
+                              inheritBadgeState={getGroupInheritBadgeState(
+                                subscription,
+                                item,
+                              )}
                               item={item}
                               key={item.id}
                               onContextMenu={(event, rowItem) =>
@@ -707,7 +834,8 @@ export function SubscribedTriggersView({
                           ) : (
                             <SubscribedTriggerRow
                               checkboxDisabled={!selectedCharacterRecord}
-                              checkboxState={getTriggerOverrideState(item)}
+                              checkboxState={getTriggerEffectiveState(item)}
+                              inheritBadgeState={getTriggerInheritBadgeState(item)}
                               item={item}
                               key={item.id}
                               onClick={handleTreeItemClick}
@@ -760,7 +888,58 @@ export function SubscribedTriggersView({
           }
           onClick={adoptMenuTarget}
         >
-          {getAdoptMenuLabel(menuTarget.item, effectiveMenuSelection)}
+          {getAdoptMenuLabel(menuTarget, effectiveMenuSelection)}
+        </MenuItem>
+        <MenuDivider />
+        <MenuItem
+          className="subscribed-triggers-menu-heading"
+          disabled
+        >
+          {getTriggerSettingsHeading(menuTarget, effectiveMenuSelection)}
+        </MenuItem>
+        <MenuItem
+          disabled={
+            !selectedCharacterRecord ||
+            !menuTarget.subscription ||
+            effectiveMenuSelection.length === 0
+          }
+          onClick={() => {
+            void handleSelectionEnablement('inherit')
+          }}
+        >
+          Follow trust setting
+        </MenuItem>
+        <MenuItem
+          disabled={
+            !selectedCharacterRecord ||
+            !menuTarget.subscription ||
+            effectiveMenuSelection.length === 0
+          }
+          onClick={() => {
+            void handleSelectionEnablement('enabled')
+          }}
+        >
+          {getEnablementMenuLabel(
+            menuTarget,
+            effectiveMenuSelection,
+            'enabled',
+          )}
+        </MenuItem>
+        <MenuItem
+          disabled={
+            !selectedCharacterRecord ||
+            !menuTarget.subscription ||
+            effectiveMenuSelection.length === 0
+          }
+          onClick={() => {
+            void handleSelectionEnablement('disabled')
+          }}
+        >
+          {getEnablementMenuLabel(
+            menuTarget,
+            effectiveMenuSelection,
+            'disabled',
+          )}
         </MenuItem>
       </ControlledMenu>
 
@@ -787,6 +966,7 @@ function SubscribedGroupRow({
   checkboxDisabled,
   checkboxState,
   collapsed,
+  inheritBadgeState,
   item,
   onContextMenu,
   onSelect,
@@ -797,6 +977,7 @@ function SubscribedGroupRow({
   checkboxDisabled: boolean
   checkboxState: FourStateCheckboxState
   collapsed: boolean
+  inheritBadgeState: InheritBadgeState
   item: TreeGroupItem
   onContextMenu: (event: MouseEvent, item: TreeItem) => void
   onSelect: (event: MouseEvent, item: TreeGroupItem) => void
@@ -842,11 +1023,13 @@ function SubscribedGroupRow({
         <FourStateCheckbox
           ariaLabel={`Enable triggers in ${item.name}`}
           disabled={checkboxDisabled || item.triggerCount === 0}
-          mode={QUATERNARY}
+          mode={BINARY}
           onChange={onToggleChecked}
           state={checkboxState}
+          title={getEffectiveCheckboxTitle(checkboxState, true)}
         />
         <span className="subscribed-triggers-group-name">{item.name}</span>
+        <InheritBadge state={inheritBadgeState} />
       </span>
     </div>
   )
@@ -855,6 +1038,7 @@ function SubscribedGroupRow({
 function SubscribedTriggerRow({
   checkboxDisabled,
   checkboxState,
+  inheritBadgeState,
   item,
   onClick,
   onContextMenu,
@@ -865,6 +1049,7 @@ function SubscribedTriggerRow({
 }: {
   checkboxDisabled: boolean
   checkboxState: FourStateCheckboxState
+  inheritBadgeState: InheritBadgeState
   item: TreeTriggerItem
   onClick: (event: MouseEvent, item: TreeTriggerItem) => void
   onContextMenu: (event: MouseEvent, item: TreeItem) => void
@@ -904,18 +1089,39 @@ function SubscribedTriggerRow({
         <FourStateCheckbox
           ariaLabel={`Enable ${item.trigger.trigger.name || 'unnamed trigger'}`}
           disabled={checkboxDisabled}
-          mode={QUATERNARY}
+          mode={BINARY}
           onChange={onToggleChecked}
           state={checkboxState}
+          title={getEffectiveCheckboxTitle(checkboxState, false)}
         />
         <span className="subscribed-triggers-trigger-name">
           {item.trigger.trigger.name || '(unnamed trigger)'}
         </span>
+        <InheritBadge state={inheritBadgeState} />
       </span>
       <span className="subscribed-triggers-row-side">
         <BroadcastIndicator broadcastToSubscribers={item.trigger.broadcastToSubscribers} />
       </span>
     </div>
+  )
+}
+
+function InheritBadge({ state }: { state: InheritBadgeState }) {
+  if (state === 'none') {
+    return null
+  }
+
+  return (
+    <span
+      className="subscribed-triggers-auto-badge"
+      title={
+        state === 'all'
+          ? 'Following subscription setting'
+          : 'Some triggers are following the subscription setting'
+      }
+    >
+      {state === 'all' ? 'auto' : 'some auto'}
+    </span>
   )
 }
 
@@ -1130,6 +1336,18 @@ function getTriggersForSelection(
   subscription: SubscribedTriggerSnapshot,
   itemKeys: string[],
 ) {
+  const selectedTriggerIds = getTriggerIdsForSelection(subscription, itemKeys)
+
+  return subscription.triggers
+    .map((trigger) => trigger.trigger)
+    .filter((trigger) => selectedTriggerIds.includes(trigger.id))
+    .sort(compareTriggersByPath)
+}
+
+function getTriggerIdsForSelection(
+  subscription: SubscribedTriggerSnapshot,
+  itemKeys: string[],
+) {
   const selectedTriggerIds = new Set<JenaTriggerId>()
   const selectedGroupPaths: string[][] = []
 
@@ -1147,22 +1365,22 @@ function getTriggersForSelection(
   })
 
   return subscription.triggers
-    .map((trigger) => trigger.trigger)
     .filter(
       (trigger) =>
-        selectedTriggerIds.has(trigger.id) ||
+        selectedTriggerIds.has(trigger.trigger.id) ||
         selectedGroupPaths.some((path) =>
-          isSameOrChildPath(trigger.groupPath, path),
+          isSameOrChildPath(trigger.trigger.groupPath, path),
         ),
     )
-    .sort(compareTriggersByPath)
+    .map((trigger) => trigger.trigger.id)
 }
 
 function getEffectiveMenuSelection(
-  item: TreeItem | null,
+  menuTarget: MenuTarget,
   selection: TreeSelection,
-  subscriptionId: string | null,
 ) {
+  const { item, subscription } = menuTarget
+
   if (item) {
     const itemKey = getTreeItemKey(item)
     if (
@@ -1175,7 +1393,17 @@ function getEffectiveMenuSelection(
     return [itemKey]
   }
 
-  if (!subscriptionId || selection.subscriptionId !== subscriptionId) {
+  if (!subscription) {
+    return []
+  }
+
+  if (menuTarget.scope === 'subscription') {
+    return subscription.triggers.map((trigger) =>
+      getSubscribedTriggerItemKey(subscription.id, trigger.trigger.id),
+    )
+  }
+
+  if (selection.subscriptionId !== subscription.id) {
     return []
   }
 
@@ -1212,7 +1440,11 @@ function getSelectionAnchorKey(
   return [...itemKeys][0] ?? null
 }
 
-function getAdoptDialogTitle(itemKeys: string[]) {
+function getAdoptDialogTitle(menuTarget: MenuTarget, itemKeys: string[]) {
+  if (menuTarget.scope === 'subscription') {
+    return 'Adopt Subscription'
+  }
+
   if (itemKeys.length === 1 && itemKeys[0]?.startsWith('group\0')) {
     return 'Adopt Group'
   }
@@ -1224,7 +1456,13 @@ function getAdoptDialogTitle(itemKeys: string[]) {
   return 'Adopt Selection'
 }
 
-function getAdoptMenuLabel(item: TreeItem | null, itemKeys: string[]) {
+function getAdoptMenuLabel(menuTarget: MenuTarget, itemKeys: string[]) {
+  const { item } = menuTarget
+
+  if (menuTarget.scope === 'subscription') {
+    return "Adopt all this subscription's triggers"
+  }
+
   if (itemKeys.length === 1) {
     const itemKey = itemKeys[0]
     if (itemKey?.startsWith('group\0') || item?.type === 'group') {
@@ -1236,6 +1474,75 @@ function getAdoptMenuLabel(item: TreeItem | null, itemKeys: string[]) {
   }
 
   return 'Adopt selected triggers'
+}
+
+function getTriggerSettingsHeading(
+  menuTarget: MenuTarget,
+  itemKeys: string[],
+) {
+  if (isSingleTriggerMenuTarget(menuTarget, itemKeys)) {
+    return 'Trigger setting:'
+  }
+
+  return 'Trigger settings:'
+}
+
+function isSingleTriggerMenuTarget(
+  menuTarget: MenuTarget,
+  itemKeys: string[],
+) {
+  if (itemKeys.length !== 1) {
+    return false
+  }
+
+  const itemKey = itemKeys[0]
+  return itemKey?.startsWith('trigger\0') || menuTarget.item?.type === 'trigger'
+}
+
+function getEnablementMenuLabel(
+  menuTarget: MenuTarget,
+  itemKeys: string[],
+  mode: Extract<SubscribedTriggerEnablementMode, 'disabled' | 'enabled'>,
+) {
+  const { item } = menuTarget
+
+  if (menuTarget.scope === 'subscription') {
+    return mode === 'enabled' ? 'Force enable all' : 'Force disable all'
+  }
+
+  const action = mode === 'enabled' ? 'Always enable' : 'Always disable'
+
+  if (itemKeys.length === 1) {
+    const itemKey = itemKeys[0]
+    if (itemKey?.startsWith('group\0') || item?.type === 'group') {
+      return `${action} group`
+    }
+    if (itemKey?.startsWith('trigger\0') || item?.type === 'trigger') {
+      return `${action} trigger`
+    }
+  }
+
+  return `${action} selected`
+}
+
+function getEffectiveCheckboxTitle(
+  state: FourStateCheckboxState,
+  group: boolean,
+) {
+  switch (state) {
+    case 'disabled':
+      return group
+        ? 'Disabled. Click to always enable all triggers in this group.'
+        : 'Disabled. Click to always enable this trigger.'
+    case 'enabled':
+      return group
+        ? 'Enabled. Click to always disable all triggers in this group.'
+        : 'Enabled. Click to always disable this trigger.'
+    case 'mixed':
+      return 'Some triggers are enabled and some are disabled. Click to always enable all.'
+    case 'inherit':
+      return 'Following subscription setting.'
+  }
 }
 
 function createEmptySelection(): TreeSelection {

@@ -13,11 +13,18 @@ import { FourStateCheckbox } from '../../shared/widgets/FourStateCheckbox'
 import { BINARY } from '../../shared/widgets/fourStateCheckboxModes'
 
 interface TimerTabProps {
+  disabled?: boolean
   onChange: (timer: TriggerEditorTimerState) => void
   timer: TriggerEditorTimerState
 }
 
-export function TimerTab({ onChange, timer }: TimerTabProps) {
+export function TimerTab({
+  disabled = false,
+  onChange,
+  timer,
+}: TimerTabProps) {
+  const isTimerDisabled = disabled || timer.type === 'none'
+
   function updateEarlyEnder(
     index: number,
     value: Partial<JenaTimerEarlyEnder>,
@@ -66,6 +73,7 @@ export function TimerTab({ onChange, timer }: TimerTabProps) {
     <div className="trigger-editor-tab-panel">
       <FormGridRow label="Timer Type">
         <Form.Select
+          disabled={disabled}
           onChange={(event) =>
             onChange({
               ...timer,
@@ -84,7 +92,7 @@ export function TimerTab({ onChange, timer }: TimerTabProps) {
 
       <FormGridRow label="Timer Name">
         <Form.Control
-          disabled={timer.type === 'none'}
+          disabled={isTimerDisabled}
           onChange={(event) =>
             onChange({ ...timer, name: event.currentTarget.value })
           }
@@ -96,7 +104,7 @@ export function TimerTab({ onChange, timer }: TimerTabProps) {
 
       <FormGridRow label="Timer Duration">
         <DurationInput
-          disabled={timer.type === 'none'}
+          disabled={isTimerDisabled}
           onChange={(parts) =>
             onChange({ ...timer, durationMs: partsToDurationMs(parts) })
           }
@@ -107,7 +115,7 @@ export function TimerTab({ onChange, timer }: TimerTabProps) {
 
       <FormGridRow label="If timer is already running when triggered again:">
         <Form.Select
-          disabled={timer.type === 'none'}
+          disabled={isTimerDisabled}
           onChange={(event) =>
             onChange({
               ...timer,
@@ -144,7 +152,7 @@ export function TimerTab({ onChange, timer }: TimerTabProps) {
               <tr key={index}>
                 <td>
                   <Form.Control
-                    disabled={timer.type === 'none'}
+                    disabled={isTimerDisabled}
                     onChange={(event) =>
                       updateEarlyEnder(index, {
                         text: event.currentTarget.value,
@@ -158,7 +166,7 @@ export function TimerTab({ onChange, timer }: TimerTabProps) {
                 <td className="text-center">
                   <FourStateCheckbox
                     ariaLabel={`Use regex for early ender ${index + 1}`}
-                    disabled={timer.type === 'none'}
+                    disabled={isTimerDisabled}
                     mode={BINARY}
                     onChange={(nextState) =>
                       updateEarlyEnder(index, {
@@ -172,7 +180,7 @@ export function TimerTab({ onChange, timer }: TimerTabProps) {
                   <Button
                     aria-label={`Remove early ender ${index + 1}`}
                     className="trigger-editor-row-action-button"
-                    disabled={timer.type === 'none'}
+                    disabled={isTimerDisabled}
                     onClick={() => removeEarlyEnder(index)}
                     size="sm"
                     title="Remove row"
@@ -188,7 +196,7 @@ export function TimerTab({ onChange, timer }: TimerTabProps) {
       </div>
       <Button
         className="mt-2"
-        disabled={timer.type === 'none'}
+        disabled={isTimerDisabled}
         onClick={addEarlyEnder}
         size="sm"
         variant="secondary"

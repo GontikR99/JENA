@@ -69,6 +69,44 @@ describe('TriggerEditorDialog', () => {
     })
   })
 
+  it('allows speech preview when viewing a read-only trigger', async () => {
+    const user = userEvent.setup()
+
+    render(
+      <TriggerEditorDialog
+        readOnly
+        setShown={vi.fn()}
+        setTrigger={vi.fn()}
+        shown
+        trigger={withCanonicalTriggerId({
+          ...createEmptyTrigger(),
+          actions: {
+            ...createEmptyTrigger().actions,
+            speech: {
+              enabled: true,
+              interrupt: false,
+              text: 'Read only {C} $1',
+            },
+          },
+          match: {
+            isRegex: true,
+            text: '^{C} says (.+)$',
+          },
+          name: 'Read Only Speech Preview',
+        })}
+      />,
+    )
+
+    const testButton = await screen.findByRole('button', { name: 'Test speech' })
+    expect(testButton).toBeEnabled()
+    await user.click(testButton)
+
+    expect(hookState.send).toHaveBeenCalledWith('speech.preview-requested', {
+      interrupt: true,
+      text: 'Read only Mesozoic test',
+    })
+  })
+
   it('allows saving JavaScript-compatible lookahead regexes', async () => {
     const user = userEvent.setup()
     const setShown = vi.fn()

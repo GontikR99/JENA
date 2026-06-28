@@ -7,11 +7,13 @@ import { Section } from './Section'
 import type { TriggerEditorDraft } from './triggerEditorModel'
 
 interface GeneralSettingsSectionProps {
+  disabled?: boolean
   draft: TriggerEditorDraft
   onChange: (draft: TriggerEditorDraft) => void
 }
 
 export function GeneralSettingsSection({
+  disabled = false,
   draft,
   onChange,
 }: GeneralSettingsSectionProps) {
@@ -23,6 +25,7 @@ export function GeneralSettingsSection({
         </Form.Label>
         <Col sm={9}>
           <Form.Control
+            disabled={disabled}
             onChange={(event) =>
               onChange({ ...draft, name: event.currentTarget.value })
             }
@@ -39,6 +42,7 @@ export function GeneralSettingsSection({
         </Form.Label>
         <Col sm={9}>
           <Form.Control
+            disabled={disabled}
             onChange={(event) =>
               onChange({
                 ...draft,
@@ -59,6 +63,7 @@ export function GeneralSettingsSection({
         <Col sm={{ offset: 3, span: 9 }}>
           <div className="trigger-editor-inline-checks">
             <FourStateCheckbox
+              disabled={disabled}
               id="trigger-editor-use-regex"
               label="Use Regular Expressions"
               mode={BINARY}
@@ -91,6 +96,7 @@ export function GeneralSettingsSection({
         </Form.Label>
         <Col sm={9}>
           <Form.Select
+            disabled={disabled}
             onChange={(event) =>
               onChange({ ...draft, category: event.currentTarget.value })
             }
@@ -112,6 +118,7 @@ export function GeneralSettingsSection({
         <Col sm={9}>
           <Form.Control
             as="textarea"
+            disabled={disabled}
             onChange={(event) =>
               onChange({ ...draft, comments: event.currentTarget.value })
             }

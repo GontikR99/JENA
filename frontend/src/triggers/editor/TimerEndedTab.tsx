@@ -12,12 +12,14 @@ import {
 
 interface TimerEndedTabProps {
   characters: CharacterPresence[]
+  disabled?: boolean
   onChange: (timer: TriggerEditorTimerState) => void
   timer: TriggerEditorTimerState
 }
 
 export function TimerEndedTab({
   characters,
+  disabled = false,
   onChange,
   timer,
 }: TimerEndedTabProps) {
@@ -55,6 +57,7 @@ export function TimerEndedTab({
     <div className="trigger-editor-tab-panel">
       <div className="trigger-editor-notify-row">
         <FourStateCheckbox
+          disabled={disabled}
           id="trigger-editor-timer-ended-enabled"
           label="Notify when timer ends"
           mode={BINARY}
@@ -69,7 +72,7 @@ export function TimerEndedTab({
       </div>
       <TextSettingsSection
         clipboardTextEnabled={false}
-        disabled={!isEnabled}
+        disabled={disabled || !isEnabled}
         displayTextEnabled={endedAction.display.enabled}
         onChange={(text) => updateEndedAction(text, audioState)}
         state={textState}
@@ -77,7 +80,7 @@ export function TimerEndedTab({
       <AudioSettingsSection
         audioMode={audioState.mode}
         characters={characters}
-        disabled={!isEnabled}
+        disabled={disabled || !isEnabled}
         onChange={(audio) => updateEndedAction(textState, audio)}
         state={audioState}
       />

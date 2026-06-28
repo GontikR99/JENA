@@ -150,7 +150,7 @@ export function AudioSettingsSection({
           </Form.Select>
           <Button
             aria-label="Test speech"
-            disabled={disabled || !canTest}
+            disabled={!canTest}
             onClick={handleTestSpeech}
             size="sm"
             variant="success"

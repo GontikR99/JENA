@@ -59,8 +59,13 @@
   padding: 0.4rem 0.5rem;
 }
 
-.subscribed-triggers-default-checkbox {
-  margin: 0;
+.subscribed-triggers-policy .dropdown-toggle {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  max-width: 15rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .subscribed-triggers-publisher-name {
@@ -168,6 +173,15 @@
   font-size: 0.875rem;
 }
 
+.subscribed-triggers-auto-badge {
+  color: #6b7280;
+  flex: 0 0 auto;
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+}
+
 .subscribed-triggers-row-side {
   align-items: center;
   display: flex;
@@ -187,6 +201,15 @@
 .subscribed-triggers-broadcast-indicator[data-state='subscribers'] {
   color: #0d6efd;
   opacity: 1;
+}
+
+.subscribed-triggers-menu-heading {
+  color: #6b7280;
+  cursor: default;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: uppercase;
 }
 
 .subscribed-triggers-adopt-dialog {

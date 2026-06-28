@@ -151,75 +151,82 @@ export function TriggerEditorDialog({
         <Modal.Title>{readOnly ? 'View Trigger' : 'Trigger Editor'}</Modal.Title>
       </Modal.Header>
       <Modal.Body className="trigger-editor-body">
-        <fieldset className="trigger-editor-readonly-fieldset" disabled={readOnly}>
-          <GeneralSettingsSection draft={draft} onChange={setDraft} />
-          {validationErrors.length > 0 ? (
-            <Alert className="mb-0 py-2" variant="danger">
-              {validationErrors.map((error) => (
-                <div key={error}>{error}</div>
-              ))}
-            </Alert>
-          ) : null}
+        <GeneralSettingsSection
+          disabled={readOnly}
+          draft={draft}
+          onChange={setDraft}
+        />
+        {validationErrors.length > 0 ? (
+          <Alert className="mb-0 py-2" variant="danger">
+            {validationErrors.map((error) => (
+              <div key={error}>{error}</div>
+            ))}
+          </Alert>
+        ) : null}
 
-          <Tabs defaultActiveKey="basic" id="trigger-editor-tabs" mountOnEnter>
-            <Tab eventKey="basic" title="Basic">
-              <div className="trigger-editor-tab-panel">
-                <TextSettingsSection
-                  clipboardTextEnabled={draft.actions.text.clipboard.enabled}
-                  displayTextEnabled={draft.actions.text.display.enabled}
-                  onChange={(text) =>
-                    setDraft({
-                      ...draft,
-                      actions: {
-                        ...draft.actions,
-                        text,
-                      },
-                    })
-                  }
-                  state={draft.actions.text}
-                />
-                <AudioSettingsSection
-                  audioMode={draft.actions.audio.mode}
-                  characters={characters}
-                  onChange={(audio) =>
-                    setDraft({
-                      ...draft,
-                      actions: {
-                        ...draft.actions,
-                        audio,
-                      },
-                    })
-                  }
-                  onTestSpeech={handleTestSpeech}
-                  state={draft.actions.audio}
-                />
-              </div>
-            </Tab>
-            <Tab eventKey="timer" title="Timer">
-              <TimerTab
-                onChange={(timer) => setDraft({ ...draft, timer })}
-                timer={draft.timer}
+        <Tabs defaultActiveKey="basic" id="trigger-editor-tabs" mountOnEnter>
+          <Tab eventKey="basic" title="Basic">
+            <div className="trigger-editor-tab-panel">
+              <TextSettingsSection
+                clipboardTextEnabled={draft.actions.text.clipboard.enabled}
+                disabled={readOnly}
+                displayTextEnabled={draft.actions.text.display.enabled}
+                onChange={(text) =>
+                  setDraft({
+                    ...draft,
+                    actions: {
+                      ...draft.actions,
+                      text,
+                    },
+                  })
+                }
+                state={draft.actions.text}
               />
-            </Tab>
-            <Tab eventKey="timer-ending" title="Timer Ending">
-              <TimerEndingTab
+              <AudioSettingsSection
+                audioMode={draft.actions.audio.mode}
                 characters={characters}
-                onChange={(timer) => setDraft({ ...draft, timer })}
-                timer={draft.timer}
+                disabled={readOnly}
+                onChange={(audio) =>
+                  setDraft({
+                    ...draft,
+                    actions: {
+                      ...draft.actions,
+                      audio,
+                    },
+                  })
+                }
+                onTestSpeech={handleTestSpeech}
+                state={draft.actions.audio}
               />
-            </Tab>
-            <Tab eventKey="timer-ended" title="Timer Ended">
-              <TimerEndedTab
-                characters={characters}
-                onChange={(timer) => setDraft({ ...draft, timer })}
-                timer={draft.timer}
-              />
-            </Tab>
-            <Tab eventKey="counter" title="Counter">
-              <CounterTab />
-            </Tab>
-          </Tabs>
-        </fieldset>
+            </div>
+          </Tab>
+          <Tab eventKey="timer" title="Timer">
+            <TimerTab
+              disabled={readOnly}
+              onChange={(timer) => setDraft({ ...draft, timer })}
+              timer={draft.timer}
+            />
+          </Tab>
+          <Tab eventKey="timer-ending" title="Timer Ending">
+            <TimerEndingTab
+              characters={characters}
+              disabled={readOnly}
+              onChange={(timer) => setDraft({ ...draft, timer })}
+              timer={draft.timer}
+            />
+          </Tab>
+          <Tab eventKey="timer-ended" title="Timer Ended">
+            <TimerEndedTab
+              characters={characters}
+              disabled={readOnly}
+              onChange={(timer) => setDraft({ ...draft, timer })}
+              timer={draft.timer}
+            />
+          </Tab>
+          <Tab eventKey="counter" title="Counter">
+            <CounterTab />
+          </Tab>
+        </Tabs>
       </Modal.Body>
       <Modal.Footer>
         {readOnly ? (
