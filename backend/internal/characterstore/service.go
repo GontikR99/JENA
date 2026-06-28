@@ -209,45 +209,6 @@ func (service *Service) migrate(ctx context.Context) error {
 		return fmt.Errorf("migrate user characters: %w", err)
 	}
 
-	if err := service.ensureColumn(ctx, "last_log_write_ms", "INTEGER NOT NULL DEFAULT 0"); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (service *Service) ensureColumn(ctx context.Context, columnName string, definition string) error {
-	rows, err := service.db.QueryContext(ctx, `PRAGMA table_info(user_characters)`)
-	if err != nil {
-		return fmt.Errorf("inspect user characters columns: %w", err)
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var cid int
-		var name string
-		var columnType string
-		var notNull int
-		var defaultValue any
-		var primaryKey int
-		if err := rows.Scan(&cid, &name, &columnType, &notNull, &defaultValue, &primaryKey); err != nil {
-			return fmt.Errorf("scan user characters column: %w", err)
-		}
-		if name == columnName {
-			return nil
-		}
-	}
-	if err := rows.Err(); err != nil {
-		return fmt.Errorf("iterate user characters columns: %w", err)
-	}
-
-	if _, err := service.db.ExecContext(
-		ctx,
-		fmt.Sprintf(`ALTER TABLE user_characters ADD COLUMN %s %s`, columnName, definition),
-	); err != nil {
-		return fmt.Errorf("add user characters column %s: %w", columnName, err)
-	}
-
 	return nil
 }
 
