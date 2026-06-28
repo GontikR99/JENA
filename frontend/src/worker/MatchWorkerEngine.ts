@@ -8,6 +8,7 @@ import type { EverQuestLogLineRecord } from './FileWatcher'
 
 export interface MatchWorkerMatch {
   captures: RegexCaptures
+  lineIndex: number
   pattern: string
 }
 
@@ -130,16 +131,21 @@ export class MatchWorkerEngine {
     }
   }
 
-  async matchLine(record: EverQuestLogLineRecord): Promise<MatchWorkerMatch[]> {
+  async matchLines(
+    records: EverQuestLogLineRecord[],
+  ): Promise<MatchWorkerMatch[]> {
     await this.flush()
 
-    return [
-      ...this.matchRe2Patterns(record),
-      ...this.matchJavaScriptPatterns(record),
-    ]
+    return records.flatMap((record, lineIndex) => [
+      ...this.matchRe2Patterns(record, lineIndex),
+      ...this.matchJavaScriptPatterns(record, lineIndex),
+    ])
   }
 
-  private matchRe2Patterns(record: EverQuestLogLineRecord) {
+  private matchRe2Patterns(
+    record: EverQuestLogLineRecord,
+    lineIndex: number,
+  ) {
     const { set, patternsBySetIndex } = this.patternSetState
     const matches: MatchWorkerMatch[] = []
 
@@ -158,6 +164,7 @@ export class MatchWorkerEngine {
       if (!match.done) {
         matches.push({
           captures: getCaptures(match.value),
+          lineIndex,
           pattern: registration.originalPattern,
         })
       }
@@ -166,7 +173,10 @@ export class MatchWorkerEngine {
     return matches
   }
 
-  private matchJavaScriptPatterns(record: EverQuestLogLineRecord) {
+  private matchJavaScriptPatterns(
+    record: EverQuestLogLineRecord,
+    lineIndex: number,
+  ) {
     const matches: MatchWorkerMatch[] = []
 
     this.fallbackRegistrations.forEach((registration) => {
@@ -178,6 +188,7 @@ export class MatchWorkerEngine {
       if (match) {
         matches.push({
           captures: getCaptures(match),
+          lineIndex,
           pattern: registration.originalPattern,
         })
       }

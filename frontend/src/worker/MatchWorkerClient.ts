@@ -22,7 +22,7 @@ export interface MatchWorkerClientLike {
   ): Promise<void>
   dispose(): void
   flush(): Promise<void>
-  matchLine(record: EverQuestLogLineRecord): Promise<MatchWorkerMatch[]>
+  matchLines(records: EverQuestLogLineRecord[]): Promise<MatchWorkerMatch[]>
   replacePatterns(
     namespace: string,
     patterns: RegexPatternRegistration[],
@@ -69,12 +69,12 @@ class MatchWorkerClient implements MatchWorkerClientLike {
     return this.call({ method: 'flush' }).then(() => undefined)
   }
 
-  async matchLine(record: EverQuestLogLineRecord) {
-    const response = await this.call({ method: 'matchLine', record })
+  async matchLines(records: EverQuestLogLineRecord[]) {
+    const response = await this.call({ method: 'matchLines', records })
 
-    if (response.method !== 'matchLine') {
+    if (response.method !== 'matchLines') {
       throw new Error(
-        `Match worker ${this.index} returned ${response.method} for matchLine.`,
+        `Match worker ${this.index} returned ${response.method} for matchLines.`,
       )
     }
 

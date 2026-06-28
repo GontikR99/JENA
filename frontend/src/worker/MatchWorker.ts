@@ -63,9 +63,9 @@ async function handleRequest(
       await engine.flush()
       return { method: request.method }
 
-    case 'matchLine':
+    case 'matchLines':
       return {
-        matches: await engine.matchLine(request.record),
+        matches: await engine.matchLines(request.records),
         method: request.method,
       }
   }

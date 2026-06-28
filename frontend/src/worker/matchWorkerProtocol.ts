@@ -12,8 +12,8 @@ export type MatchWorkerRequest =
       method: 'flush'
     }
   | {
-      method: 'matchLine'
-      record: EverQuestLogLineRecord
+      method: 'matchLines'
+      records: EverQuestLogLineRecord[]
     }
   | {
       method: 'replacePatterns'
@@ -44,7 +44,7 @@ export type MatchWorkerResponseMessage =
 export type MatchWorkerResponse =
   | {
       matches: MatchWorkerMatch[]
-      method: 'matchLine'
+      method: 'matchLines'
     }
   | {
       method: 'addPatterns' | 'flush' | 'replacePatterns'

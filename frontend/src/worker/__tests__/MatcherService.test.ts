@@ -141,6 +141,46 @@ describe('MatcherService', () => {
     ])
   })
 
+  it('emits matches from a chunk in log line order across worker shards', async () => {
+    const { broker, fileWatcher } = createHarness({
+      workerCount: 2,
+    })
+    const receivedMatches: RegexMatchFoundMessage[] = []
+
+    broker.listen('client.matcher.match-found', (message) => {
+      receivedMatches.push(message.payload as RegexMatchFoundMessage)
+    })
+
+    await broker.call('test.matcher-service', 'matcher-service', 'add-patterns', {
+      patterns: [
+        {
+          pattern: 'Arias',
+        },
+        {
+          pattern: 'Brell',
+        },
+      ],
+    })
+    await broker.call('test.matcher-service', 'matcher-service', 'flush', {})
+
+    fileWatcher.emitChunk('Testcharacter', 'Testserver', [
+      {
+        text: 'Arias says hello.',
+        timestamp: 'Fri Oct 24 13:33:11 2025',
+      },
+      {
+        text: 'Brell says hello.',
+        timestamp: 'Fri Oct 24 13:33:12 2025',
+      },
+    ])
+    await flushAsyncWork()
+
+    expect(receivedMatches.map((match) => match.text)).toEqual([
+      'Arias says hello.',
+      'Brell says hello.',
+    ])
+  })
+
   it('falls back to JavaScript regexes for patterns RE2JS cannot compile', async () => {
     const { broker, fileWatcher } = createHarness()
     const receivedMatches: RegexMatchFoundMessage[] = []
@@ -498,8 +538,26 @@ class FakeFileWatcher {
     }
   }
 
-  emit(record: EverQuestLogLineRecord) {
-    this.observer?.onLogLine(record)
+  emit(record: EverQuestLogLineRecord & {
+    characterName: string
+    serverName: string
+  }) {
+    this.observer?.onLogLine(
+      record.characterName,
+      record.serverName,
+      [{
+        text: record.text,
+        timestamp: record.timestamp,
+      }],
+    )
+  }
+
+  emitChunk(
+    characterName: string,
+    serverName: string,
+    records: EverQuestLogLineRecord[],
+  ) {
+    this.observer?.onLogLine(characterName, serverName, records)
   }
 }
 
@@ -536,8 +594,8 @@ class FakeMatchWorkerClient implements MatchWorkerClientLike {
     return this.engine.flush()
   }
 
-  matchLine(record: EverQuestLogLineRecord): Promise<MatchWorkerMatch[]> {
-    return this.engine.matchLine(record)
+  matchLines(records: EverQuestLogLineRecord[]): Promise<MatchWorkerMatch[]> {
+    return this.engine.matchLines(records)
   }
 
   replacePatterns(namespace: string, patterns: { pattern: string }[]) {

@@ -19,6 +19,11 @@ import {
 } from '../FileWatcher'
 import { MessageBroker as WorkerMessageBroker } from '../MessageBroker'
 
+type ReceivedLogLine = EverQuestLogLineRecord & {
+  characterName: string
+  serverName: string
+}
+
 describe('FileWatcher', () => {
   afterEach(() => {
     vi.useRealTimers()
@@ -122,13 +127,19 @@ describe('FileWatcher', () => {
     const { broker, fileWatcher, logsDirectory, setFileHandle } = createHarness([
       'eqlog_Arias_bertox.txt',
     ])
-    const receivedLines: EverQuestLogLineRecord[] = []
+    const receivedLines: ReceivedLogLine[] = []
     const receivedMessages: FileWatcherCharactersMessage[] = []
     const ariasLog = logsDirectory.getFile('eqlog_Arias_bertox.txt')
 
     fileWatcher.observe({
-      onLogLine: (record) => {
-        receivedLines.push(record)
+      onLogLine: (characterName, serverName, records) => {
+        records.forEach((record) => {
+          receivedLines.push({
+            characterName,
+            serverName,
+            ...record,
+          })
+        })
       },
     })
     broker.listen('file-watcher.characters', (message) => {
@@ -184,6 +195,61 @@ describe('FileWatcher', () => {
     })
   })
 
+  it('reports tailed log lines in chunks of at most 100 records', async () => {
+    const { fileWatcher, logsDirectory, setFileHandle } = createHarness([
+      'eqlog_Arias_bertox.txt',
+    ])
+    const receivedChunks: Array<{
+      characterName: string
+      records: EverQuestLogLineRecord[]
+      serverName: string
+    }> = []
+    const ariasLog = logsDirectory.getFile('eqlog_Arias_bertox.txt')
+
+    fileWatcher.observe({
+      onLogLine: (characterName, serverName, records) => {
+        receivedChunks.push({
+          characterName,
+          records,
+          serverName,
+        })
+      },
+    })
+
+    await setFileHandle()
+    await wait(20)
+
+    ariasLog.append(
+      Array.from({ length: 205 }, (_value, index) => {
+        return `[Sun Jun 14 10:00:${String(index % 60).padStart(2, '0')} 2026] Line ${index}\n`
+      }).join(''),
+    )
+    await waitFor(() => {
+      return receivedChunks.reduce((count, chunk) => {
+        return count + chunk.records.length
+      }, 0) === 205
+    })
+
+    fileWatcher.dispose()
+
+    expect(receivedChunks.map((chunk) => chunk.records.length)).toEqual([
+      100,
+      100,
+      5,
+    ])
+    expect(receivedChunks.every((chunk) => {
+      return chunk.characterName === 'Arias' && chunk.serverName === 'bertox'
+    })).toBe(true)
+    expect(receivedChunks[0].records[0]).toEqual({
+      text: 'Line 0',
+      timestamp: 'Sun Jun 14 10:00:00 2026',
+    })
+    expect(receivedChunks[2].records[4]).toEqual({
+      text: 'Line 204',
+      timestamp: 'Sun Jun 14 10:00:24 2026',
+    })
+  })
+
   it('omits logs older than the presence freshness cutoff from character presence', async () => {
     const freshLastModifiedMs = Date.now()
 
@@ -223,12 +289,18 @@ describe('FileWatcher', () => {
       setFileHandle,
       setNullFileHandle,
     } = createHarness(['eqlog_Arias_bertox.txt'])
-    const receivedLines: EverQuestLogLineRecord[] = []
+    const receivedLines: ReceivedLogLine[] = []
     const ariasLog = logsDirectory.getFile('eqlog_Arias_bertox.txt')
 
     fileWatcher.observe({
-      onLogLine: (record) => {
-        receivedLines.push(record)
+      onLogLine: (characterName, serverName, records) => {
+        records.forEach((record) => {
+          receivedLines.push({
+            characterName,
+            serverName,
+            ...record,
+          })
+        })
       },
     })
 

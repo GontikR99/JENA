@@ -311,8 +311,18 @@ class FakeFileWatcher {
     }
   }
 
-  emit(record: EverQuestLogLineRecord) {
-    this.observer?.onLogLine(record)
+  emit(record: EverQuestLogLineRecord & {
+    characterName: string
+    serverName: string
+  }) {
+    this.observer?.onLogLine(
+      record.characterName,
+      record.serverName,
+      [{
+        text: record.text,
+        timestamp: record.timestamp,
+      }],
+    )
   }
 }
 
@@ -338,8 +348,8 @@ class FakeMatchWorkerClient implements MatchWorkerClientLike {
     return this.engine.flush()
   }
 
-  matchLine(record: EverQuestLogLineRecord): Promise<MatchWorkerMatch[]> {
-    return this.engine.matchLine(record)
+  matchLines(records: EverQuestLogLineRecord[]): Promise<MatchWorkerMatch[]> {
+    return this.engine.matchLines(records)
   }
 
   replacePatterns(namespace: string, patterns: { pattern: string }[]) {

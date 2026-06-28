@@ -22,6 +22,7 @@ const logSearchMaxBinarySearchIterations = 64
 const logSearchProbeBytes = 4096
 const logSearchReadRetryCount = 3
 const logSearchYieldLineInterval = 250
+const tailLogLineChunkSize = 100
 
 interface TailTask {
   logFile: EverQuestLogFile
@@ -56,14 +57,16 @@ interface LogSearchFileSnapshot {
 }
 
 export interface EverQuestLogLineRecord {
-  characterName: string
-  serverName: string
   text: string
   timestamp: string
 }
 
 export interface FileWatcherObserver {
-  onLogLine(record: EverQuestLogLineRecord): void
+  onLogLine(
+    characterName: string,
+    serverName: string,
+    records: EverQuestLogLineRecord[],
+  ): void
 }
 
 export class FileWatcher {
@@ -715,33 +718,54 @@ export class FileWatcher {
 
     tailTask.pendingText = combinedText.slice(lastNewlineIndex + 1)
 
-    combinedText
+    const records = combinedText
       .slice(0, lastNewlineIndex)
       .split('\n')
-      .forEach((rawLine) => {
+      .flatMap((rawLine) => {
         const line = rawLine.endsWith('\r') ? rawLine.slice(0, -1) : rawLine
 
         if (!line) {
-          return
+          return []
         }
 
         const parsedLine = parseEverQuestLogLine(line)
 
-        this.reportLogLine({
-          characterName: tailTask.logFile.characterName,
-          serverName: tailTask.logFile.serverName,
+        return [{
           text: parsedLine.text,
           timestamp: parsedLine.timestamp,
-        })
+        }]
       })
+
+    for (
+      let index = 0;
+      index < records.length;
+      index += tailLogLineChunkSize
+    ) {
+      this.reportLogLines(
+        tailTask.logFile.characterName,
+        tailTask.logFile.serverName,
+        records.slice(index, index + tailLogLineChunkSize),
+      )
+    }
   }
 
-  private reportLogLine(record: EverQuestLogLineRecord) {
-    this.markCharacterLogLineReceived(record)
+  private reportLogLines(
+    characterName: string,
+    serverName: string,
+    records: EverQuestLogLineRecord[],
+  ) {
+    if (records.length === 0) {
+      return
+    }
+
+    this.markCharacterLogLinesReceived({
+      characterName,
+      serverName,
+    })
 
     this.observers.forEach((observer) => {
       try {
-        observer.onLogLine(record)
+        observer.onLogLine(characterName, serverName, records)
       } catch (error) {
         console.error('[FileWatcher] observer failed', error)
       }
@@ -767,8 +791,11 @@ export class FileWatcher {
     return logs
   }
 
-  private markCharacterLogLineReceived(record: EverQuestLogLineRecord) {
-    this.characterLastLogLineReceivedAt.set(getCharacterKey(record), Date.now())
+  private markCharacterLogLinesReceived(character: CharacterIdentity) {
+    this.characterLastLogLineReceivedAt.set(
+      getCharacterKey(character),
+      Date.now(),
+    )
     this.announceCharactersIfChanged()
     this.scheduleActivityExpiryCheck()
   }

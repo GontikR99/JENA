@@ -117,31 +117,47 @@ export class MatcherService {
     return {}
   }
 
-  private readonly handleLogLine = (record: EverQuestLogLineRecord) => {
+  private readonly handleLogLine = (
+    characterName: string,
+    serverName: string,
+    records: EverQuestLogLineRecord[],
+  ) => {
     void this.enqueueOperation(async () => {
       const matchesByWorker = await Promise.all(
-        this.workers.map((worker) => worker.matchLine(record)),
+        this.workers.map((worker) => worker.matchLines(records)),
       )
+      const sortedMatches = matchesByWorker
+        .flat()
+        .sort((left, right) => left.lineIndex - right.lineIndex)
 
-      matchesByWorker.forEach((matches) => {
-        matches.forEach((match) => {
-          this.sendMatch(record, match)
-        })
+      sortedMatches.forEach((match) => {
+        const record = records[match.lineIndex]
+
+        if (!record) {
+          return
+        }
+
+        this.sendMatch(characterName, serverName, record, match)
       })
     }).catch((error: unknown) => {
-      console.error('[MatcherService] unable to match log line', error)
+      console.error('[MatcherService] unable to match log lines', error)
     })
   }
 
-  private sendMatch(record: EverQuestLogLineRecord, match: MatchWorkerMatch) {
+  private sendMatch(
+    characterName: string,
+    serverName: string,
+    record: EverQuestLogLineRecord,
+    match: MatchWorkerMatch,
+  ) {
     this.broker.send(
       'matcher-service',
       'client.matcher.match-found',
       {
         captures: match.captures,
-        characterName: record.characterName,
+        characterName,
         pattern: match.pattern,
-        serverName: record.serverName,
+        serverName,
         text: record.text,
         timestamp: record.timestamp,
       },
