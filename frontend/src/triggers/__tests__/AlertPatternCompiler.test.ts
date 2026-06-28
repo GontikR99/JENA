@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest'
 import type { RegexMatchFoundMessage } from '../../shared/messages'
 import {
   compileAlertMatcher,
+  compileTimerEarlyEnderMatcher,
   createAlertMatchContext,
+  createAlertPatternSessionId,
   substituteAlertTemplate,
   type AlertCompiledPattern,
 } from '../alerts/alertPatternCompiler'
@@ -180,6 +182,77 @@ describe('alert pattern compiler', () => {
     )
 
     expect(substituteAlertTemplate('{NULL}', context!)).toBeUndefined()
+  })
+
+  it('uses original named capture patterns for timer early enders', () => {
+    const compiled = compileTimerEarlyEnderMatcher({
+      earlyEnder: {
+        isRegex: true,
+        text: '^--${player} has looted {item} from .+--$',
+      },
+      sessionId: createAlertPatternSessionId(),
+      triggerMatcher: {
+        isRegex: true,
+        text: '^(?:A (?<item>.+) was given to (?<player>[A-Za-z]+))\\.$',
+      },
+    })
+    const context = createAlertMatchContext(
+      compiled,
+      runPattern(
+        compiled,
+        "--Crispyxdd has looted Vahlara's Writings from Vahlara`s Remains .--",
+        'Suuloti',
+      ),
+    )
+
+    expect(context?.namedCaptures).toMatchObject({
+      item: "Vahlara's Writings",
+      player: 'Crispyxdd',
+    })
+  })
+
+  it('uses original positional capture patterns for timer early enders', () => {
+    const compiled = compileTimerEarlyEnderMatcher({
+      earlyEnder: {
+        isRegex: true,
+        text: '^--${2} has looted {1} from .+--$',
+      },
+      sessionId: createAlertPatternSessionId(),
+      triggerMatcher: {
+        isRegex: true,
+        text: '^A (.+) was given to ([A-Za-z]+)\\.$',
+      },
+    })
+    const context = createAlertMatchContext(
+      compiled,
+      runPattern(
+        compiled,
+        '--Succor has looted Supple Slippers of the Stargazer from corpse.--',
+        'Suuloti',
+      ),
+    )
+
+    expect(context?.positionalCaptureIndexes).toEqual([2, 1])
+    expect(context?.positionalCaptures).toEqual([
+      'Succor',
+      'Supple Slippers of the Stargazer',
+    ])
+  })
+
+  it('rejects unknown early ender trigger capture references', () => {
+    expect(() =>
+      compileTimerEarlyEnderMatcher({
+        earlyEnder: {
+          isRegex: true,
+          text: '^--${missing} has looted .+--$',
+        },
+        sessionId: createAlertPatternSessionId(),
+        triggerMatcher: {
+          isRegex: true,
+          text: '^A (?<item>.+) was given to (?<player>[A-Za-z]+)\\.$',
+        },
+      }),
+    ).toThrow('Unknown trigger capture reference "missing".')
   })
 })
 

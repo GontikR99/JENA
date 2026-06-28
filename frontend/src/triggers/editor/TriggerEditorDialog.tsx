@@ -29,6 +29,8 @@ import {
   type TriggerEditorDraft,
 } from './triggerEditorModel'
 import {
+  compileTimerEarlyEnderMatcher,
+  createAlertPatternSessionId,
   createPreviewAlertMatchContext,
   substituteAlertTemplate,
 } from '../alerts/alertPatternCompiler'
@@ -264,9 +266,7 @@ function validateRegularExpressions(draft: TriggerEditorDraft) {
       return
     }
 
-    const earlyEnderError = getRegexValidationError(
-      earlyEnder.isRegex ? earlyEnder.text : matcherToRegexSource(earlyEnder),
-    )
+    const earlyEnderError = getEarlyEnderValidationError(draft, earlyEnder)
 
     if (earlyEnderError) {
       errors.push(
@@ -276,6 +276,23 @@ function validateRegularExpressions(draft: TriggerEditorDraft) {
   })
 
   return errors
+}
+
+function getEarlyEnderValidationError(
+  draft: TriggerEditorDraft,
+  earlyEnder: TriggerEditorDraft['timer']['earlyEnders'][number],
+) {
+  try {
+    const compiledPattern = compileTimerEarlyEnderMatcher({
+      earlyEnder,
+      sessionId: createAlertPatternSessionId(),
+      triggerMatcher: draft.match,
+    })
+
+    return getRegexValidationError(compiledPattern.pattern)
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error)
+  }
 }
 
 function getRegexValidationError(pattern: string) {

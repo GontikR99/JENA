@@ -370,6 +370,58 @@ describe('Pip', () => {
     expect(screen.getByText('Captured Timer')).toBeInTheDocument()
   })
 
+  it('uses positional capture indexes when matching early enders to timers', () => {
+    renderPip()
+
+    act(() => {
+      emitTriggerMatch({
+        matchCaptures: createCaptureSnapshot({
+          positionalCaptures: ['Supple Slippers of the Stargazer', 'Succor'],
+        }),
+        timer: createTimer({ startBehavior: 'restart' }),
+        timerName: 'Indexed Capture Timer',
+      })
+    })
+
+    expect(screen.getByText('Indexed Capture Timer')).toBeInTheDocument()
+
+    act(() => {
+      emitTimerEarlyEnder({
+        matchCaptures: createCaptureSnapshot({
+          positionalCaptureIndexes: [2],
+          positionalCaptures: ['Succor'],
+        }),
+      })
+    })
+
+    expect(screen.queryByText('Indexed Capture Timer')).not.toBeInTheDocument()
+  })
+
+  it('keeps timers when indexed positional early ender captures differ', () => {
+    renderPip()
+
+    act(() => {
+      emitTriggerMatch({
+        matchCaptures: createCaptureSnapshot({
+          positionalCaptures: ['Supple Slippers of the Stargazer', 'Succor'],
+        }),
+        timer: createTimer({ startBehavior: 'restart' }),
+        timerName: 'Indexed Capture Timer',
+      })
+    })
+
+    act(() => {
+      emitTimerEarlyEnder({
+        matchCaptures: createCaptureSnapshot({
+          positionalCaptureIndexes: [2],
+          positionalCaptures: ['Moggman'],
+        }),
+      })
+    })
+
+    expect(screen.getByText('Indexed Capture Timer')).toBeInTheDocument()
+  })
+
   it('clears timers and text when a stop request arrives', () => {
     renderPip()
 
@@ -519,11 +571,13 @@ function emitTimerEarlyEnder({
 function createCaptureSnapshot({
   capturesByKey = {},
   namedCaptures = {},
+  positionalCaptureIndexes,
   positionalCaptures = [],
 }: Partial<AlertCaptureSnapshot> = {}): AlertCaptureSnapshot {
   return {
     capturesByKey,
     namedCaptures,
+    ...(positionalCaptureIndexes ? { positionalCaptureIndexes } : {}),
     positionalCaptures,
   }
 }

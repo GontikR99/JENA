@@ -456,6 +456,7 @@ function doCaptureConstraintsMatchTimer(
     doPositionalConstraintsMatch(
       constraints.positionalCaptures,
       timerCaptures.positionalCaptures,
+      constraints.positionalCaptureIndexes,
     )
   )
 }
@@ -472,7 +473,18 @@ function doRecordConstraintsMatch(
 function doPositionalConstraintsMatch(
   constraints: string[],
   timerCaptures: string[],
+  constraintIndexes?: number[],
 ) {
+  if (constraintIndexes) {
+    return constraints.every((value, index) => {
+      const captureIndex = constraintIndexes[index]
+      return (
+        typeof captureIndex === 'number' &&
+        timerCaptures[captureIndex - 1] === value
+      )
+    })
+  }
+
   return constraints.every((value, index) => timerCaptures[index] === value)
 }
 

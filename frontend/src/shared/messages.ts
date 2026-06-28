@@ -56,6 +56,7 @@ export interface RegexMatchFoundMessage {
 export interface AlertCaptureSnapshot {
   capturesByKey: Record<string, string>
   namedCaptures: Record<string, string>
+  positionalCaptureIndexes?: number[]
   positionalCaptures: string[]
 }
 

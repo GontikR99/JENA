@@ -283,6 +283,36 @@ describe('AlertCoordinationService', () => {
       }),
     )
   })
+
+  it('emits original trigger capture references from timer early enders', async () => {
+    const trigger = createTriggerWithEarlyEnder({
+      earlyEnderText: '^--${player} has looted {item} from .+--$',
+      isRegex: true,
+      matchText: '^A (?<item>.+) was given to (?<player>[A-Za-z]+)\\.$',
+    })
+    hookState.userTriggers = [resolveTrigger(trigger)]
+
+    render(<AlertCoordinationService />)
+    await flushPatternRegistration()
+    emit(
+      'matcher.match-found',
+      createEarlyEnderMatch(
+        "--Succor has looted Supple Slippers of the Stargazer from corpse.--",
+      ),
+    )
+
+    expect(hookState.send).toHaveBeenCalledWith(
+      'alert.timer-early-ended',
+      expect.objectContaining({
+        matchCaptures: expect.objectContaining({
+          namedCaptures: {
+            item: 'Supple Slippers of the Stargazer',
+            player: 'Succor',
+          },
+        }),
+      }),
+    )
+  })
 })
 
 function emit(destination: string, payload: unknown) {
@@ -376,9 +406,15 @@ function createTrigger({
 function createTriggerWithEarlyEnder({
   earlyEnderText = 'early end',
   isRegex = false,
+  matchText,
+}: {
+  earlyEnderText?: string
+  isRegex?: boolean
+  matchText?: string
 } = {}): JenaTrigger {
   return withCanonicalTriggerId({
     ...createTrigger({
+      ...(matchText ? { matchText } : {}),
       name: 'Disabled Early Ender Trigger',
     }),
     timer: {
@@ -399,17 +435,22 @@ function createTriggerWithEarlyEnder({
   })
 }
 
-function createEarlyEnderMatch(): RegexMatchFoundMessage {
+function createEarlyEnderMatch(
+  text = 'early end Fireball for Mesozoic',
+): RegexMatchFoundMessage {
   const patternRegistrationCall = getAlertPatternRegistrationCall()
   const pattern = patternRegistrationCall?.[2]?.patterns?.find(
-    (registration: { pattern?: unknown }) =>
-      typeof registration.pattern === 'string' &&
-      registration.pattern.includes('early end'),
+    (registration: { pattern?: unknown }, index: number) => {
+      if (index === 0 || typeof registration.pattern !== 'string') {
+        return false
+      }
+
+      return new RegExp(registration.pattern, 'i').test(text)
+    },
   )?.pattern
   if (typeof pattern !== 'string') {
     throw new Error('Early ender pattern was not registered')
   }
-  const text = 'early end Fireball for Mesozoic'
   const match = new RegExp(pattern, 'i').exec(text)
   if (!match) {
     throw new Error(`Pattern did not match: ${pattern}`)

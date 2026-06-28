@@ -21,6 +21,7 @@ import { useSubscribedTriggerManager } from '../model/SubscribedTriggerManager'
 import { useTriggerManager } from '../model/UserTriggerManager'
 import {
   compileAlertMatcher,
+  compileTimerEarlyEnderMatcher,
   createAlertCaptureSnapshot,
   createAlertMatchContext,
   createAlertPatternSessionId,
@@ -299,14 +300,31 @@ function getTimerEarlyEnderPatternBindings(
         return []
       }
 
-      return [
-        {
-          compiledPattern: compileAlertMatcher(earlyEnder, sessionId),
-          earlyEnderIndex,
-          kind: 'earlyEnder' as const,
-          trigger,
-        },
-      ]
+      try {
+        return [
+          {
+            compiledPattern: compileTimerEarlyEnderMatcher({
+              earlyEnder,
+              sessionId,
+              triggerMatcher: trigger.match,
+            }),
+            earlyEnderIndex,
+            kind: 'earlyEnder' as const,
+            trigger,
+          },
+        ]
+      } catch (error) {
+        console.warn(
+          '[AlertCoordinationService] timer early ender pattern ignored',
+          {
+            earlyEnderIndex,
+            error,
+            triggerId: trigger.id,
+            triggerName: trigger.name,
+          },
+        )
+        return []
+      }
     }) ?? []
   )
 }
