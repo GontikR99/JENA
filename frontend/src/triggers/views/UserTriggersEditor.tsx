@@ -134,14 +134,10 @@ interface TriggerReplacement {
   upsert: JenaTriggerUpsert
 }
 
-type TreeSelection =
-  | { type: 'none' }
-  | { type: 'group'; path: string[] }
-  | {
-      anchorId: JenaTriggerId | null
-      ids: Set<JenaTriggerId>
-      type: 'triggers'
-    }
+interface TreeSelection {
+  anchorKey: string | null
+  itemKeys: Set<string>
+}
 
 export function UserTriggersEditor({
   revealRequest,
@@ -168,7 +164,9 @@ export function UserTriggersEditor({
     new Set(),
   )
   const [expandedGroupsLoaded, setExpandedGroupsLoaded] = useState(false)
-  const [selection, setSelection] = useState<TreeSelection>({ type: 'none' })
+  const [selection, setSelection] = useState<TreeSelection>(
+    createEmptySelection,
+  )
   const [pendingScrollTriggerId, setPendingScrollTriggerId] =
     useState<JenaTriggerId | null>(null)
   const [editorSession, setEditorSession] = useState<EditorSession | null>(null)
@@ -193,11 +191,8 @@ export function UserTriggersEditor({
     () => getGroupIds(triggers, emptyGroups),
     [emptyGroups, triggers],
   )
-  const triggerOrder = useMemo(
-    () =>
-      treeItems.flatMap((item) => {
-        return item.type === 'trigger' ? [item.id] : []
-      }),
+  const treeItemOrder = useMemo(
+    () => treeItems.map(getTreeItemKey),
     [treeItems],
   )
   const triggersById = useMemo(
@@ -209,12 +204,9 @@ export function UserTriggersEditor({
     () => getGroupStatesById(triggers, selectedCharacterKey),
     [selectedCharacterKey, triggers],
   )
-  const selectedTriggerIds =
-    selection.type === 'triggers'
-      ? selection.ids
-      : new Set<JenaTriggerId>()
-  const selectedGroupPath =
-    selection.type === 'group' ? selection.path : null
+  const selectedTriggerIds = getSelectedTriggerIds(selection.itemKeys)
+  const selectedGroupPaths = getSelectedGroupPaths(selection.itemKeys)
+  const selectedGroupPath = getSingleSelectedGroupPath(selection.itemKeys)
   const showEnableColumn = !!selectedCharacterRecord
 
   useEffect(() => {
@@ -303,11 +295,7 @@ export function UserTriggersEditor({
       })
       return next
     })
-    setSelection({
-      anchorId: revealRequest.triggerId,
-      ids: new Set([revealRequest.triggerId]),
-      type: 'triggers',
-    })
+    setSelection(createSelection(getTriggerItemKey(revealRequest.triggerId)))
     setPendingScrollTriggerId(revealRequest.triggerId)
   }, [revealRequest, triggersById])
 
@@ -341,78 +329,56 @@ export function UserTriggersEditor({
     setMenuTarget({ item })
     setAnchorPoint({ x: event.clientX, y: event.clientY })
 
-    if (item?.type === 'trigger' && !selectedTriggerIds.has(item.id)) {
-      setSelection({
-        anchorId: item.id,
-        ids: new Set([item.id]),
-        type: 'triggers',
-      })
-    } else if (item?.type === 'group') {
-      setSelection((current) => {
-        if (current.type === 'triggers' && current.ids.size > 0) {
-          return current
-        }
-        if (
-          current.type === 'group' &&
-          !areStringArraysEqual(current.path, item.path)
-        ) {
-          return current
-        }
-        return { path: item.path, type: 'group' }
-      })
-    } else if (!item) {
-      setSelection({ type: 'none' })
+    if (item) {
+      const itemKey = getTreeItemKey(item)
+      setSelection((current) =>
+        current.itemKeys.has(itemKey) ||
+        (item.type === 'group' && current.itemKeys.size > 0)
+          ? current
+          : createSelection(itemKey),
+      )
     }
 
     setMenuOpen(true)
   }
 
-  function handleGroupClick(event: MouseEvent, item: TreeGroupItem) {
+  function handleTreeItemClick(event: MouseEvent, item: TreeItem) {
     event.preventDefault()
-    setSelection({ path: item.path, type: 'group' })
-  }
+    const itemKey = getTreeItemKey(item)
 
-  function handleTriggerClick(event: MouseEvent, item: TreeTriggerItem) {
-    event.preventDefault()
-    const anchorId = selection.type === 'triggers' ? selection.anchorId : null
-
-    if (event.shiftKey && anchorId) {
+    if (event.shiftKey && selection.anchorKey) {
       setSelection({
-        anchorId,
-        ids: selectTriggerRange(triggerOrder, anchorId, item.id),
-        type: 'triggers',
+        anchorKey: selection.anchorKey,
+        itemKeys: selectItemRange(
+          treeItemOrder,
+          selection.anchorKey,
+          itemKey,
+        ),
       })
       return
     }
 
     if (event.ctrlKey || event.metaKey) {
       setSelection((previous) => {
-        const nextSelection = new Set(
-          previous.type === 'triggers' ? previous.ids : [],
-        )
+        const nextItemKeys = new Set(previous.itemKeys)
 
-        if (nextSelection.has(item.id)) {
-          nextSelection.delete(item.id)
+        if (nextItemKeys.has(itemKey)) {
+          nextItemKeys.delete(itemKey)
         } else {
-          nextSelection.add(item.id)
+          nextItemKeys.add(itemKey)
         }
 
-        return nextSelection.size > 0
+        return nextItemKeys.size > 0
           ? {
-              anchorId: item.id,
-              ids: nextSelection,
-              type: 'triggers',
+              anchorKey: getSelectionAnchorKey(nextItemKeys, itemKey),
+              itemKeys: nextItemKeys,
             }
-          : { type: 'none' }
+          : createEmptySelection()
       })
       return
     }
 
-    setSelection({
-      anchorId: item.id,
-      ids: new Set([item.id]),
-      type: 'triggers',
-    })
+    setSelection(createSelection(itemKey))
   }
 
   function toggleGroup(item: TreeGroupItem) {
@@ -623,11 +589,7 @@ export function UserTriggersEditor({
       deleteTriggerIds: [resolved.trigger.id],
       enabledFor: resolved.enabledFor,
     })
-    setSelection({
-      anchorId: renamedTrigger.id,
-      ids: new Set([renamedTrigger.id]),
-      type: 'triggers',
-    })
+    setSelection(createSelection(getTriggerItemKey(renamedTrigger.id)))
   }
 
   async function handleSaveEditor(trigger: JenaTrigger) {
@@ -646,85 +608,51 @@ export function UserTriggersEditor({
       enabledFor,
     })
     setEditorSession(null)
-    setSelection({
-      anchorId: canonicalTrigger.id,
-      ids: new Set([canonicalTrigger.id]),
-      type: 'triggers',
-    })
+    setSelection(createSelection(getTriggerItemKey(canonicalTrigger.id)))
   }
 
-  async function handleDeleteTriggerIds(triggerIds: JenaTriggerId[]) {
-    if (triggerIds.length === 0) {
+  async function handleDeleteSelection(itemKeys: string[]) {
+    const triggerIds = getTriggerIdsForSelection(triggers, itemKeys)
+    const groupPaths = getGroupPathsForItemKeys(itemKeys)
+
+    if (triggerIds.length === 0 && groupPaths.length === 0) {
       return
     }
 
     const confirmed =
-      triggerIds.length === 1 ||
-      confirm(`Delete ${triggerIds.length} selected triggers?`)
+      itemKeys.length === 1 && triggerIds.length <= 1 && groupPaths.length === 0
+        ? true
+        : confirm(
+            `Delete selected groups and triggers? This will delete ${triggerIds.length} trigger${triggerIds.length === 1 ? '' : 's'}.`,
+          )
 
     if (!confirmed) {
       return
     }
 
-    await deleteTriggers(triggerIds)
-    setSelection((previous) => {
-      if (previous.type !== 'triggers') {
-        return previous
-      }
+    if (triggerIds.length > 0) {
+      await deleteTriggers(triggerIds)
+    }
 
-      const next = new Set(previous.ids)
-      triggerIds.forEach((triggerId) => next.delete(triggerId))
-      return next.size > 0
-        ? {
-            anchorId: getSelectionAnchor(next, previous.anchorId),
-            ids: next,
-            type: 'triggers',
-          }
-        : { type: 'none' }
-    })
-  }
-
-  async function handleDeleteGroup(group: TreeGroupItem) {
-    const affectedTriggerIds = getTriggerIdsUnderPath(triggers, group.path)
-    const confirmed =
-      affectedTriggerIds.length === 0 ||
-      confirm(
-        `Delete group "${group.name}" and ${affectedTriggerIds.length} triggers inside it?`,
+    if (groupPaths.length > 0) {
+      setEmptyGroups((previous) =>
+        previous.filter(
+          (path) =>
+            !groupPaths.some((groupPath) =>
+              isSameOrChildPath(path, groupPath),
+            ),
+        ),
       )
-
-    if (!confirmed) {
-      return
     }
 
-    if (affectedTriggerIds.length > 0) {
-      await deleteTriggers(affectedTriggerIds)
-    }
-
-    setEmptyGroups((previous) =>
-      previous.filter((path) => !isSameOrChildPath(path, group.path)),
-    )
-    setSelection((previous) => {
-      if (
-        previous.type === 'group' &&
-        isSameOrChildPath(previous.path, group.path)
-      ) {
-        return { type: 'none' }
-      }
-
-      if (previous.type !== 'triggers') {
-        return previous
-      }
-
-      const next = new Set(previous.ids)
-      affectedTriggerIds.forEach((triggerId) => next.delete(triggerId))
-      return next.size > 0
-        ? {
-            anchorId: getSelectionAnchor(next, previous.anchorId),
-            ids: next,
-            type: 'triggers',
-          }
-        : { type: 'none' }
+    const removedKeys = new Set(itemKeys)
+    triggerIds.forEach((triggerId) => {
+      removedKeys.add(getTriggerItemKey(triggerId))
     })
+    groupPaths.forEach((groupPath) => {
+      removedKeys.add(getGroupItemKey(groupPath))
+    })
+    removeSelectionItemKeys([...removedKeys])
   }
 
   async function handleRenameGroup(group: TreeGroupItem) {
@@ -747,7 +675,7 @@ export function UserTriggersEditor({
           previous.map((path) => renamePathPrefix(path, group.path, renamedPath)),
         ),
       )
-      setSelection({ path: renamedPath, type: 'group' })
+      setSelection(createSelection(getGroupItemKey(renamedPath)))
       return
     }
 
@@ -771,15 +699,15 @@ export function UserTriggersEditor({
         previous.map((path) => renamePathPrefix(path, group.path, renamedPath)),
       ),
     )
-    setSelection({ path: renamedPath, type: 'group' })
+    setSelection(createSelection(getGroupItemKey(renamedPath)))
   }
 
   async function handleMoveSelectedTriggers(targetPath: string[]) {
-    if (selection.type !== 'triggers') {
+    if (selectedGroupPaths.length > 0) {
       return
     }
 
-    const triggerIds = [...selection.ids]
+    const triggerIds = [...selectedTriggerIds]
     const movingTriggers = triggerIds.flatMap((triggerId) => {
       const resolved = triggersById.get(triggerId)
       return resolved ? [resolved] : []
@@ -804,18 +732,20 @@ export function UserTriggersEditor({
       completedReplacements.map((replacement) => replacement.newTrigger.id),
     )
     setSelection({
-      anchorId: getSelectionAnchor(movedTriggerIds, null),
-      ids: movedTriggerIds,
-      type: 'triggers',
+      anchorKey: getSelectionAnchorKey(
+        new Set([...movedTriggerIds].map(getTriggerItemKey)),
+        null,
+      ),
+      itemKeys: new Set([...movedTriggerIds].map(getTriggerItemKey)),
     })
   }
 
   async function handleMoveSelectedGroup(targetParentPath: string[]) {
-    if (selection.type !== 'group') {
+    if (!selectedGroupPath) {
       return
     }
 
-    const sourcePath = selection.path
+    const sourcePath = selectedGroupPath
     const sourceName = sourcePath[sourcePath.length - 1]
 
     if (!sourceName || !canMoveGroup(sourcePath, targetParentPath)) {
@@ -853,7 +783,45 @@ export function UserTriggersEditor({
     )
     setGroupExpanded(getGroupId(targetParentPath), true)
     setGroupExpanded(getGroupId(movedPath), true)
-    setSelection({ path: movedPath, type: 'group' })
+    setSelection(createSelection(getGroupItemKey(movedPath)))
+  }
+
+  function removeSelectionItemKeys(itemKeys: string[]) {
+    setSelection((previous) => {
+      const removedKeys = new Set(itemKeys)
+      const nextItemKeys = new Set(previous.itemKeys)
+
+      nextItemKeys.forEach((itemKey) => {
+        if (removedKeys.has(itemKey)) {
+          nextItemKeys.delete(itemKey)
+          return
+        }
+
+        const groupPath = getGroupPathFromItemKey(itemKey)
+        if (
+          groupPath &&
+          [...removedKeys].some((removedKey) => {
+            const removedGroupPath = getGroupPathFromItemKey(removedKey)
+            return (
+              !!removedGroupPath &&
+              isSameOrChildPath(groupPath, removedGroupPath)
+            )
+          })
+        ) {
+          nextItemKeys.delete(itemKey)
+        }
+      })
+
+      return nextItemKeys.size > 0
+        ? {
+            anchorKey: getSelectionAnchorKey(
+              nextItemKeys,
+              previous.anchorKey,
+            ),
+            itemKeys: nextItemKeys,
+          }
+        : createEmptySelection()
+    })
   }
 
   async function performChunkedReplacements(
@@ -1072,37 +1040,6 @@ export function UserTriggersEditor({
     )
   }
 
-  async function handleExportGroup(group: TreeGroupItem) {
-    const groupTriggers = getTriggersUnderPath(triggers, group.path)
-
-    if (groupTriggers.length === 0) {
-      toast.error('No triggers in this group.')
-      return
-    }
-
-    await exportTriggers(
-      `Export ${group.name}`,
-      `${sanitizeExportFileName(group.name || 'group')}.gtp`,
-      groupTriggers,
-    )
-  }
-
-  async function handleExportSelectedGroup(path: string[]) {
-    const groupName = path[path.length - 1] ?? 'group'
-    const groupTriggers = getTriggersUnderPath(triggers, path)
-
-    if (groupTriggers.length === 0) {
-      toast.error('No triggers in the selected group.')
-      return
-    }
-
-    await exportTriggers(
-      `Export ${groupName}`,
-      `${sanitizeExportFileName(groupName || 'group')}.gtp`,
-      groupTriggers,
-    )
-  }
-
   async function handleShareTriggerIds(triggerIds: JenaTriggerId[]) {
     const uniqueTriggerIds = [...new Set(triggerIds)]
 
@@ -1259,22 +1196,32 @@ export function UserTriggersEditor({
     }
   }
 
-  const effectiveMenuSelection = getEffectiveMenuSelection(
+  const effectiveMenuItemKeys = getEffectiveMenuSelection(
     menuTarget.item,
     selection,
+  )
+  const effectiveMenuTriggerIds = getTriggerIdsForSelection(
+    triggers,
+    effectiveMenuItemKeys,
   )
   const menuGroup =
     menuTarget.item?.type === 'group' ? menuTarget.item : null
   const menuTrigger =
     menuTarget.item?.type === 'trigger' ? menuTarget.item : null
+  const singleMenuGroupPath = getSingleGroupPathForItemKeys(
+    effectiveMenuItemKeys,
+  )
+  const singleMenuTriggerId = getSingleTriggerIdForItemKeys(
+    effectiveMenuItemKeys,
+  )
   const canMoveSelectedGroupHere =
     !!menuGroup && !!selectedGroupPath && canMoveGroup(selectedGroupPath, menuGroup.path)
-  const selectedGroupExportCount = selectedGroupPath
-    ? getTriggersUnderPath(triggers, selectedGroupPath).length
-    : 0
-  const menuGroupExportCount = menuGroup
-    ? getTriggersUnderPath(triggers, menuGroup.path).length
-    : 0
+  const selectedEffectiveTriggerIds = getTriggerIdsForSelection(
+    triggers,
+    [...selection.itemKeys],
+  )
+  const canMoveSelectedTriggersHere =
+    !!menuGroup && selectedTriggerIds.size > 0 && selectedGroupPaths.length === 0
 
   return (
     <section
@@ -1377,7 +1324,7 @@ export function UserTriggersEditor({
                 onAddGroup={handleAddGroup}
                 onAddTrigger={handleAddTrigger}
                 onContextMenu={openContextMenu}
-                onSelect={handleGroupClick}
+                onSelect={handleTreeItemClick}
                 onToggleBroadcastMode={(broadcastMode) => {
                   void handleToggleGroupBroadcastMode(item, broadcastMode)
                 }}
@@ -1396,8 +1343,7 @@ export function UserTriggersEditor({
                   groupStatesById.get(item.id)?.publishState ?? 'unchecked'
                 }
                 selected={
-                  !!selectedGroupPath &&
-                  areStringArraysEqual(selectedGroupPath, item.path)
+                  selection.itemKeys.has(getTreeItemKey(item))
                 }
                 showEnableColumn={showEnableColumn}
               />
@@ -1413,7 +1359,7 @@ export function UserTriggersEditor({
                 onBroadcastModeToggle={(broadcastMode) => {
                   void handleToggleTriggerBroadcastMode(item, broadcastMode)
                 }}
-                onClick={handleTriggerClick}
+                onClick={handleTreeItemClick}
                 onContextMenu={openContextMenu}
                 onDoubleClick={(triggerItem) => {
                   handleEditTrigger(triggerItem.id)
@@ -1428,7 +1374,7 @@ export function UserTriggersEditor({
                 rowRef={(node) => {
                   setTriggerRowRef(triggerRowRefs.current, item.id, node)
                 }}
-                selected={selectedTriggerIds.has(item.id)}
+                selected={selection.itemKeys.has(getTreeItemKey(item))}
                 showEnableColumn={showEnableColumn}
               />
             ),
@@ -1449,18 +1395,16 @@ export function UserTriggersEditor({
         onClose={() => setMenuOpen(false)}
         state={menuState}
       >
-        {menuTrigger ? (
+        {singleMenuTriggerId ? (
           <>
             <MenuItem
-              disabled={effectiveMenuSelection.length !== 1}
-              onClick={() => handleEditTrigger(effectiveMenuSelection[0])}
+              onClick={() => handleEditTrigger(singleMenuTriggerId)}
             >
               Edit...
             </MenuItem>
             <MenuItem
-              disabled={effectiveMenuSelection.length !== 1}
               onClick={() => {
-                void handleRenameTrigger(effectiveMenuSelection[0]).catch(
+                void handleRenameTrigger(singleMenuTriggerId).catch(
                   (error: unknown) => {
                     toast.error(getErrorMessage(error))
                   },
@@ -1469,29 +1413,9 @@ export function UserTriggersEditor({
             >
               Rename...
             </MenuItem>
-            <MenuItem
-              disabled={effectiveMenuSelection.length === 0}
-              onClick={() => {
-                void handleExportSelectedTriggers(effectiveMenuSelection)
-              }}
-            >
-              {effectiveMenuSelection.length > 1
-                ? 'Export selected triggers...'
-                : 'Export trigger...'}
-            </MenuItem>
-            <MenuItem
-              disabled={effectiveMenuSelection.length === 0}
-              onClick={() => {
-                void handleShareTriggerIds(effectiveMenuSelection)
-              }}
-            >
-              {effectiveMenuSelection.length > 1
-                ? 'Share selected triggers'
-                : 'Share trigger'}
-            </MenuItem>
           </>
         ) : null}
-        {menuGroup ? (
+        {singleMenuGroupPath && menuGroup ? (
           <>
             <MenuItem
               onClick={() => {
@@ -1508,50 +1432,41 @@ export function UserTriggersEditor({
             <MenuItem onClick={() => handleAddTrigger(menuGroup.path)}>
               Add trigger...
             </MenuItem>
+          </>
+        ) : null}
+        {effectiveMenuItemKeys.length > 0 ? (
+          <>
             <MenuItem
-              disabled={menuGroupExportCount === 0}
+              disabled={effectiveMenuTriggerIds.length === 0}
               onClick={() => {
-                void handleExportGroup(menuGroup)
+                void handleExportSelectedTriggers(effectiveMenuTriggerIds)
               }}
             >
-              Export this group...
+              {getExportMenuLabel(
+                effectiveMenuItemKeys,
+                effectiveMenuTriggerIds.length,
+              )}
             </MenuItem>
             <MenuItem
-              disabled={menuGroupExportCount === 0}
+              disabled={effectiveMenuTriggerIds.length === 0}
               onClick={() => {
-                void handleShareTriggerIds(getTriggerIdsUnderPath(triggers, menuGroup.path))
+                void handleShareTriggerIds(effectiveMenuTriggerIds)
               }}
             >
-              Share this group
+              {getShareMenuLabel(
+                effectiveMenuItemKeys,
+                effectiveMenuTriggerIds.length,
+              )}
             </MenuItem>
-            {selectedGroupPath &&
-            !areStringArraysEqual(selectedGroupPath, menuGroup.path) ? (
-              <>
-                <MenuItem
-                  disabled={selectedGroupExportCount === 0}
-                  onClick={() => {
-                    void handleExportSelectedGroup(selectedGroupPath)
-                  }}
-                >
-                  Export selected group...
-                </MenuItem>
-                <MenuItem
-                  disabled={selectedGroupExportCount === 0}
-                  onClick={() => {
-                    void handleShareTriggerIds(
-                      getTriggerIdsUnderPath(triggers, selectedGroupPath),
-                    )
-                  }}
-                >
-                  Share selected group
-                </MenuItem>
-              </>
-            ) : null}
+          </>
+        ) : null}
+        {menuGroup ? (
+          <>
             <MenuItem
               disabled={
                 selectedGroupPath
                   ? !canMoveSelectedGroupHere
-                  : selectedTriggerIds.size === 0
+                  : !canMoveSelectedTriggersHere
               }
               onClick={() => {
                 if (selectedGroupPath) {
@@ -1571,69 +1486,35 @@ export function UserTriggersEditor({
           <>
             <MenuItem onClick={handleAddRootGroup}>Add group...</MenuItem>
             <MenuItem onClick={handleImportClick}>Import GINA...</MenuItem>
-            {selection.type === 'triggers' ? (
+            {selectedEffectiveTriggerIds.length > 0 ? (
               <>
                 <MenuItem
-                  disabled={selection.ids.size === 0}
                   onClick={() => {
-                    void handleExportSelectedTriggers([...selection.ids])
+                    void handleExportSelectedTriggers(selectedEffectiveTriggerIds)
                   }}
                 >
                   Export selected triggers...
                 </MenuItem>
                 <MenuItem
-                  disabled={selection.ids.size === 0}
                   onClick={() => {
-                    void handleShareTriggerIds([...selection.ids])
+                    void handleShareTriggerIds(selectedEffectiveTriggerIds)
                   }}
                 >
                   Share selected triggers
                 </MenuItem>
               </>
             ) : null}
-            {selectedGroupPath ? (
-              <>
-                <MenuItem
-                  disabled={selectedGroupExportCount === 0}
-                  onClick={() => {
-                    void handleExportSelectedGroup(selectedGroupPath)
-                  }}
-                >
-                  Export selected group...
-                </MenuItem>
-                <MenuItem
-                  disabled={selectedGroupExportCount === 0}
-                  onClick={() => {
-                    void handleShareTriggerIds(
-                      getTriggerIdsUnderPath(triggers, selectedGroupPath),
-                    )
-                  }}
-                >
-                  Share selected group
-                </MenuItem>
-              </>
-            ) : null}
           </>
         ) : null}
         <MenuDivider />
-        {menuGroup ? (
-          <MenuItem
-            onClick={() => {
-              void handleDeleteGroup(menuGroup)
-            }}
-          >
-            Delete...
-          </MenuItem>
-        ) : (
-          <MenuItem
-            disabled={effectiveMenuSelection.length === 0}
-            onClick={() => {
-              void handleDeleteTriggerIds(effectiveMenuSelection)
-            }}
-          >
-            Delete...
-          </MenuItem>
-        )}
+        <MenuItem
+          disabled={effectiveMenuItemKeys.length === 0}
+          onClick={() => {
+            void handleDeleteSelection(effectiveMenuItemKeys)
+          }}
+        >
+          {getDeleteMenuLabel(effectiveMenuItemKeys)}
+        </MenuItem>
       </ControlledMenu>
 
       {editorSession ? (
@@ -2333,27 +2214,6 @@ function getAllTriggersInTreeOrder(triggers: JenaResolvedTrigger[]) {
   return selectedTriggers
 }
 
-function getTriggersUnderPath(
-  triggers: JenaResolvedTrigger[],
-  groupPath: string[],
-) {
-  const seenTriggerIds = new Set<JenaTriggerId>()
-  const selectedTriggers: JenaTrigger[] = []
-
-  getResolvedTriggersUnderPath(triggers, groupPath)
-    .sort(compareResolvedTriggersByPath)
-    .forEach((resolved) => {
-      if (seenTriggerIds.has(resolved.trigger.id)) {
-        return
-      }
-
-      seenTriggerIds.add(resolved.trigger.id)
-      selectedTriggers.push(resolved.trigger)
-    })
-
-  return selectedTriggers
-}
-
 function compareResolvedTriggersByPath(
   left: JenaResolvedTrigger,
   right: JenaResolvedTrigger,
@@ -2514,47 +2374,204 @@ function getIconTriState(
   return 'unchecked'
 }
 
-function selectTriggerRange(
-  triggerOrder: JenaTriggerId[],
-  anchorId: JenaTriggerId,
-  targetId: JenaTriggerId,
+function createEmptySelection(): TreeSelection {
+  return {
+    anchorKey: null,
+    itemKeys: new Set(),
+  }
+}
+
+function createSelection(itemKey: string): TreeSelection {
+  return {
+    anchorKey: itemKey,
+    itemKeys: new Set([itemKey]),
+  }
+}
+
+function selectItemRange(
+  itemOrder: string[],
+  anchorKey: string,
+  targetKey: string,
 ) {
-  const anchorIndex = triggerOrder.indexOf(anchorId)
-  const targetIndex = triggerOrder.indexOf(targetId)
+  const anchorIndex = itemOrder.indexOf(anchorKey)
+  const targetIndex = itemOrder.indexOf(targetKey)
 
   if (anchorIndex < 0 || targetIndex < 0) {
-    return new Set([targetId])
+    return new Set([targetKey])
   }
 
   const start = Math.min(anchorIndex, targetIndex)
   const end = Math.max(anchorIndex, targetIndex)
 
-  return new Set(triggerOrder.slice(start, end + 1))
+  return new Set(itemOrder.slice(start, end + 1))
 }
 
 function getEffectiveMenuSelection(
   item: TreeItem | null,
   selection: TreeSelection,
 ) {
-  if (
-    item?.type === 'trigger' &&
-    (selection.type !== 'triggers' || !selection.ids.has(item.id))
-  ) {
-    return [item.id]
+  if (item) {
+    const itemKey = getTreeItemKey(item)
+    return selection.itemKeys.has(itemKey)
+      ? [...selection.itemKeys]
+      : [itemKey]
   }
 
-  return selection.type === 'triggers' ? [...selection.ids] : []
+  return [...selection.itemKeys]
 }
 
-function getSelectionAnchor(
-  ids: Set<JenaTriggerId>,
-  preferred: JenaTriggerId | null,
+function getSelectionAnchorKey(
+  itemKeys: Set<string>,
+  preferred: string | null,
 ) {
-  if (preferred && ids.has(preferred)) {
+  if (preferred && itemKeys.has(preferred)) {
     return preferred
   }
 
-  return [...ids][0] ?? null
+  return [...itemKeys][0] ?? null
+}
+
+function getTreeItemKey(item: TreeItem) {
+  if (item.type === 'group') {
+    return getGroupItemKey(item.path)
+  }
+
+  return getTriggerItemKey(item.id)
+}
+
+function getTriggerItemKey(triggerId: JenaTriggerId) {
+  return `trigger\0${triggerId}`
+}
+
+function getGroupItemKey(path: string[]) {
+  return `group\0${getGroupId(path)}`
+}
+
+function getTriggerIdFromItemKey(itemKey: string) {
+  const prefix = 'trigger\0'
+  if (!itemKey.startsWith(prefix)) {
+    return null
+  }
+
+  return itemKey.slice(prefix.length) as JenaTriggerId
+}
+
+function getGroupPathFromItemKey(itemKey: string) {
+  const prefix = 'group\0'
+  if (!itemKey.startsWith(prefix)) {
+    return null
+  }
+
+  const pathText = itemKey.slice(prefix.length)
+  return pathText ? pathText.split('\0') : null
+}
+
+function getSelectedTriggerIds(itemKeys: Set<string>) {
+  return new Set(
+    [...itemKeys].flatMap((itemKey) => {
+      const triggerId = getTriggerIdFromItemKey(itemKey)
+      return triggerId ? [triggerId] : []
+    }),
+  )
+}
+
+function getSelectedGroupPaths(itemKeys: Set<string>) {
+  return getGroupPathsForItemKeys([...itemKeys])
+}
+
+function getGroupPathsForItemKeys(itemKeys: string[]) {
+  return itemKeys.flatMap((itemKey) => {
+    const groupPath = getGroupPathFromItemKey(itemKey)
+    return groupPath ? [groupPath] : []
+  })
+}
+
+function getSingleSelectedGroupPath(itemKeys: Set<string>) {
+  return getSingleGroupPathForItemKeys([...itemKeys])
+}
+
+function getSingleGroupPathForItemKeys(itemKeys: string[]) {
+  if (itemKeys.length !== 1) {
+    return null
+  }
+
+  return getGroupPathFromItemKey(itemKeys[0])
+}
+
+function getSingleTriggerIdForItemKeys(itemKeys: string[]) {
+  if (itemKeys.length !== 1) {
+    return null
+  }
+
+  return getTriggerIdFromItemKey(itemKeys[0])
+}
+
+function getTriggerIdsForSelection(
+  triggers: JenaResolvedTrigger[],
+  itemKeys: string[],
+) {
+  const selectedTriggerIds = new Set<JenaTriggerId>()
+  const selectedGroupPaths: string[][] = []
+
+  itemKeys.forEach((itemKey) => {
+    const triggerId = getTriggerIdFromItemKey(itemKey)
+    if (triggerId) {
+      selectedTriggerIds.add(triggerId)
+      return
+    }
+
+    const groupPath = getGroupPathFromItemKey(itemKey)
+    if (groupPath) {
+      selectedGroupPaths.push(groupPath)
+    }
+  })
+
+  return [...triggers]
+    .sort(compareResolvedTriggersByPath)
+    .filter(
+      (resolved) =>
+        selectedTriggerIds.has(resolved.trigger.id) ||
+        selectedGroupPaths.some((groupPath) =>
+          isSameOrChildPath(resolved.trigger.groupPath, groupPath),
+        ),
+    )
+    .map((resolved) => resolved.trigger.id)
+}
+
+function getExportMenuLabel(itemKeys: string[], triggerCount: number) {
+  if (itemKeys.length === 1) {
+    if (getGroupPathFromItemKey(itemKeys[0])) {
+      return 'Export this group...'
+    }
+    if (getTriggerIdFromItemKey(itemKeys[0])) {
+      return 'Export trigger...'
+    }
+  }
+
+  return triggerCount === 1
+    ? 'Export selected trigger...'
+    : 'Export selected triggers...'
+}
+
+function getShareMenuLabel(itemKeys: string[], triggerCount: number) {
+  if (itemKeys.length === 1) {
+    if (getGroupPathFromItemKey(itemKeys[0])) {
+      return 'Share this group'
+    }
+    if (getTriggerIdFromItemKey(itemKeys[0])) {
+      return 'Share trigger'
+    }
+  }
+
+  return triggerCount === 1 ? 'Share selected trigger' : 'Share selected triggers'
+}
+
+function getDeleteMenuLabel(itemKeys: string[]) {
+  if (itemKeys.length === 1 && getGroupPathFromItemKey(itemKeys[0])) {
+    return 'Delete group...'
+  }
+
+  return itemKeys.length > 1 ? 'Delete selected...' : 'Delete...'
 }
 
 function mergeGroupPaths(paths: string[][]) {
