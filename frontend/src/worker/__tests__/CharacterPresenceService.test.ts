@@ -11,6 +11,11 @@ import {
   type FileWatcherObserver,
 } from '../FileWatcher'
 import { CharacterPresenceService } from '../CharacterPresenceService'
+import { MatchWorkerEngine, type MatchWorkerMatch } from '../MatchWorkerEngine'
+import {
+  MatchWorkerClientFactory,
+  type MatchWorkerClientLike,
+} from '../MatchWorkerClient'
 import { MatcherService } from '../MatcherService'
 import { MessageBroker as WorkerMessageBroker } from '../MessageBroker'
 
@@ -256,6 +261,11 @@ function createHarness() {
     broker as unknown as WorkerMessageBroker,
   )
   installInstance(deps, FileWatcher, fileWatcher as unknown as FileWatcher)
+  installInstance(
+    deps,
+    MatchWorkerClientFactory,
+    new FakeMatchWorkerClientFactory() as unknown as MatchWorkerClientFactory,
+  )
   install(deps, MatcherService)
   const characterPresenceService = install(deps, CharacterPresenceService)
 
@@ -303,5 +313,37 @@ class FakeFileWatcher {
 
   emit(record: EverQuestLogLineRecord) {
     this.observer?.onLogLine(record)
+  }
+}
+
+class FakeMatchWorkerClientFactory {
+  private readonly client = new FakeMatchWorkerClient()
+
+  createClients() {
+    return [this.client]
+  }
+}
+
+class FakeMatchWorkerClient implements MatchWorkerClientLike {
+  private readonly engine = new MatchWorkerEngine('character-presence-test')
+
+  addPatterns(namespace: string, patterns: { pattern: string }[]) {
+    this.engine.addPatterns(namespace, patterns)
+    return Promise.resolve()
+  }
+
+  dispose() {}
+
+  flush() {
+    return this.engine.flush()
+  }
+
+  matchLine(record: EverQuestLogLineRecord): Promise<MatchWorkerMatch[]> {
+    return this.engine.matchLine(record)
+  }
+
+  replacePatterns(namespace: string, patterns: { pattern: string }[]) {
+    this.engine.replacePatterns(namespace, patterns)
+    return Promise.resolve()
   }
 }

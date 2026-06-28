@@ -1,60 +1,38 @@
-import { RE2Set, type RE2JS } from 're2js'
-import type {
-  RegexCaptures,
-  RegexPatternRegistration,
-} from '../shared/messages'
-import { validateRegexPattern } from '../shared/regexValidation'
+import type { RegexPatternRegistration } from '../shared/messages'
 import { getDependency, type Deps } from './di'
 import {
   FileWatcher,
   type EverQuestLogLineRecord,
 } from './FileWatcher'
+import {
+  assertValidPatternRegistration,
+  type MatchWorkerMatch,
+} from './MatchWorkerEngine'
+import {
+  MatchWorkerClientFactory,
+  type MatchWorkerClientLike,
+} from './MatchWorkerClient'
 import { MessageBroker } from './MessageBroker'
 
-const matcherCompileDelayMs = 25
+const matcherUpdateDebounceMs = 25
 const defaultPatternNamespace = 'default'
-
-interface Re2PatternRegistration {
-  compiledPattern: RE2JS
-  engine: 're2'
-  originalPattern: string
-  setIndex: number
-  translatedPattern: string
-}
-
-interface JavaScriptPatternRegistration {
-  compiledPattern: RegExp
-  engine: 'javascript'
-  originalPattern: string
-}
-
-type ValidatedPatternRegistration =
-  | JavaScriptPatternRegistration
-  | Re2PatternRegistration
-
-interface PatternSetState {
-  patternsBySetIndex: Re2PatternRegistration[]
-  set: RE2Set | null
-}
 
 export class MatcherService {
   private readonly broker: MessageBroker
-  private fallbackRegistrations: JavaScriptPatternRegistration[] = []
-  private needsCompile = false
+  private readonly dirtyNamespaces = new Set<string>()
+  private isDisposed = false
   private readonly patternNamespaces = new Map<
     string,
-    Map<string, ValidatedPatternRegistration>
+    Map<string, RegexPatternRegistration>
   >()
   private readonly unregister: Array<() => void>
-  private compilePromise: Promise<void> | null = null
-  private compileTimer: ReturnType<typeof globalThis.setTimeout> | null = null
-  private patternSetState: PatternSetState = {
-    patternsBySetIndex: [],
-    set: null,
-  }
+  private operationTail: Promise<void> = Promise.resolve()
+  private updateTimer: ReturnType<typeof globalThis.setTimeout> | null = null
+  private readonly workers: MatchWorkerClientLike[]
 
   constructor(deps: Deps) {
     this.broker = getDependency(deps, MessageBroker)
+    this.workers = getDependency(deps, MatchWorkerClientFactory).createClients()
 
     const fileWatcher = getDependency(deps, FileWatcher)
 
@@ -71,13 +49,18 @@ export class MatcherService {
   }
 
   dispose() {
-    if (this.compileTimer) {
-      globalThis.clearTimeout(this.compileTimer)
-      this.compileTimer = null
+    this.isDisposed = true
+
+    if (this.updateTimer) {
+      globalThis.clearTimeout(this.updateTimer)
+      this.updateTimer = null
     }
 
     this.unregister.forEach((unregister) => {
       unregister()
+    })
+    this.workers.forEach((worker) => {
+      worker.dispose()
     })
   }
 
@@ -97,14 +80,11 @@ export class MatcherService {
       return {}
     }
 
-    const validatedRegistrations = novelRegistrations.map((registration) =>
-      validatePatternRegistration(registration),
-    )
-
-    validatedRegistrations.forEach((registration) => {
-      namespacePatterns.set(registration.originalPattern, registration)
+    novelRegistrations.forEach(assertValidPatternRegistration)
+    novelRegistrations.forEach((registration) => {
+      namespacePatterns.set(registration.pattern, registration)
     })
-    this.scheduleCompile()
+    this.markNamespaceDirty(namespace)
 
     return {}
   }
@@ -115,145 +95,57 @@ export class MatcherService {
     }
 
     const namespace = normalizePatternNamespace(params.namespace)
-    const validatedRegistrations = getUniqueRegistrations(params.patterns).map(
-      (registration) => validatePatternRegistration(registration),
-    )
-    const namespacePatterns = new Map(
-      validatedRegistrations.map((registration) => [
-        registration.originalPattern,
-        registration,
-      ]),
-    )
+    const uniqueRegistrations = getUniqueRegistrations(params.patterns)
 
-    this.patternNamespaces.set(namespace, namespacePatterns)
-    this.scheduleCompile()
+    uniqueRegistrations.forEach(assertValidPatternRegistration)
+    this.patternNamespaces.set(
+      namespace,
+      new Map(
+        uniqueRegistrations.map((registration) => [
+          registration.pattern,
+          registration,
+        ]),
+      ),
+    )
+    this.markNamespaceDirty(namespace)
 
     return {}
   }
 
   private readonly flush = async () => {
-    await this.flushPendingPatterns()
+    await this.flushPendingPatternUpdates()
     return {}
   }
 
   private readonly handleLogLine = (record: EverQuestLogLineRecord) => {
-    this.matchRe2Patterns(record)
-    this.matchJavaScriptPatterns(record)
-  }
+    void this.enqueueOperation(async () => {
+      const matchesByWorker = await Promise.all(
+        this.workers.map((worker) => worker.matchLine(record)),
+      )
 
-  private matchRe2Patterns(record: EverQuestLogLineRecord) {
-    const { set, patternsBySetIndex } = this.patternSetState
-
-    if (!set) {
-      return
-    }
-
-    set.match(record.text).forEach((setIndex) => {
-      const registration = patternsBySetIndex[setIndex]
-
-      if (!registration) {
-        return
-      }
-
-      const match = registration.compiledPattern.matchAll(record.text).next()
-      if (!match.done) {
-        this.sendMatch(record, registration.originalPattern, match.value)
-      }
+      matchesByWorker.forEach((matches) => {
+        matches.forEach((match) => {
+          this.sendMatch(record, match)
+        })
+      })
+    }).catch((error: unknown) => {
+      console.error('[MatcherService] unable to match log line', error)
     })
   }
 
-  private matchJavaScriptPatterns(record: EverQuestLogLineRecord) {
-    this.fallbackRegistrations.forEach((registration) => {
-      const regex = registration.compiledPattern
-
-      regex.lastIndex = 0
-      const match = regex.exec(record.text)
-
-      if (match) {
-        this.sendMatch(record, registration.originalPattern, match)
-      }
-    })
-  }
-
-  private sendMatch(
-    record: EverQuestLogLineRecord,
-    pattern: string,
-    match: unknown[],
-  ) {
+  private sendMatch(record: EverQuestLogLineRecord, match: MatchWorkerMatch) {
     this.broker.send(
       'matcher-service',
       'client.matcher.match-found',
       {
-        captures: getCaptures(match),
+        captures: match.captures,
         characterName: record.characterName,
-        pattern,
+        pattern: match.pattern,
         serverName: record.serverName,
         text: record.text,
         timestamp: record.timestamp,
       },
     )
-  }
-
-  private scheduleCompile() {
-    this.needsCompile = true
-
-    if (this.compileTimer) {
-      return
-    }
-
-    this.compileTimer = globalThis.setTimeout(() => {
-      this.compileTimer = null
-      void this.flushPendingPatterns().catch((error: unknown) => {
-        console.warn('[MatcherService] unable to compile patterns', error)
-      })
-    }, matcherCompileDelayMs)
-  }
-
-  private async flushPendingPatterns(): Promise<void> {
-    if (this.compileTimer) {
-      globalThis.clearTimeout(this.compileTimer)
-      this.compileTimer = null
-    }
-
-    if (this.compilePromise) {
-      await this.compilePromise
-      if (this.needsCompile) {
-        await this.flushPendingPatterns()
-      }
-      return
-    }
-
-    if (!this.needsCompile) {
-      return
-    }
-
-    this.needsCompile = false
-    const nextRegistrations = this.getMergedRegistrations()
-    const nextRe2Registrations = nextRegistrations.filter(isRe2PatternRegistration)
-    const nextFallbackRegistrations = nextRegistrations.filter(
-      isJavaScriptPatternRegistration,
-    )
-    const compileStartedAtMs = performance.now()
-
-    this.compilePromise = Promise.resolve()
-      .then(() => compilePatternSet(nextRe2Registrations))
-      .then((nextPatternSetState) => {
-        this.fallbackRegistrations = nextFallbackRegistrations
-        this.patternSetState = nextPatternSetState
-        const durationMs = Math.round(performance.now() - compileStartedAtMs)
-        console.info(
-          `[MatcherService] full RE2Set compile completed: namespaces=${this.patternNamespaces.size} totalPatterns=${nextRegistrations.length} re2Patterns=${nextRe2Registrations.length} fallbackPatterns=${nextFallbackRegistrations.length} durationMs=${durationMs}`,
-        )
-      })
-      .finally(() => {
-        this.compilePromise = null
-      })
-
-    await this.compilePromise
-
-    if (this.needsCompile) {
-      this.scheduleCompile()
-    }
   }
 
   private getNamespacePatterns(namespace: string) {
@@ -262,98 +154,125 @@ export class MatcherService {
       return existingPatterns
     }
 
-    const patterns = new Map<string, ValidatedPatternRegistration>()
+    const patterns = new Map<string, RegexPatternRegistration>()
     this.patternNamespaces.set(namespace, patterns)
     return patterns
   }
 
-  private getMergedRegistrations() {
-    const registrations = new Map<string, ValidatedPatternRegistration>()
+  private markNamespaceDirty(namespace: string) {
+    this.dirtyNamespaces.add(namespace)
 
-    this.patternNamespaces.forEach((namespacePatterns) => {
-      namespacePatterns.forEach((registration) => {
-        registrations.set(registration.originalPattern, registration)
-      })
+    if (this.updateTimer) {
+      return
+    }
+
+    this.updateTimer = globalThis.setTimeout(() => {
+      this.updateTimer = null
+      void this.enqueueDistributionForDirtyNamespaces().catch(
+        (error: unknown) => {
+          console.error(
+            '[MatcherService] unable to distribute pattern updates',
+            error,
+          )
+        },
+      )
+    }, matcherUpdateDebounceMs)
+  }
+
+  private async flushPendingPatternUpdates() {
+    if (this.updateTimer) {
+      globalThis.clearTimeout(this.updateTimer)
+      this.updateTimer = null
+    }
+
+    await this.enqueueDistributionForDirtyNamespaces()
+  }
+
+  private enqueueDistributionForDirtyNamespaces() {
+    const dirtyNamespaces = [...this.dirtyNamespaces]
+    this.dirtyNamespaces.clear()
+
+    if (dirtyNamespaces.length === 0) {
+      return this.operationTail
+    }
+
+    return this.enqueueOperation(async () => {
+      await this.distributeNamespaces(dirtyNamespaces)
+    })
+  }
+
+  private async distributeNamespaces(namespaces: string[]) {
+    await Promise.all(
+      namespaces.flatMap((namespace) => {
+        const patternsByShard = this.getPatternsByShard(namespace)
+
+        return this.workers.map((worker, shardIndex) => {
+          return worker.replacePatterns(
+            namespace,
+            patternsByShard.get(shardIndex) ?? [],
+          )
+        })
+      }),
+    )
+
+    await Promise.all(this.workers.map((worker) => worker.flush()))
+  }
+
+  private getPatternsByShard(namespace: string) {
+    const patternsByShard = new Map<number, RegexPatternRegistration[]>()
+    const namespacePatterns = this.patternNamespaces.get(namespace)
+
+    namespacePatterns?.forEach((registration) => {
+      const shardIndex = getPatternShardIndex(
+        registration.pattern,
+        this.workers.length,
+      )
+      const shardPatterns = patternsByShard.get(shardIndex) ?? []
+
+      shardPatterns.push(registration)
+      patternsByShard.set(shardIndex, shardPatterns)
     })
 
-    return [...registrations.values()]
+    return patternsByShard
   }
-}
 
-function compilePatternSet(
-  registrations: Re2PatternRegistration[],
-): PatternSetState {
-  if (registrations.length === 0) {
-    return {
-      patternsBySetIndex: [],
-      set: null,
+  private enqueueOperation(operation: () => Promise<void>) {
+    if (this.isDisposed) {
+      return Promise.reject(new Error('MatcherService has been disposed.'))
     }
-  }
 
-  const set = new RE2Set()
-  const patternsBySetIndex: Re2PatternRegistration[] = []
+    const run = this.operationTail.then(operation, operation)
 
-  registrations.forEach((registration) => {
-    const setIndex = set.add(registration.translatedPattern)
+    this.operationTail = run.then(
+      () => undefined,
+      () => undefined,
+    )
 
-    patternsBySetIndex[setIndex] = {
-      ...registration,
-      setIndex,
-    }
-  })
-
-  set.compile()
-
-  return {
-    patternsBySetIndex,
-    set,
+    return run
   }
 }
 
-function getCaptures(match: unknown[]): RegexCaptures {
-  return {
-    named: getNamedCaptures(match),
-    positional: match.slice(1).map(getCaptureValue),
+function getPatternShardIndex(pattern: string, shardCount: number) {
+  if (shardCount <= 0) {
+    throw new Error('MatcherService has no match workers.')
   }
+
+  return getStableStringHash(pattern) % shardCount
 }
 
-function getNamedCaptures(match: unknown[]) {
-  const groups = getMatchGroups(match)
+function getStableStringHash(value: string) {
+  let hash = 2166136261
 
-  if (!groups) {
-    return {}
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index)
+    hash = Math.imul(hash, 16777619)
   }
 
-  return Object.fromEntries(
-    Object.entries(groups).map(([name, value]) => [
-      name,
-      getCaptureValue(value),
-    ]),
-  )
-}
-
-function getMatchGroups(match: unknown[]) {
-  const candidate = match as unknown[] & {
-    groups?: unknown
-  }
-
-  if (!candidate.groups || typeof candidate.groups !== 'object') {
-    return null
-  }
-
-  return candidate.groups as Record<string, unknown>
-}
-
-function getCaptureValue(value: unknown) {
-  if (value === null || value === undefined) {
-    return null
-  }
-
-  return String(value)
+  return hash >>> 0
 }
 
 function getNovelRegistrations(
-  namespacePatterns: Map<string, ValidatedPatternRegistration>,
+  namespacePatterns: Map<string, RegexPatternRegistration>,
   registrations: RegexPatternRegistration[],
 ) {
   const seenInRequest = new Set<string>()
@@ -382,44 +301,6 @@ function getUniqueRegistrations(registrations: RegexPatternRegistration[]) {
   })
 
   return [...uniqueRegistrations.values()]
-}
-
-function validatePatternRegistration(
-  registration: RegexPatternRegistration,
-): ValidatedPatternRegistration {
-  const validation = validateRegexPattern(registration.pattern)
-
-  if (!validation.ok) {
-    throw new Error(`Invalid regular expression: ${validation.error}`)
-  }
-
-  if (validation.engine === 'javascript') {
-    return {
-      compiledPattern: validation.compiledPattern,
-      engine: 'javascript',
-      originalPattern: registration.pattern,
-    }
-  }
-
-  return {
-    compiledPattern: validation.compiledPattern,
-    engine: 're2',
-    originalPattern: registration.pattern,
-    setIndex: -1,
-    translatedPattern: validation.translatedPattern,
-  }
-}
-
-function isRe2PatternRegistration(
-  registration: ValidatedPatternRegistration,
-): registration is Re2PatternRegistration {
-  return registration.engine === 're2'
-}
-
-function isJavaScriptPatternRegistration(
-  registration: ValidatedPatternRegistration,
-): registration is JavaScriptPatternRegistration {
-  return registration.engine === 'javascript'
 }
 
 function isAddPatternsRequest(

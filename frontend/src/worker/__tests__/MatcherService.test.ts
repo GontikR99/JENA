@@ -7,6 +7,11 @@ import {
   type EverQuestLogLineRecord,
   type FileWatcherObserver,
 } from '../FileWatcher'
+import { MatchWorkerEngine, type MatchWorkerMatch } from '../MatchWorkerEngine'
+import {
+  MatchWorkerClientFactory,
+  type MatchWorkerClientLike,
+} from '../MatchWorkerClient'
 import { MatcherService } from '../MatcherService'
 import { MessageBroker as WorkerMessageBroker } from '../MessageBroker'
 
@@ -420,13 +425,41 @@ describe('MatcherService', () => {
 
     expect(receivedPatterns).toEqual(['old alert'])
   })
+
+  it('distributes namespace replacements to every match worker shard', async () => {
+    const { broker, matchWorkerClientFactory } = createHarness({
+      workerCount: 4,
+    })
+
+    await broker.call('test.matcher-service', 'matcher-service', 'replace-patterns', {
+      namespace: 'alerts',
+      patterns: [
+        {
+          pattern: 'alpha',
+        },
+        {
+          pattern: 'beta',
+        },
+      ],
+    })
+    await broker.call('test.matcher-service', 'matcher-service', 'flush', {})
+
+    expect(
+      matchWorkerClientFactory.clients.map((client) => {
+        return client.replacedNamespaces
+      }),
+    ).toEqual([['alerts'], ['alerts'], ['alerts'], ['alerts']])
+  })
 })
 
-function createHarness() {
+function createHarness(options: { workerCount?: number } = {}) {
   const deps: Deps = new Map()
   const bus = new MessageBus()
   const broker = new MessageBroker(bus)
   const fileWatcher = new FakeFileWatcher()
+  const matchWorkerClientFactory = new FakeMatchWorkerClientFactory(
+    options.workerCount ?? 1,
+  )
 
   installInstance(
     deps,
@@ -434,11 +467,17 @@ function createHarness() {
     broker as unknown as WorkerMessageBroker,
   )
   installInstance(deps, FileWatcher, fileWatcher as unknown as FileWatcher)
+  installInstance(
+    deps,
+    MatchWorkerClientFactory,
+    matchWorkerClientFactory as unknown as MatchWorkerClientFactory,
+  )
   install(deps, MatcherService)
 
   return {
     broker,
     fileWatcher,
+    matchWorkerClientFactory,
   }
 }
 
@@ -461,5 +500,49 @@ class FakeFileWatcher {
 
   emit(record: EverQuestLogLineRecord) {
     this.observer?.onLogLine(record)
+  }
+}
+
+class FakeMatchWorkerClientFactory {
+  readonly clients: FakeMatchWorkerClient[]
+
+  constructor(workerCount: number) {
+    this.clients = Array.from({ length: workerCount }, (_value, index) => {
+      return new FakeMatchWorkerClient(index)
+    })
+  }
+
+  createClients() {
+    return this.clients
+  }
+}
+
+class FakeMatchWorkerClient implements MatchWorkerClientLike {
+  private readonly engine: MatchWorkerEngine
+  readonly replacedNamespaces: string[] = []
+
+  constructor(index: number) {
+    this.engine = new MatchWorkerEngine(`fake-${index}`)
+  }
+
+  addPatterns(namespace: string, patterns: { pattern: string }[]) {
+    this.engine.addPatterns(namespace, patterns)
+    return Promise.resolve()
+  }
+
+  dispose() {}
+
+  flush() {
+    return this.engine.flush()
+  }
+
+  matchLine(record: EverQuestLogLineRecord): Promise<MatchWorkerMatch[]> {
+    return this.engine.matchLine(record)
+  }
+
+  replacePatterns(namespace: string, patterns: { pattern: string }[]) {
+    this.replacedNamespaces.push(namespace)
+    this.engine.replacePatterns(namespace, patterns)
+    return Promise.resolve()
   }
 }
