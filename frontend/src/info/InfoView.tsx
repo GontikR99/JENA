@@ -47,7 +47,7 @@ export function InfoView() {
           />
           <FeatureBlock
             title="Subscribe to triggers"
-            text="Anyone can use a subscription code. Subscribed triggers stay separate from your own triggers, update whenever the publisher changes their published set, and can be enabled per character or adopted into your personal set later."
+            text="Anyone can use a subscription code. Subscribed triggers stay separate from your own triggers, update whenever the publisher changes their published set, and can be reviewed first, trusted automatically, turned on or off per character, or adopted into your personal set later."
           />
           <FeatureBlock
             title="Broadcast alerts"
@@ -158,7 +158,9 @@ export function InfoView() {
             </div>
             <div className="info-subscription-card">
               <div className="info-subscription-header">
-                <span className="info-checkbox info-checkbox-checked" />
+                <span className="info-subscription-policy">
+                  Trust: Review first
+                </span>
                 <strong>Jephine</strong>
                 <span className="info-unsubscribe">
                   <X aria-hidden="true" size={15} />
@@ -168,17 +170,20 @@ export function InfoView() {
                 <MockSubscribedGroup name="Tacvi" />
                 <MockSubscribedTrigger
                   broadcast
-                  state="default"
+                  inherited
+                  enabled={false}
                   name="Overlord Mata Muram gaze"
                 />
                 <MockSubscribedTrigger
                   broadcast={false}
-                  state="enabled"
+                  enabled
+                  inherited={false}
                   name="Mask reuse timer"
                 />
                 <MockSubscribedTrigger
                   broadcast={false}
-                  state="disabled"
+                  enabled={false}
+                  inherited={false}
                   name="Optional audio cue"
                 />
               </div>
@@ -187,23 +192,16 @@ export function InfoView() {
 
           <div className="info-control-notes">
             <ControlNote
-              label="Enable by default"
-              text="Controls what new triggers from this publisher do unless you override them."
+              label="Trust setting"
+              text="Review first keeps newly inherited triggers off until you enable them. Trust publisher lets new triggers from that publisher turn on automatically unless you override them."
             />
             <ControlNote
               label="Per-trigger state"
-              text={
-                <>
-                  Each subscribed trigger can{' '}
-                  <InlineState state="enabled" text="always enable" />,{' '}
-                  <InlineState state="disabled" text="always disable" />, or{' '}
-                  <InlineState
-                    state="inherit"
-                    text="follow the subscription default"
-                  />
-                  .
-                </>
-              }
+              text="Trigger checkboxes show whether the trigger is currently enabled for the selected character. Right-click a trigger, group, or subscription to follow the trust setting, force enable, force disable, or adopt triggers into your own tree."
+            />
+            <ControlNote
+              label="Auto badge"
+              text="The small auto label means the trigger is following the subscription's trust setting instead of using a forced per-trigger choice."
             />
             <ControlNote
               label="Broadcast indicator"
@@ -264,24 +262,6 @@ function InfoIconLabel({
   return (
     <span className="info-icon-label">
       <span className="info-icon-label-icon">{icon}</span>
-      <span>{text}</span>
-    </span>
-  )
-}
-
-function InlineState({
-  state,
-  text,
-}: {
-  state: 'disabled' | 'enabled' | 'inherit'
-  text: string
-}) {
-  return (
-    <span className="info-inline-state">
-      <span
-        aria-hidden="true"
-        className={getInlineStateCheckboxClassName(state)}
-      />
       <span>{text}</span>
     </span>
   )
@@ -351,12 +331,14 @@ function MockTrigger({
 
 function MockSubscribedTrigger({
   broadcast,
+  enabled,
+  inherited,
   name,
-  state,
 }: {
   broadcast: boolean
+  enabled: boolean
+  inherited: boolean
   name: string
-  state: 'default' | 'enabled' | 'disabled'
 }) {
   return (
     <div className="info-tree-row info-tree-trigger">
@@ -364,10 +346,19 @@ function MockSubscribedTrigger({
         <span className="info-tree-indent info-tree-indent-child" />
         <span className="info-tree-caret-placeholder" />
         <span
-          className={getSubscriptionCheckboxClassName(state)}
-          title={getSubscriptionStateLabel(state)}
+          className={
+            enabled
+              ? 'info-checkbox info-checkbox-checked'
+              : 'info-checkbox info-checkbox-empty'
+          }
+          title={enabled ? 'Enabled' : 'Disabled'}
         />
         <span className="info-tree-name info-tree-trigger-name">{name}</span>
+        {inherited ? (
+          <span className="info-auto-badge" title="Following trust setting">
+            auto
+          </span>
+        ) : null}
       </span>
       <span className="info-tree-row-side">
         <MockBroadcastIndicator active={broadcast} />
@@ -425,44 +416,4 @@ function MockBroadcastIndicator({ active }: { active: boolean }) {
       <Icon aria-hidden="true" size={15} strokeWidth={2} />
     </span>
   )
-}
-
-function getSubscriptionCheckboxClassName(
-  state: 'default' | 'enabled' | 'disabled',
-) {
-  if (state === 'enabled') {
-    return 'info-checkbox info-checkbox-checked'
-  }
-
-  if (state === 'disabled') {
-    return 'info-checkbox info-checkbox-empty'
-  }
-
-  return 'info-checkbox info-checkbox-default'
-}
-
-function getInlineStateCheckboxClassName(
-  state: 'disabled' | 'enabled' | 'inherit',
-) {
-  if (state === 'enabled') {
-    return 'info-checkbox info-checkbox-checked'
-  }
-
-  if (state === 'disabled') {
-    return 'info-checkbox info-checkbox-empty'
-  }
-
-  return 'info-checkbox info-checkbox-default'
-}
-
-function getSubscriptionStateLabel(state: 'default' | 'enabled' | 'disabled') {
-  if (state === 'enabled') {
-    return 'Always on'
-  }
-
-  if (state === 'disabled') {
-    return 'Always off'
-  }
-
-  return 'Use default'
 }
