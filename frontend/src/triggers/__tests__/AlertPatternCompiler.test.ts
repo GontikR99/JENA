@@ -81,6 +81,39 @@ describe('alert pattern compiler', () => {
     )
   })
 
+  it('substitutes nonparticipating named alternation captures as empty text', () => {
+    const compiled = compileAlertMatcher(
+      {
+        isRegex: true,
+        text: '^(?<target1>Your) voice fills with the power of nightmares[.]$|^(?<target2>.*) speaks with the voice of nightmares',
+      },
+      'test-session',
+    )
+    const ownMatch = runPattern(
+      compiled,
+      'Your voice fills with the power of nightmares.',
+      'Suuloti',
+    )
+    const otherMatch = runPattern(
+      compiled,
+      'Arias speaks with the voice of nightmares',
+      'Suuloti',
+    )
+
+    expect(
+      substituteAlertTemplate(
+        '(${target1}${target2}) Voice of Thule',
+        createAlertMatchContext(compiled, ownMatch)!,
+      ),
+    ).toBe('(Your) Voice of Thule')
+    expect(
+      substituteAlertTemplate(
+        '(${target1}${target2}) Voice of Thule',
+        createAlertMatchContext(compiled, otherMatch)!,
+      ),
+    ).toBe('(Arias) Voice of Thule')
+  })
+
   it('uses an unknown-zone placeholder when the zone is not available', () => {
     const compiled = compileAlertMatcher(
       {

@@ -173,6 +173,7 @@ export function TriggerEditorDialog({
                 clipboardTextEnabled={draft.actions.text.clipboard.enabled}
                 disabled={readOnly}
                 displayTextEnabled={draft.actions.text.display.enabled}
+                idPrefix="trigger-editor-basic-text"
                 onChange={(text) =>
                   setDraft({
                     ...draft,
@@ -188,6 +189,7 @@ export function TriggerEditorDialog({
                 audioMode={draft.actions.audio.mode}
                 characters={characters}
                 disabled={readOnly}
+                idPrefix="trigger-editor-basic-audio"
                 onChange={(audio) =>
                   setDraft({
                     ...draft,

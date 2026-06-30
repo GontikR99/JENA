@@ -74,6 +74,7 @@ export function TimerEndedTab({
         clipboardTextEnabled={false}
         disabled={disabled || !isEnabled}
         displayTextEnabled={endedAction.display.enabled}
+        idPrefix="trigger-editor-timer-ended-text"
         onChange={(text) => updateEndedAction(text, audioState)}
         state={textState}
       />
@@ -81,6 +82,7 @@ export function TimerEndedTab({
         audioMode={audioState.mode}
         characters={characters}
         disabled={disabled || !isEnabled}
+        idPrefix="trigger-editor-timer-ended-audio"
         onChange={(audio) => updateEndedAction(textState, audio)}
         state={audioState}
       />

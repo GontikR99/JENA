@@ -11,6 +11,7 @@ interface TextSettingsSectionProps {
   clipboardTextEnabled: boolean
   disabled?: boolean
   displayTextEnabled: boolean
+  idPrefix?: string
   onChange?: (state: {
     clipboard: JenaClipboardAction
     display: JenaTextAction
@@ -25,6 +26,7 @@ export function TextSettingsSection({
   clipboardTextEnabled,
   disabled = false,
   displayTextEnabled,
+  idPrefix = 'trigger-editor-text',
   onChange,
   state,
 }: TextSettingsSectionProps) {
@@ -53,7 +55,7 @@ export function TextSettingsSection({
       <div className="trigger-editor-checkbox-row">
         <FourStateCheckbox
           disabled={disabled}
-          id="trigger-editor-display-text-enabled"
+          id={`${idPrefix}-display-text-enabled`}
           label="Display Text"
           mode={BINARY}
           onChange={(nextState) =>
@@ -73,7 +75,7 @@ export function TextSettingsSection({
       <div className="trigger-editor-checkbox-row">
         <FourStateCheckbox
           disabled={disabled}
-          id="trigger-editor-clipboard-text-enabled"
+          id={`${idPrefix}-clipboard-text-enabled`}
           label="Clipboard Text"
           mode={BINARY}
           onChange={(nextState) =>

@@ -107,6 +107,41 @@ describe('TriggerEditorDialog', () => {
     })
   })
 
+  it('keeps timer ended text-to-speech radios independent from other tabs', async () => {
+    const user = userEvent.setup()
+
+    render(
+      <TriggerEditorDialog
+        setShown={vi.fn()}
+        setTrigger={vi.fn()}
+        shown
+        trigger={withCanonicalTriggerId({
+          ...createEmptyTrigger(),
+          name: 'Timer Speech Groups',
+          timer: {
+            durationMs: 1000,
+            earlyEnders: [],
+            endedAction: null,
+            name: 'Timer',
+            startBehavior: 'startNew',
+            type: 'countdown',
+            warningAction: null,
+            warningSeconds: 1,
+          },
+        })}
+      />,
+    )
+
+    await user.click(screen.getByRole('tab', { name: 'Timer Ending' }))
+    await user.click(screen.getByRole('tab', { name: 'Timer Ended' }))
+
+    const ttsRadios = screen.getAllByLabelText(
+      'Use Text To Speech',
+    ) as HTMLInputElement[]
+    expect(ttsRadios).toHaveLength(3)
+    expect(new Set(ttsRadios.map((radio) => radio.name)).size).toBe(3)
+  })
+
   it('allows saving JavaScript-compatible lookahead regexes', async () => {
     const user = userEvent.setup()
     const setShown = vi.fn()

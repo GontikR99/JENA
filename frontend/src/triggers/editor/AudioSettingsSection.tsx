@@ -12,6 +12,7 @@ interface AudioSettingsSectionProps {
   audioMode: TriggerEditorAudioMode
   characters: CharacterPresence[]
   disabled?: boolean
+  idPrefix?: string
   onChange?: (state: {
     mode: TriggerEditorAudioMode
     speech: JenaSpeechAction
@@ -27,6 +28,7 @@ export function AudioSettingsSection({
   audioMode,
   characters,
   disabled = false,
+  idPrefix = 'trigger-editor-audio',
   onChange,
   onTestSpeech,
   state,
@@ -82,9 +84,9 @@ export function AudioSettingsSection({
         <Form.Check
           checked={audioMode === 'none'}
           disabled={disabled}
-          id="trigger-editor-audio-none"
+          id={`${idPrefix}-audio-none`}
           label="No Sound"
-          name="trigger-editor-audio-mode"
+          name={`${idPrefix}-audio-mode`}
           onChange={() => setMode('none')}
           type="radio"
         />
@@ -92,9 +94,9 @@ export function AudioSettingsSection({
         <Form.Check
           checked={isTtsSelected}
           disabled={disabled}
-          id="trigger-editor-audio-tts"
+          id={`${idPrefix}-audio-tts`}
           label="Use Text To Speech"
-          name="trigger-editor-audio-mode"
+          name={`${idPrefix}-audio-mode`}
           onChange={() => setMode('tts')}
           type="radio"
         />
@@ -116,7 +118,7 @@ export function AudioSettingsSection({
 
         <FourStateCheckbox
           disabled={disabled || !isTtsSelected}
-          id="trigger-editor-interrupt-speech"
+          id={`${idPrefix}-interrupt-speech`}
           label="Interrupt Speech"
           mode={BINARY}
           onChange={(nextState) =>

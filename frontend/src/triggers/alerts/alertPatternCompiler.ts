@@ -745,11 +745,11 @@ function removeInternalCaptures(
   const internalCaptureNames = getInternalCaptureNames(compiledPattern)
 
   Object.entries(namedCaptures).forEach(([name, value]) => {
-    if (internalCaptureNames.has(name) || value === null) {
+    if (internalCaptureNames.has(name)) {
       return
     }
 
-    filteredCaptures[name] = value
+    filteredCaptures[name] = value ?? ''
   })
 
   return filteredCaptures
