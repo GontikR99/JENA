@@ -480,7 +480,7 @@ async function waitFor(predicate: () => boolean | Promise<boolean>) {
   const startedAt = Date.now()
 
   while (!(await predicate())) {
-    if (Date.now() - startedAt > 1000) {
+    if (Date.now() - startedAt > 7000) {
       throw new Error('Timed out waiting for predicate.')
     }
 

@@ -12,8 +12,8 @@ import type {
 import { getDependency, type Deps } from './di'
 import { MessageBroker } from './MessageBroker'
 
-const directoryScanIntervalMs = 100
-const tailIntervalMs = 10
+const directoryScanIntervalMs = 1_000
+const tailIntervalMs = 100
 const characterActiveWindowMs = 30 * 60 * 1000
 export const stalePresenceLogFileMaxAgeMs = 90 * 24 * 60 * 60 * 1000
 const logSearchChunkSizeBytes = 512 * 1024
