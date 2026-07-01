@@ -137,7 +137,7 @@
 .trigger-log-header,
 .trigger-log-row {
   display: grid;
-  grid-template-columns: 16em 25em 10em minmax(0, 1fr);
+  grid-template-columns: 16em 15em 10em minmax(0, 1fr);
 }
 
 .trigger-log-header {
