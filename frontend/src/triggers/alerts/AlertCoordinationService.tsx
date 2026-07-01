@@ -155,7 +155,6 @@ export function AlertCoordinationService() {
             createSpeechProfile(machineSettings.tts, voiceByURI),
           )
 
-          console.log('[AlertCoordinationService] trigger matched', payload)
           send('alert.trigger-matched', payload)
           return
         }
@@ -167,7 +166,6 @@ export function AlertCoordinationService() {
           binding.compiledPattern,
         )
 
-        console.log('[AlertCoordinationService] timer early ender matched', payload)
         send('alert.timer-early-ended', payload)
       })
     },
