@@ -1,6 +1,6 @@
-import { useRef } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
-import type { TriggerLogRecord } from '../model/types'
+import type { TriggerLogOutput, TriggerLogRecord } from '../model/types'
 
 interface TriggerLogTableProps {
   onTriggerClick: (record: TriggerLogRecord) => void
@@ -14,9 +14,14 @@ export function TriggerLogTable({
   records,
 }: TriggerLogTableProps) {
   const scrollRef = useRef<HTMLDivElement | null>(null)
+  const [filterText, setFilterText] = useState('')
+  const visibleRecords = useMemo(
+    () => filterTriggerLogRecords(records, filterText),
+    [filterText, records],
+  )
   // eslint-disable-next-line react-hooks/incompatible-library
   const rowVirtualizer = useVirtualizer({
-    count: records.length,
+    count: visibleRecords.length,
     estimateSize: () => rowHeightPx,
     getScrollElement: () => scrollRef.current,
     overscan: 12,
@@ -28,19 +33,33 @@ export function TriggerLogTable({
         <div>Timestamp</div>
         <div>Character</div>
         <div>Trigger Name</div>
-        <div>Log Line</div>
+        <div className="trigger-log-line-header">
+          <span className="trigger-log-line-header-label">Log Line</span>
+          <input
+            aria-label="Filter trigger log lines"
+            className="trigger-log-filter"
+            onChange={(event) => setFilterText(event.currentTarget.value)}
+            placeholder="Filter"
+            type="search"
+            value={filterText}
+          />
+        </div>
       </div>
 
       <div className="trigger-log-scroll" ref={scrollRef}>
-        {records.length === 0 ? (
-          <div className="trigger-log-empty">No trigger events yet</div>
+        {visibleRecords.length === 0 ? (
+          <div className="trigger-log-empty">
+            {records.length === 0
+              ? 'No trigger events yet'
+              : 'No trigger events match the filter'}
+          </div>
         ) : (
           <div
             className="trigger-log-virtual-space"
             style={{ height: `${rowVirtualizer.getTotalSize()}px` }}
           >
             {rowVirtualizer.getVirtualItems().map((virtualRow) => {
-              const record = records[virtualRow.index]
+              const record = visibleRecords[virtualRow.index]
 
               return (
                 <div
@@ -64,7 +83,12 @@ export function TriggerLogTable({
                       {record.triggerName}
                     </button>
                   </div>
-                  <div className="trigger-log-cell">{record.logLine}</div>
+                  <div className="trigger-log-cell trigger-log-line-cell">
+                    <span className="trigger-log-line-text">
+                      {record.logLine}
+                    </span>
+                    <TriggerLogOutputBadges outputs={record.outputs} />
+                  </div>
                 </div>
               )
             })}
@@ -72,5 +96,57 @@ export function TriggerLogTable({
         )}
       </div>
     </section>
+  )
+}
+
+function filterTriggerLogRecords(
+  records: TriggerLogRecord[],
+  filterText: string,
+) {
+  const normalizedFilter = filterText.trim().toLocaleLowerCase()
+
+  if (!normalizedFilter) {
+    return records
+  }
+
+  return records.filter((record) =>
+    doesRecordMatchFilter(record, normalizedFilter),
+  )
+}
+
+function doesRecordMatchFilter(
+  record: TriggerLogRecord,
+  normalizedFilter: string,
+) {
+  return (
+    record.logLine.toLocaleLowerCase().includes(normalizedFilter) ||
+    record.outputs.some((output) =>
+      output.text.toLocaleLowerCase().includes(normalizedFilter),
+    )
+  )
+}
+
+function TriggerLogOutputBadges({
+  outputs,
+}: {
+  outputs: TriggerLogOutput[]
+}) {
+  if (outputs.length === 0) {
+    return null
+  }
+
+  return (
+    <span className="trigger-log-output-badges">
+      {outputs.map((output) => (
+        <span
+          aria-label={`${output.label}: ${output.text}`}
+          className={`trigger-log-output-badge trigger-log-output-badge-${output.kind}`}
+          key={output.kind}
+          title={output.text}
+        >
+          {output.label}
+        </span>
+      ))}
+    </span>
   )
 }

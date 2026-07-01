@@ -11,7 +11,7 @@ import {
   useOnTriggerMatch,
   type TriggerMatchEvent,
 } from '../alerts/useTriggerAlerts'
-import type { TriggerLogRecord } from './types'
+import type { TriggerLogOutput, TriggerLogRecord } from './types'
 
 const maxTriggerLogRecords = 1000
 
@@ -33,6 +33,7 @@ export function TriggerLogProvider({ children }: { children: ReactNode }) {
         characterName: alert.characterName,
         id: `${alert.timestamp}-${alert.trigger.id}-${nextLogRecordIdRef.current}`,
         logLine: alert.text,
+        outputs: getLogOutputs(event),
         serverName: alert.serverName,
         subscriptionId: getLogSubscriptionId(event),
         timestamp: alert.timestamp,
@@ -92,4 +93,41 @@ function isSubscriptionRegistration(
   { source: 'subscription' }
 > {
   return registration.source === 'subscription'
+}
+
+function getLogOutputs(event: TriggerMatchEvent): TriggerLogOutput[] {
+  const alert = event.alert
+  const outputs: TriggerLogOutput[] = []
+
+  addOutput(outputs, 'alert', 'Alert', alert.displayText)
+  addOutput(
+    outputs,
+    'timer',
+    'Timer',
+    event.trigger.timer && event.trigger.timer.durationMs > 0
+      ? alert.timerName ?? event.trigger.timer.name
+      : undefined,
+  )
+  addOutput(outputs, 'voice', 'Voice', alert.speechText)
+  addOutput(outputs, 'paste', 'Paste', alert.clipboardText)
+
+  return outputs
+}
+
+function addOutput(
+  outputs: TriggerLogOutput[],
+  kind: TriggerLogOutput['kind'],
+  label: string,
+  text: string | undefined,
+) {
+  const trimmedText = text?.trim()
+  if (!trimmedText) {
+    return
+  }
+
+  outputs.push({
+    kind,
+    label,
+    text: trimmedText,
+  })
 }
