@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { CharacterPresence } from '../../shared/messages'
@@ -10,6 +10,12 @@ import {
   type JenaResolvedTrigger,
 } from '../../shared/triggers'
 import { UserTriggersEditor } from '../views/UserTriggersEditor'
+
+const hookState = vi.hoisted(() => ({
+  exportGinaPackageFile: vi.fn(),
+  rpc: vi.fn(),
+  storeTriggers: vi.fn(),
+}))
 
 const testTrigger = withCanonicalTriggerId({
   ...createEmptyTrigger(),
@@ -58,8 +64,12 @@ vi.mock('../model/UserTriggerManager', () => ({
 vi.mock('../model/TriggerStore', () => ({
   useTriggerStore: () => ({
     fetchTriggers: vi.fn(),
-    storeTriggers: vi.fn(async (triggers) => triggers),
+    storeTriggers: hookState.storeTriggers,
   }),
+}))
+
+vi.mock('../gina/ginaPackageExporter', () => ({
+  exportGinaPackageFile: hookState.exportGinaPackageFile,
 }))
 
 vi.mock('../../auth/authContext', () => ({
@@ -70,16 +80,32 @@ vi.mock('../../auth/authContext', () => ({
 
 vi.mock('../../shared/messageBrokerHooks', () => ({
   useListen: vi.fn(),
-  useRpc: () =>
-    vi.fn(async () => ({
-      characters: [],
-    })),
+  useRpc: () => hookState.rpc,
   useSender: () => vi.fn(),
 }))
 
 describe('UserTriggersEditor', () => {
   beforeEach(async () => {
     vi.clearAllMocks()
+    hookState.exportGinaPackageFile.mockResolvedValue(new Uint8Array())
+    hookState.rpc.mockImplementation(async (destination) => {
+      return destination === 'worker.character-presence'
+        ? { characters: [] }
+        : { code: '{JENA:share:test}' }
+    })
+    hookState.storeTriggers.mockImplementation(async (triggers) => triggers)
+    Object.defineProperty(HTMLAnchorElement.prototype, 'click', {
+      configurable: true,
+      value: vi.fn(),
+    })
+    Object.defineProperty(URL, 'createObjectURL', {
+      configurable: true,
+      value: vi.fn(() => 'blob:test'),
+    })
+    Object.defineProperty(URL, 'revokeObjectURL', {
+      configurable: true,
+      value: vi.fn(),
+    })
     await deleteDatabase('jena')
   })
 
@@ -117,6 +143,44 @@ describe('UserTriggersEditor', () => {
     await user.dblClick(await screen.findByText('Test Trigger'))
 
     expect(await screen.findByText('Trigger Editor')).toBeInTheDocument()
+  })
+
+  it('exports triggers from a selected collapsed group', async () => {
+    const user = userEvent.setup()
+
+    render(<UserTriggersEditor selectedCharacter={selectedCharacter} />)
+
+    const groupName = await screen.findByText('Raid')
+    expect(screen.queryByText('Test Trigger')).not.toBeInTheDocument()
+    fireEvent.contextMenu(groupName)
+    await user.click(await screen.findByText('Export this group...'))
+
+    await waitFor(() => {
+      expect(hookState.exportGinaPackageFile).toHaveBeenCalledWith(
+        [testTrigger],
+        expect.any(Object),
+      )
+    })
+  })
+
+  it('shares triggers from a selected collapsed group', async () => {
+    const user = userEvent.setup()
+
+    render(<UserTriggersEditor selectedCharacter={selectedCharacter} />)
+
+    const groupName = await screen.findByText('Raid')
+    expect(screen.queryByText('Test Trigger')).not.toBeInTheDocument()
+    fireEvent.contextMenu(groupName)
+    await user.click(await screen.findByText('Share this group'))
+
+    await waitFor(() => {
+      expect(hookState.storeTriggers).toHaveBeenCalledWith([testTrigger])
+      expect(hookState.rpc).toHaveBeenCalledWith(
+        'server.sharing',
+        'createSharePackage',
+        { triggerIds: [testTrigger.id] },
+      )
+    })
   })
 })
 

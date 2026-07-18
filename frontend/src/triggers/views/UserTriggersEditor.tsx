@@ -1007,7 +1007,7 @@ export function UserTriggersEditor({
 
   async function handleExportSelectedTriggers(triggerIds: JenaTriggerId[]) {
     const selectedTriggers = getTriggersByIdsInTreeOrder(
-      treeItems,
+      triggers,
       new Set(triggerIds),
     )
 
@@ -2177,24 +2177,12 @@ function getResolvedTriggersUnderPath(
 }
 
 function getTriggersByIdsInTreeOrder(
-  treeItems: TreeItem[],
+  triggers: JenaResolvedTrigger[],
   triggerIds: Set<JenaTriggerId>,
 ) {
-  const seenTriggerIds = new Set<JenaTriggerId>()
-  const selectedTriggers: JenaTrigger[] = []
-
-  treeItems.forEach((item) => {
-    if (
-      item.type === 'trigger' &&
-      triggerIds.has(item.id) &&
-      !seenTriggerIds.has(item.id)
-    ) {
-      seenTriggerIds.add(item.id)
-      selectedTriggers.push(item.resolved.trigger)
-    }
-  })
-
-  return selectedTriggers
+  return getAllTriggersInTreeOrder(triggers).filter((trigger) =>
+    triggerIds.has(trigger.id),
+  )
 }
 
 function getAllTriggersInTreeOrder(triggers: JenaResolvedTrigger[]) {
