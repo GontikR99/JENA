@@ -311,7 +311,7 @@ class FakeFileWatcher {
     }
   }
 
-  emit(record: EverQuestLogLineRecord & {
+  emit(record: TestLogLineRecord & {
     characterName: string
     serverName: string
   }) {
@@ -319,12 +319,19 @@ class FakeFileWatcher {
       record.characterName,
       record.serverName,
       [{
+        observedAtMs: record.observedAtMs as number,
         text: record.text,
         timestamp: record.timestamp,
+        timestampMs: record.timestampMs as number | null,
       }],
     )
   }
 }
+
+type TestLogLineRecord = Pick<EverQuestLogLineRecord, 'text' | 'timestamp'> &
+  Partial<
+    Pick<EverQuestLogLineRecord, 'observedAtMs' | 'timestampMs'>
+  >
 
 class FakeMatchWorkerClientFactory {
   private readonly client = new FakeMatchWorkerClient()

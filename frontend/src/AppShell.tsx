@@ -3,6 +3,7 @@ import Button from 'react-bootstrap/Button'
 import jenaBrandLockupUrl from './assets/jena-brand-lockup.png'
 import { useAuth } from './auth/authContext'
 import { InfoView } from './info/InfoView'
+import { RollsView } from './rolls/RollsView'
 import { StartupButton } from './runtime/StartupButton'
 import { SearchView } from './search/SearchView'
 import { SettingsView } from './settings/SettingsView'
@@ -58,7 +59,12 @@ export function AppShell() {
           >
             Settings
           </button>
-          <button className="app-nav-link" disabled type="button">
+          <button
+            aria-current={activeSection === 'rolls' ? 'page' : undefined}
+            className={getNavLinkClassName(activeSection === 'rolls')}
+            onClick={() => setActiveSection('rolls')}
+            type="button"
+          >
             Rolls
           </button>
           <button
@@ -110,6 +116,7 @@ export function AppShell() {
       <main className="app-main">
         {activeSection === 'info' ? <InfoView /> : null}
         {activeSection === 'triggers' ? <TriggersView /> : null}
+        {activeSection === 'rolls' ? <RollsView /> : null}
         {activeSection === 'search' ? <SearchView /> : null}
         {activeSection === 'settings' ? <SettingsView /> : null}
       </main>

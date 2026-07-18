@@ -31,6 +31,7 @@ Clipboard trigger actions require the optional JENA Companion app. The companion
 - **Broadcasting**: Trigger alerts can be broadcast to your own boxes or to subscribers, useful when one character receives a raid emote, tell, or timer-relevant line that others should know about.
 - **Adoption from subscriptions**: Subscribed triggers can be copied into a user's personal trigger tree.
 - **Log search**: Search local EverQuest log files by character, server, time range, and text or regex.
+- **Roll tracking**: Follow recent `/random` results in a live timeline and compare descending rolls grouped by their requested bounds.
 
 ## Publish, Subscribe, And Broadcast
 
@@ -61,6 +62,7 @@ The frontend:
 - Uses React and TypeScript.
 - Talks internally through a typed message bus and RPC layer.
 - Uses a Web Worker to watch EverQuest log files and run matcher services.
+- Keeps an in-memory, one-hour history of observed random rolls for the live Rolls view.
 - Uses browser File System Access APIs to read the selected EverQuest directory.
 - Stores local trigger and settings data in IndexedDB.
 - Renders the trigger runtime into a Document Picture-in-Picture window.

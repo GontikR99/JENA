@@ -75,6 +75,8 @@ export default defineConfig({
       'src/characters/__tests__/**/*.test.tsx',
       'src/generated/__tests__/**/*.test.ts',
       'src/generated/__tests__/**/*.test.tsx',
+      'src/rolls/__tests__/**/*.test.ts',
+      'src/rolls/__tests__/**/*.test.tsx',
       'src/triggers/__tests__/**/*.test.ts',
       'src/triggers/__tests__/**/*.test.tsx',
       'src/pip/__tests__/**/*.test.ts',

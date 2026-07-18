@@ -47,10 +47,12 @@ export interface RegexCaptures {
 export interface RegexMatchFoundMessage {
   captures: RegexCaptures
   characterName: string
+  observedAtMs?: number
   pattern: string
   serverName: string
   text: string
   timestamp: string
+  timestampMs?: number | null
 }
 
 export interface AlertCaptureSnapshot {

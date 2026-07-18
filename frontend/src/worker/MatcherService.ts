@@ -150,6 +150,14 @@ export class MatcherService {
     record: EverQuestLogLineRecord,
     match: MatchWorkerMatch,
   ) {
+    const timing =
+      record.observedAtMs === undefined
+        ? {}
+        : {
+            observedAtMs: record.observedAtMs,
+            timestampMs: record.timestampMs,
+          }
+
     this.broker.send(
       'matcher-service',
       'client.matcher.match-found',
@@ -160,6 +168,7 @@ export class MatcherService {
         serverName,
         text: record.text,
         timestamp: record.timestamp,
+        ...timing,
       },
     )
   }

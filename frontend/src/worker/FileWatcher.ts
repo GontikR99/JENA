@@ -57,8 +57,10 @@ interface LogSearchFileSnapshot {
 }
 
 export interface EverQuestLogLineRecord {
+  observedAtMs: number
   text: string
   timestamp: string
+  timestampMs: number | null
 }
 
 export interface FileWatcherObserver {
@@ -731,8 +733,10 @@ export class FileWatcher {
         const parsedLine = parseEverQuestLogLine(line)
 
         return [{
+          observedAtMs: getMonotonicEpochMs(),
           text: parsedLine.text,
           timestamp: parsedLine.timestamp,
+          timestampMs: parsedLine.timestampMs,
         }]
       })
 
@@ -1163,12 +1167,18 @@ function parseEverQuestLogFileName(
 }
 
 function parseEverQuestLogLine(line: string) {
+  const parsedLine = parseEverQuestLogLineWithTimestamp(line)
+  if (parsedLine) {
+    return parsedLine
+  }
+
   const match = /^\[([^\]]+)]\s?(.*)$/.exec(line)
 
   if (!match) {
     return {
       text: line,
       timestamp: '',
+      timestampMs: null,
     }
   }
 
@@ -1177,7 +1187,12 @@ function parseEverQuestLogLine(line: string) {
   return {
     text,
     timestamp,
+    timestampMs: null,
   }
+}
+
+function getMonotonicEpochMs() {
+  return performance.timeOrigin + performance.now()
 }
 
 function getCharactersFromLogs(

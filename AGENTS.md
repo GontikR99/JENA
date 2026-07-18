@@ -25,6 +25,7 @@ The frontend is built with Vite, React 19, TypeScript, Bootstrap, React Bootstra
 - `frontend/src/info/`: User-facing feature and getting-started page.
 - `frontend/src/pip/`: Components rendered into the Document Picture-in-Picture runtime window.
 - `frontend/src/runtime/`: Trigger runtime and EverQuest-directory startup workflow.
+- `frontend/src/rolls/`: Always-on random-roll collection, fuzzy cross-log deduplication, timeline, and categorized roll tables.
 - `frontend/src/search/`: Local EverQuest log search view.
 - `frontend/src/settings/`: Local machine settings, remote user settings, and browser speech voice provider.
 - `frontend/src/sharing/`: Trigger share-code detection and merge dialog.
@@ -57,6 +58,7 @@ The main app is mounted from `frontend/src/main.tsx`. It imports Bootstrap, `fro
 - `ServerBridge`
 - `AuthenticatedApp`, which waits only while auth status is `checking`
 - `WorkerBridge`
+- `RollsProvider`
 - `TriggerStoreProvider`
 - `TriggerStopService`
 - `SubscribedTriggerManagerProvider`
@@ -78,7 +80,7 @@ The main app is mounted from `frontend/src/main.tsx`. It imports Bootstrap, `fro
 
 The application remains usable while logged out. The only full-screen auth placeholder is the startup `checking` state while the client asks `server.auth.getSession` whether an HTTP-only session cookie is valid.
 
-`frontend/src/AppShell.tsx` owns the top navigation shell, Discord login/logout button, startup button slot, and current main section. The active app sections include `Info`, `Triggers`, `Search`, and `Settings`; `Rolls` remains disabled.
+`frontend/src/AppShell.tsx` owns the top navigation shell, Discord login/logout button, startup button slot, and current main section. The active app sections are `Info`, `Triggers`, `Rolls`, `Search`, and `Settings`.
 
 `frontend/src/runtime/StartupButton.tsx` owns the EverQuest-directory workflow:
 
@@ -201,7 +203,7 @@ The canonical typed frontend contract is `frontend/src/shared/messages.ts`. Work
 | `file-watcher.characters` | `frontend/src/shared/messages.ts` (`EndpointMessages`) | `frontend/src/worker/FileWatcher.ts` | `frontend/src/worker/CharacterPresenceService.ts` | Worker-local list of characters discovered from EverQuest log files and their active state. |
 | `log-search.done` | `frontend/src/shared/messages.ts` (`EndpointMessages`) | `frontend/src/worker/FileWatcher.ts` as `client.log-search.done` | `frontend/src/search/SearchView.tsx` | Announces local log search completion, cancellation, truncation, or error. |
 | `log-search.match-found` | `frontend/src/shared/messages.ts` (`EndpointMessages`) | `frontend/src/worker/FileWatcher.ts` as `client.log-search.match-found` | `frontend/src/search/SearchView.tsx` | Streams local log search matches to the Search view. |
-| `matcher.match-found` | `frontend/src/shared/messages.ts` (`EndpointMessages`) | `frontend/src/worker/MatcherService.ts` as `client.matcher.match-found` | `frontend/src/triggers/alerts/AlertCoordinationService.tsx`, `frontend/src/triggers/alerts/TriggerStopService.tsx`, `frontend/src/sharing/TriggerShareCoordinator.tsx`; worker-local `client.matcher.match-found` is consumed by `frontend/src/worker/CharacterPresenceService.ts` | Publishes regex match results with captures and log metadata. |
+| `matcher.match-found` | `frontend/src/shared/messages.ts` (`EndpointMessages`) | `frontend/src/worker/MatcherService.ts` as `client.matcher.match-found` | `frontend/src/triggers/alerts/AlertCoordinationService.tsx`, `frontend/src/triggers/alerts/TriggerStopService.tsx`, `frontend/src/sharing/TriggerShareCoordinator.tsx`, `frontend/src/rolls/RollsProvider.tsx`; worker-local `client.matcher.match-found` is consumed by `frontend/src/worker/CharacterPresenceService.ts` | Publishes regex match results with captures, log metadata, parsed EverQuest time, and a worker-local monotonic observation timestamp. |
 | `speech.preview-requested` | `frontend/src/shared/messages.ts` (`EndpointMessages`) | `frontend/src/triggers/editor/TriggerEditorDialog.tsx`, `frontend/src/settings/SettingsView.tsx` | `frontend/src/triggers/alerts/TriggerSpeechService.tsx` | Requests speech synthesis preview from the trigger editor or settings view. |
 | `subscriptions.updated` | `frontend/src/shared/messages.ts` (`EndpointMessages`) | `frontend/src/triggers/model/SubscribedTriggerManager.tsx` | Subscription-aware UI and alert coordination code | Announces local subscription state changes. |
 | `trigger-store.triggers-seen` | `frontend/src/shared/messages.ts` (`EndpointMessages`) | `frontend/src/triggers/model/TriggerStore.tsx` | `frontend/src/triggers/alerts/AlertCoordinationService.tsx` | Announces newly handled canonical triggers so alert patterns can be registered. |
@@ -305,13 +307,19 @@ export class SomeWorkerService {
 const watcher = getDependency(deps, FileWatcher)
 
 const unobserve = watcher.observe({
-  onLogLine: (record) => {
-    // record has characterName, serverName, timestamp, and text.
+  onLogLine: (characterName, serverName, records) => {
+    // Each record has text, timestamp, timestampMs, and observedAtMs.
   },
 })
 ```
 
-`frontend/src/worker/MatcherService.ts` registers regex patterns by pattern string, batches/recompiles efficiently, and publishes `matcher.match-found` messages containing the matching pattern, log metadata, and captures.
+`frontend/src/worker/MatcherService.ts` registers regex patterns by pattern string, batches/recompiles efficiently, and publishes `matcher.match-found` messages containing the matching pattern, log metadata, captures, parsed EverQuest time, and a worker-local monotonic observation timestamp.
+
+## Rolls
+
+`frontend/src/rolls/RollsProvider.tsx` is always mounted after the worker bridge. It owns a dedicated matcher namespace for EverQuest magic-die lines, retains one hour of in-memory roll history, and fuzzily deduplicates copies of the same roll observed from multiple local character logs. EverQuest wall-clock time controls history and display placement; the worker-local observation timestamp controls 500ms deduplication.
+
+`frontend/src/rolls/RollsView.tsx` presents a fixed-width SVG timeline and categorized roll cards. The timeline covers a selectable five-minute to one-hour range, uses overlapping green strokes to show roll density, and supports an absolute beginning cutoff. The right panel groups all selected rolls into one table per lower/upper bounds pair and sorts each table by descending roll value.
 
 `frontend/src/worker/CharacterPresenceService.ts` listens to file-watcher activity and matcher messages, tracks character activity/zone, broadcasts `character-presence.characters`, and reports worker-side presence to the server through `server.character-presence.characters`.
 

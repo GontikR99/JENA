@@ -22,6 +22,7 @@ import {
   TriggerRuntimeProvider,
 } from './runtime/TriggerRuntime'
 import { TriggerTimerRuntimeProvider } from './runtime/TriggerTimerRuntime'
+import { RollsProvider } from './rolls/RollsProvider'
 import { AlertCoordinationService } from './triggers/alerts/AlertCoordinationService'
 import { AlertEventCoordinatorProvider } from './triggers/alerts/AlertEventCoordinator'
 import { BroadcastReflector } from './triggers/alerts/BroadcastReflector'
@@ -65,31 +66,33 @@ function AuthenticatedApp() {
   return (
     <>
       <WorkerBridge />
-      <TriggerStoreProvider>
-        <TriggerStopService />
-        <SubscribedTriggerManagerProvider>
-          <UserTriggerManagerProvider>
-            <LocalCharactersProvider>
-              <TriggerRuntimeProvider>
-                <AlertCoordinationService />
-                <AlertEventCoordinatorProvider>
-                  <TriggerTimerRuntimeProvider>
-                    <BroadcastReflector />
-                    <TriggerClipboardService />
-                    <TriggerSpeechService />
-                    <TriggerLogProvider>
-                      <TriggerShareCoordinator>
-                        <AppShell />
-                      </TriggerShareCoordinator>
-                    </TriggerLogProvider>
-                    <TriggerRuntimePortal />
-                  </TriggerTimerRuntimeProvider>
-                </AlertEventCoordinatorProvider>
-              </TriggerRuntimeProvider>
-            </LocalCharactersProvider>
-          </UserTriggerManagerProvider>
-        </SubscribedTriggerManagerProvider>
-      </TriggerStoreProvider>
+      <RollsProvider>
+        <TriggerStoreProvider>
+          <TriggerStopService />
+          <SubscribedTriggerManagerProvider>
+            <UserTriggerManagerProvider>
+              <LocalCharactersProvider>
+                <TriggerRuntimeProvider>
+                  <AlertCoordinationService />
+                  <AlertEventCoordinatorProvider>
+                    <TriggerTimerRuntimeProvider>
+                      <BroadcastReflector />
+                      <TriggerClipboardService />
+                      <TriggerSpeechService />
+                      <TriggerLogProvider>
+                        <TriggerShareCoordinator>
+                          <AppShell />
+                        </TriggerShareCoordinator>
+                      </TriggerLogProvider>
+                      <TriggerRuntimePortal />
+                    </TriggerTimerRuntimeProvider>
+                  </AlertEventCoordinatorProvider>
+                </TriggerRuntimeProvider>
+              </LocalCharactersProvider>
+            </UserTriggerManagerProvider>
+          </SubscribedTriggerManagerProvider>
+        </TriggerStoreProvider>
+      </RollsProvider>
     </>
   )
 }

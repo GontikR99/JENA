@@ -101,6 +101,36 @@ describe('MatcherService', () => {
     expect(receivedMatches).toEqual([])
   })
 
+  it('preserves worker-local observation and EverQuest timestamps', async () => {
+    const { broker, fileWatcher } = createHarness()
+    const receivedMatches: RegexMatchFoundMessage[] = []
+
+    broker.listen('client.matcher.match-found', (message) => {
+      receivedMatches.push(message.payload as RegexMatchFoundMessage)
+    })
+
+    await broker.call('test.matcher-service', 'matcher-service', 'add-patterns', {
+      patterns: [{ pattern: 'Arias' }],
+    })
+    await broker.call('test.matcher-service', 'matcher-service', 'flush', {})
+
+    fileWatcher.emit({
+      characterName: 'Testcharacter',
+      observedAtMs: 12_345.67,
+      serverName: 'Testserver',
+      text: 'Arias rolls.',
+      timestamp: 'Fri Oct 24 13:33:11 2025',
+      timestampMs: 1_761_329_591_000,
+    })
+    await flushAsyncWork()
+
+    expect(receivedMatches).toHaveLength(1)
+    expect(receivedMatches[0]).toMatchObject({
+      observedAtMs: 12_345.67,
+      timestampMs: 1_761_329_591_000,
+    })
+  })
+
   it('emits one match per pattern per log line', async () => {
     const { broker, fileWatcher } = createHarness()
     const receivedMatches: RegexMatchFoundMessage[] = []
@@ -538,26 +568,43 @@ class FakeFileWatcher {
     }
   }
 
-  emit(record: EverQuestLogLineRecord & {
+  emit(record: TestLogLineRecord & {
     characterName: string
     serverName: string
   }) {
     this.observer?.onLogLine(
       record.characterName,
       record.serverName,
-      [{
-        text: record.text,
-        timestamp: record.timestamp,
-      }],
+      [createTestLogLineRecord(record)],
     )
   }
 
   emitChunk(
     characterName: string,
     serverName: string,
-    records: EverQuestLogLineRecord[],
+    records: TestLogLineRecord[],
   ) {
-    this.observer?.onLogLine(characterName, serverName, records)
+    this.observer?.onLogLine(
+      characterName,
+      serverName,
+      records.map(createTestLogLineRecord),
+    )
+  }
+}
+
+type TestLogLineRecord = Pick<EverQuestLogLineRecord, 'text' | 'timestamp'> &
+  Partial<
+    Pick<EverQuestLogLineRecord, 'observedAtMs' | 'timestampMs'>
+  >
+
+function createTestLogLineRecord(
+  record: TestLogLineRecord,
+): EverQuestLogLineRecord {
+  return {
+    observedAtMs: record.observedAtMs as number,
+    text: record.text,
+    timestamp: record.timestamp,
+    timestampMs: record.timestampMs as number | null,
   }
 }
 

@@ -172,9 +172,11 @@ describe('FileWatcher', () => {
     expect(receivedLines).toEqual([
       {
         characterName: 'Arias',
+        observedAtMs: expect.any(Number),
         serverName: 'bertox',
         text: "Arias says, 'Ready.'",
         timestamp: 'Sun Jun 14 10:00:00 2026',
+        timestampMs: new Date(2026, 5, 14, 10, 0, 0).getTime(),
       },
     ])
     expect(receivedMessages.at(-1)).toEqual({
@@ -241,12 +243,16 @@ describe('FileWatcher', () => {
       return chunk.characterName === 'Arias' && chunk.serverName === 'bertox'
     })).toBe(true)
     expect(receivedChunks[0].records[0]).toEqual({
+      observedAtMs: expect.any(Number),
       text: 'Line 0',
       timestamp: 'Sun Jun 14 10:00:00 2026',
+      timestampMs: new Date(2026, 5, 14, 10, 0, 0).getTime(),
     })
     expect(receivedChunks[2].records[4]).toEqual({
+      observedAtMs: expect.any(Number),
       text: 'Line 204',
       timestamp: 'Sun Jun 14 10:00:24 2026',
+      timestampMs: new Date(2026, 5, 14, 10, 0, 24).getTime(),
     })
   })
 
