@@ -8,9 +8,40 @@
   min-width: 0;
 }
 
-.roll-timeline {
+.rolls-timeline-panel {
   background: #fff;
   border-right: 1px solid #c9ced6;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-height: 0;
+  min-width: 0;
+}
+
+.rolls-timeline-header {
+  border-bottom: 1px solid #c9ced6;
+  padding: 0.55rem 0.65rem 0.65rem;
+}
+
+.rolls-timeline-title-row {
+  align-items: flex-start;
+  display: flex;
+  gap: 0.4rem;
+  justify-content: space-between;
+}
+
+.rolls-timeline-title-row h1 {
+  font-size: 0.9375rem;
+  font-weight: 700;
+  margin: 0;
+}
+
+.rolls-timeline-title-row p {
+  color: #667085;
+  font-size: 0.75rem;
+  margin: 0.1rem 0 0;
+}
+
+.roll-timeline {
   min-height: 0;
   min-width: 0;
   overflow: hidden;
@@ -89,10 +120,11 @@
 
 .rolls-duration-control {
   align-items: center;
-  display: inline-flex;
+  display: flex;
   font-size: 0.8125rem;
   font-weight: 600;
   gap: 0.5rem;
+  margin-top: 0.55rem;
 }
 
 .rolls-duration-control select {
@@ -100,8 +132,10 @@
   border: 1px solid #adb5bd;
   border-radius: 0.25rem;
   color: #24292f;
+  min-width: 0;
   font: inherit;
   padding: 0.3rem 1.8rem 0.3rem 0.45rem;
+  width: 100%;
 }
 
 .rolls-visible-count {
@@ -117,7 +151,7 @@
   display: inline-flex;
   height: 2rem;
   justify-content: center;
-  margin-left: auto;
+  flex: 0 0 auto;
   padding: 0;
   width: 2rem;
 }

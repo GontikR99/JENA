@@ -262,7 +262,7 @@ export function RollTimeline({
   }
 
   return (
-    <section className="roll-timeline" aria-label="Roll timeline">
+    <div className="roll-timeline">
       <svg
         className="roll-timeline-svg"
         onLostPointerCapture={handleLostPointerCapture}
@@ -363,7 +363,7 @@ export function RollTimeline({
           ) : null}
         </g>
       </svg>
-    </section>
+    </div>
   )
 }
 

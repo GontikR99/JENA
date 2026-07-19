@@ -58,15 +58,29 @@ export function RollsView() {
 
   return (
     <div className="rolls-view">
-      <RollTimeline
-        durationMs={durationMs}
-        onRangeChange={setRange}
-        range={range}
-        rolls={rolls}
-      />
+      <section
+        aria-labelledby="roll-timeline-heading"
+        className="rolls-timeline-panel"
+      >
+        <header className="rolls-timeline-header">
+          <div className="rolls-timeline-title-row">
+            <div>
+              <h1 id="roll-timeline-heading">Roll timeline</h1>
+              <p>Click or drag to filter</p>
+            </div>
 
-      <section className="rolls-results" aria-label="Categorized rolls">
-        <header className="rolls-toolbar">
+            <button
+              aria-label="Clear roll range"
+              className="rolls-reset-range"
+              disabled={range.beginMs === null && range.endMs === null}
+              onClick={() => setRange({ beginMs: null, endMs: null })}
+              title="Clear range"
+              type="button"
+            >
+              <RotateCcw aria-hidden="true" size={17} />
+            </button>
+          </div>
+
           <label className="rolls-duration-control">
             <span>Show last</span>
             <select
@@ -86,21 +100,21 @@ export function RollsView() {
               ))}
             </select>
           </label>
+        </header>
 
+        <RollTimeline
+          durationMs={durationMs}
+          onRangeChange={setRange}
+          range={range}
+          rolls={rolls}
+        />
+      </section>
+
+      <section className="rolls-results" aria-label="Categorized rolls">
+        <header className="rolls-toolbar">
           <span className="rolls-visible-count">
             {visibleRolls.length} {visibleRolls.length === 1 ? 'roll' : 'rolls'}
           </span>
-
-          <button
-            aria-label="Clear roll range"
-            className="rolls-reset-range"
-            disabled={range.beginMs === null && range.endMs === null}
-            onClick={() => setRange({ beginMs: null, endMs: null })}
-            title="Clear range"
-            type="button"
-          >
-            <RotateCcw aria-hidden="true" size={17} />
-          </button>
         </header>
 
         <div className="rolls-results-scroll">
