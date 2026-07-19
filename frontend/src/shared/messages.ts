@@ -152,6 +152,10 @@ export interface FileWatcherCharactersMessage {
   characters: EverQuestCharacter[]
 }
 
+export interface FileWatcherLogsReadyMessage {
+  logs: EverQuestLogFile[]
+}
+
 export interface CharacterPresence {
   active: boolean
   characterName: string
@@ -259,6 +263,7 @@ export interface EndpointMessages {
   'character-presence.characters': CharacterPresenceCharactersMessage
   'companion.clipboard.write-text': CompanionClipboardWriteTextMessage
   'file-watcher.characters': FileWatcherCharactersMessage
+  'file-watcher.logs-ready': FileWatcherLogsReadyMessage
   'log-search.done': LogSearchDoneMessage
   'log-search.match-found': LogSearchMatchMessage
   'matcher.match-found': RegexMatchFoundMessage
@@ -447,10 +452,13 @@ export interface RpcEndpoints {
         query: string
         searchId: string
         serverName: string
+        startPolicy: 'ifIdle' | 'replace'
         startMs: number
         useRegex: boolean
       }
-      response: Record<string, never>
+      response: {
+        started: boolean
+      }
     }
     cancelLogSearch: {
       request: {

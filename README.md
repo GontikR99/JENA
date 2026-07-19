@@ -62,7 +62,7 @@ The frontend:
 - Uses React and TypeScript.
 - Talks internally through a typed message bus and RPC layer.
 - Uses a Web Worker to watch EverQuest log files and run matcher services.
-- Keeps an in-memory, one-hour history of observed random rolls for the live Rolls view.
+- Keeps an in-memory, one-hour history of random rolls for the Rolls view and prepopulates it from the initially available log files when an EverQuest directory is opened.
 - Uses browser File System Access APIs to read the selected EverQuest directory.
 - Stores local trigger and settings data in IndexedDB.
 - Renders the trigger runtime into a Document Picture-in-Picture window.

@@ -1,4 +1,7 @@
-import type { RegexMatchFoundMessage } from '../shared/messages'
+import type {
+  LogSearchMatchMessage,
+  RegexMatchFoundMessage,
+} from '../shared/messages'
 import type { RollCandidate, RollObservation, RollRecord } from './types'
 
 export const rollPattern =
@@ -6,6 +9,15 @@ export const rollPattern =
 
 export const rollHistoryDurationMs = 60 * 60 * 1000
 export const rollDeduplicationWindowMs = 500
+
+const rollRegex = new RegExp(rollPattern)
+
+export interface ParsedRollText {
+  lowerBound: number
+  roller: string
+  upperBound: number
+  value: number
+}
 
 export function createRollCandidate(
   match: RegexMatchFoundMessage,
@@ -18,10 +30,55 @@ export function createRollCandidate(
     return null
   }
 
-  const roller = match.captures.named.roller?.trim()
-  const lowerBound = parseSafeInteger(match.captures.named.lowerBound)
-  const upperBound = parseSafeInteger(match.captures.named.upperBound)
-  const value = parseSafeInteger(match.captures.named.value)
+  const parsedRoll = parseRollText(match.text)
+  if (!parsedRoll) {
+    return null
+  }
+
+  return {
+    characterName: match.characterName,
+    lowerBound: parsedRoll.lowerBound,
+    observedAtMs: match.observedAtMs as number,
+    roller: parsedRoll.roller,
+    serverName: match.serverName,
+    timestamp: match.timestamp,
+    timestampMs: match.timestampMs as number,
+    upperBound: parsedRoll.upperBound,
+    value: parsedRoll.value,
+  }
+}
+
+export function createHistoricalRollCandidate(
+  match: LogSearchMatchMessage,
+): RollCandidate | null {
+  if (!Number.isFinite(match.timestampMs)) {
+    return null
+  }
+
+  const parsedRoll = parseRollText(match.text)
+  if (!parsedRoll) {
+    return null
+  }
+
+  return {
+    characterName: match.characterName,
+    lowerBound: parsedRoll.lowerBound,
+    observedAtMs: match.timestampMs,
+    roller: parsedRoll.roller,
+    serverName: match.serverName,
+    timestamp: match.timestamp,
+    timestampMs: match.timestampMs,
+    upperBound: parsedRoll.upperBound,
+    value: parsedRoll.value,
+  }
+}
+
+export function parseRollText(text: string): ParsedRollText | null {
+  const match = rollRegex.exec(text)
+  const roller = match?.groups?.roller?.trim()
+  const lowerBound = parseSafeInteger(match?.groups?.lowerBound)
+  const upperBound = parseSafeInteger(match?.groups?.upperBound)
+  const value = parseSafeInteger(match?.groups?.value)
 
   if (
     !roller ||
@@ -32,17 +89,7 @@ export function createRollCandidate(
     return null
   }
 
-  return {
-    characterName: match.characterName,
-    lowerBound,
-    observedAtMs: match.observedAtMs as number,
-    roller,
-    serverName: match.serverName,
-    timestamp: match.timestamp,
-    timestampMs: match.timestampMs as number,
-    upperBound,
-    value,
-  }
+  return { lowerBound, roller, upperBound, value }
 }
 
 export function addRollCandidate(
@@ -101,6 +148,24 @@ export function pruneRollHistory(rolls: RollRecord[], nowMs: number) {
   const nextRolls = rolls.filter((roll) => roll.timestampMs >= cutoffMs)
 
   return nextRolls.length === rolls.length ? rolls : nextRolls
+}
+
+export function replaceRollHistoryRange(
+  rolls: RollRecord[],
+  replacements: RollRecord[],
+  startMs: number,
+  endMs: number,
+  nowMs: number,
+) {
+  return pruneRollHistory(
+    sortRolls([
+      ...rolls.filter(
+        (roll) => roll.timestampMs < startMs || roll.timestampMs > endMs,
+      ),
+      ...replacements,
+    ]),
+    nowMs,
+  )
 }
 
 function createRollRecord(candidate: RollCandidate, id: string): RollRecord {

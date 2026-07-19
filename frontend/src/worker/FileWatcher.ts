@@ -47,6 +47,7 @@ interface StartLogSearchRequest {
   query: string
   searchId: string
   serverName: string
+  startPolicy: 'ifIdle' | 'replace'
   startMs: number
   useRegex: boolean
 }
@@ -81,6 +82,8 @@ export class FileWatcher {
   private readonly characterLastLogLineReceivedAt = new Map<string, number>()
   private activeLogSearch: ActiveLogSearch | null = null
   private cachedLogFiles: EverQuestLogFile[] = []
+  private directoryScanGeneration = 0
+  private hasAnnouncedLogsReady = false
   private lastAnnouncedCharactersSignature = ''
   private isDirectoryScanRunning = false
   private isTailRunning = false
@@ -126,6 +129,8 @@ export class FileWatcher {
     this.stopDirectoryScanning()
     this.stopTailing()
     this.fileHandle = params.fileHandle
+    this.directoryScanGeneration += 1
+    this.hasAnnouncedLogsReady = false
     this.watchedLogFileNames.clear()
     this.characterLastLogLineReceivedAt.clear()
     this.cachedLogFiles = []
@@ -151,6 +156,10 @@ export class FileWatcher {
       throw new Error('Search end time must be after start time.')
     }
 
+    if (params.startPolicy === 'ifIdle' && this.activeLogSearch) {
+      return { started: false }
+    }
+
     const matcher = createLogSearchMatcher(params.query, params.useRegex)
     const task: ActiveLogSearch = {
       canceled: false,
@@ -161,7 +170,7 @@ export class FileWatcher {
     this.activeLogSearch = task
     void this.runLogSearch(params, matcher, task)
 
-    return {}
+    return { started: true }
   }
 
   private readonly cancelLogSearch = (params: unknown) => {
@@ -575,7 +584,7 @@ export class FileWatcher {
     }
 
     this.isDirectoryScanRunning = true
-    void this.runDirectoryScanCycle()
+    void this.runDirectoryScanCycle(this.directoryScanGeneration)
   }
 
   private stopDirectoryScanning() {
@@ -587,7 +596,7 @@ export class FileWatcher {
     }
   }
 
-  private async runDirectoryScanCycle() {
+  private async runDirectoryScanCycle(generation: number) {
     try {
       const everQuestDirectoryHandle = this.getEverQuestDirectoryHandle()
 
@@ -597,7 +606,21 @@ export class FileWatcher {
         return
       }
 
-      const logs = await this.refreshLogCache(true)
+      const logs = await this.refreshLogCache(true, generation)
+
+      if (
+        !this.isDirectoryScanRunning ||
+        generation !== this.directoryScanGeneration
+      ) {
+        return
+      }
+
+      if (!this.hasAnnouncedLogsReady) {
+        this.hasAnnouncedLogsReady = true
+        this.broker.send('file-watcher', 'client.file-watcher.logs-ready', {
+          logs,
+        })
+      }
 
       if (this.isTailRunning) {
         this.startTailingLogs(logs)
@@ -605,18 +628,21 @@ export class FileWatcher {
     } catch (error) {
       console.error('[FileWatcher] directory scan cycle failed', error)
     } finally {
-      this.scheduleNextDirectoryScanCycle()
+      this.scheduleNextDirectoryScanCycle(generation)
     }
   }
 
-  private scheduleNextDirectoryScanCycle() {
-    if (!this.isDirectoryScanRunning) {
+  private scheduleNextDirectoryScanCycle(generation: number) {
+    if (
+      !this.isDirectoryScanRunning ||
+      generation !== this.directoryScanGeneration
+    ) {
       return
     }
 
     this.directoryScanTimeoutId = globalThis.setTimeout(() => {
       this.directoryScanTimeoutId = null
-      void this.runDirectoryScanCycle()
+      void this.runDirectoryScanCycle(generation)
     }, directoryScanIntervalMs)
   }
 
@@ -776,7 +802,10 @@ export class FileWatcher {
     })
   }
 
-  private async refreshLogCache(announceNewCharacters: boolean) {
+  private async refreshLogCache(
+    announceNewCharacters: boolean,
+    expectedGeneration = this.directoryScanGeneration,
+  ) {
     const everQuestDirectoryHandle = this.getEverQuestDirectoryHandle()
 
     if (!everQuestDirectoryHandle) {
@@ -785,6 +814,13 @@ export class FileWatcher {
     }
 
     const logs = await enumerateEverQuestLogs(everQuestDirectoryHandle)
+
+    if (
+      expectedGeneration !== this.directoryScanGeneration ||
+      everQuestDirectoryHandle !== this.getEverQuestDirectoryHandle()
+    ) {
+      return []
+    }
 
     this.cachedLogFiles = logs
 
@@ -993,7 +1029,9 @@ function isStartLogSearchRequest(value: unknown): value is StartLogSearchRequest
     typeof candidate.endMs === 'number' &&
     Number.isFinite(candidate.endMs) &&
     typeof candidate.query === 'string' &&
-    typeof candidate.useRegex === 'boolean'
+    typeof candidate.useRegex === 'boolean' &&
+    (candidate.startPolicy === 'ifIdle' ||
+      candidate.startPolicy === 'replace')
   )
 }
 

@@ -221,6 +221,7 @@ export function SearchView() {
         query: trimmedQuery,
         searchId,
         serverName: selectedCharacter.serverName,
+        startPolicy: 'replace',
         startMs: nextStartMs,
         useRegex,
       })

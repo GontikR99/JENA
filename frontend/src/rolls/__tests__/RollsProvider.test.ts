@@ -3,8 +3,11 @@ import type { RegexMatchFoundMessage } from '../../shared/messages'
 import { MatchWorkerEngine } from '../../worker/MatchWorkerEngine'
 import {
   addRollCandidate,
+  createHistoricalRollCandidate,
   createRollCandidate,
+  parseRollText,
   pruneRollHistory,
+  replaceRollHistoryRange,
   rollDeduplicationWindowMs,
   rollHistoryDurationMs,
   rollPattern,
@@ -64,6 +67,37 @@ describe('roll matching and history', () => {
       characterName: 'Jephian',
       lowerBound: 0,
       observedAtMs: 10_125.5,
+      roller: 'Darkpeaches',
+      serverName: 'Fangbreaker',
+      timestamp: 'Sat Jun 20 21:32:31 2026',
+      timestampMs: 20_000,
+      upperBound: 1000,
+      value: 34,
+    })
+  })
+
+  it('parses historical search text without matcher captures', () => {
+    const text = createRollText()
+
+    expect(parseRollText(text)).toEqual({
+      lowerBound: 0,
+      roller: 'Darkpeaches',
+      upperBound: 1000,
+      value: 34,
+    })
+    expect(createHistoricalRollCandidate({
+      characterName: 'Jephian',
+      index: 0,
+      rawLine: `[Sat Jun 20 21:32:31 2026] ${text}`,
+      searchId: 'roll-search',
+      serverName: 'Fangbreaker',
+      text,
+      timestamp: 'Sat Jun 20 21:32:31 2026',
+      timestampMs: 20_000,
+    })).toEqual({
+      characterName: 'Jephian',
+      lowerBound: 0,
+      observedAtMs: 20_000,
       roller: 'Darkpeaches',
       serverName: 'Fangbreaker',
       timestamp: 'Sat Jun 20 21:32:31 2026',
@@ -182,6 +216,35 @@ describe('roll matching and history', () => {
 
     expect(pruneRollHistory(rolls, nowMs)).toHaveLength(1)
   })
+
+  it('atomically replaces only the backfilled history range', () => {
+    let nextId = 0
+    const createId = () => `roll-${++nextId}`
+    const currentRolls = [
+      ...addRollCandidate(
+        [],
+        createCandidate({ timestampMs: 10_000 }),
+        createId,
+      ),
+      ...addRollCandidate(
+        [],
+        createCandidate({ timestampMs: 30_000, value: 35 }),
+        createId,
+      ),
+    ]
+    const replacements = addRollCandidate(
+      [],
+      createCandidate({ timestampMs: 20_000, value: 99 }),
+      createId,
+    )
+
+    expect(
+      replaceRollHistoryRange(currentRolls, replacements, 0, 20_000, 30_000),
+    ).toEqual([
+      expect.objectContaining({ timestampMs: 20_000, value: 99 }),
+      expect.objectContaining({ timestampMs: 30_000, value: 35 }),
+    ])
+  })
 })
 
 function createMatch(): RegexMatchFoundMessage {
@@ -199,10 +262,14 @@ function createMatch(): RegexMatchFoundMessage {
     observedAtMs: 10_125.5,
     pattern: rollPattern,
     serverName: 'Fangbreaker',
-    text: '**A Magic Die is rolled by Darkpeaches.',
+    text: createRollText(),
     timestamp: 'Sat Jun 20 21:32:31 2026',
     timestampMs: 20_000,
   }
+}
+
+function createRollText() {
+  return '**A Magic Die is rolled by Darkpeaches. It could have been any number from 0 to 1000, but this time it turned up a 34.'
 }
 
 function createCandidate(overrides: Partial<RollCandidate> = {}): RollCandidate {

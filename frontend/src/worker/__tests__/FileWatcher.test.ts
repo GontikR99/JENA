@@ -8,6 +8,7 @@ import { MessageBroker, MessageBus } from '../../shared/messageBroker'
 import type {
   EverQuestCharacter,
   FileWatcherCharactersMessage,
+  FileWatcherLogsReadyMessage,
   LogSearchDoneMessage,
   LogSearchMatchMessage,
 } from '../../shared/messages'
@@ -121,6 +122,117 @@ describe('FileWatcher', () => {
         ],
       },
     ])
+  })
+
+  it('announces one initial log snapshot each time a directory is opened', async () => {
+    const { broker, fileWatcher, logsDirectory, setFileHandle } = createHarness([
+      'eqlog_Arias_bertox.txt',
+    ])
+    const receivedMessages: FileWatcherLogsReadyMessage[] = []
+
+    broker.listen('client.file-watcher.logs-ready', (message) => {
+      receivedMessages.push(message.payload as FileWatcherLogsReadyMessage)
+    })
+
+    await setFileHandle()
+    await waitFor(() => receivedMessages.length === 1)
+
+    logsDirectory.addFile('eqlog_Brell_seru.txt')
+    await waitFor(() => logsDirectory.valuesCallCount >= 2)
+    await wait(20)
+
+    expect(receivedMessages).toHaveLength(1)
+
+    await setFileHandle()
+    await waitFor(() => receivedMessages.length === 2)
+    fileWatcher.dispose()
+
+    expect(receivedMessages).toEqual([
+      {
+        logs: [
+          {
+            characterName: 'Arias',
+            fileName: 'eqlog_Arias_bertox.txt',
+            lastLogWriteMs: expect.any(Number),
+            serverName: 'bertox',
+          },
+        ],
+      },
+      {
+        logs: [
+          {
+            characterName: 'Arias',
+            fileName: 'eqlog_Arias_bertox.txt',
+            lastLogWriteMs: expect.any(Number),
+            serverName: 'bertox',
+          },
+          {
+            characterName: 'Brell',
+            fileName: 'eqlog_Brell_seru.txt',
+            lastLogWriteMs: expect.any(Number),
+            serverName: 'seru',
+          },
+        ],
+      },
+    ])
+  })
+
+  it('refuses an idle-only search while another search is active', async () => {
+    const { broker, fileWatcher, logsDirectory, setFileHandle } = createHarness([
+      'eqlog_Arias_bertox.txt',
+    ])
+    const ariasLog = logsDirectory.getFile('eqlog_Arias_bertox.txt')
+    const doneMessages: LogSearchDoneMessage[] = []
+
+    ariasLog.append("[Sun Jun 14 10:00:00 2026] Arias says, 'Ready.'\n")
+    broker.listen('client.log-search.done', (message) => {
+      doneMessages.push(message.payload as LogSearchDoneMessage)
+    })
+
+    await setFileHandle()
+    await waitFor(() => logsDirectory.valuesCallCount >= 1)
+
+    const firstSearch = await broker.call<{ started: boolean }>(
+      'test.file-watcher',
+      'file-watcher',
+      'startLogSearch',
+      {
+        characterName: 'Arias',
+        endMs: new Date(2026, 5, 14, 11, 0, 0).getTime(),
+        query: 'Ready',
+        searchId: 'active-search',
+        serverName: 'bertox',
+        startMs: new Date(2026, 5, 14, 9, 0, 0).getTime(),
+        startPolicy: 'ifIdle',
+        useRegex: false,
+      },
+    )
+    const overlappingSearch = await broker.call<{ started: boolean }>(
+      'test.file-watcher',
+      'file-watcher',
+      'startLogSearch',
+      {
+        characterName: 'Arias',
+        endMs: new Date(2026, 5, 14, 11, 0, 0).getTime(),
+        query: 'Ready',
+        searchId: 'overlapping-search',
+        serverName: 'bertox',
+        startMs: new Date(2026, 5, 14, 9, 0, 0).getTime(),
+        startPolicy: 'ifIdle',
+        useRegex: false,
+      },
+    )
+
+    await waitFor(() => doneMessages.length === 1)
+    fileWatcher.dispose()
+
+    expect(firstSearch).toEqual({ started: true })
+    expect(overlappingSearch).toEqual({ started: false })
+    expect(doneMessages[0]).toEqual(expect.objectContaining({
+      matchCount: 1,
+      searchId: 'active-search',
+      status: 'complete',
+    }))
   })
 
   it('tails log files as soon as a file handle is set', async () => {
@@ -356,6 +468,7 @@ describe('FileWatcher', () => {
       query: 'Ready',
       searchId: 'search-1',
       serverName: 'bertox',
+      startPolicy: 'replace',
       startMs: new Date(2026, 5, 14, 10, 0, 0).getTime(),
       useRegex: false,
     })
@@ -415,6 +528,7 @@ describe('FileWatcher', () => {
       query: 'Ready',
       searchId: 'search-2',
       serverName: 'bertox',
+      startPolicy: 'replace',
       startMs: new Date(2026, 5, 14, 9, 0, 0).getTime(),
       useRegex: false,
     })
