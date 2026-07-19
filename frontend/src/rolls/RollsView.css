@@ -257,6 +257,10 @@
   font-weight: 600;
 }
 
+.roll-category-roller-repeated {
+  color: #b42318;
+}
+
 .roll-value-pill {
   background: #344054;
   border-radius: 999px;

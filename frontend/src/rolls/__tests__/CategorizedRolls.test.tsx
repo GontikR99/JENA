@@ -26,6 +26,28 @@ describe('CategorizedRolls', () => {
     expect(rows[1]).toHaveTextContent('947Jephian')
     expect(rows[2]).toHaveTextContent('34Darkpeaches')
   })
+
+  it('marks every roll by a repeated character within a card', () => {
+    render(
+      <CategorizedRolls
+        rolls={[
+          createRoll({ id: 'first', value: 34 }),
+          createRoll({ id: 'second', roller: 'darkpeaches', value: 947 }),
+          createRoll({ id: 'other', roller: 'Jephian', value: 500 }),
+        ]}
+      />,
+    )
+
+    expect(screen.getByText('Darkpeaches')).toHaveClass(
+      'roll-category-roller-repeated',
+    )
+    expect(screen.getByText('darkpeaches')).toHaveClass(
+      'roll-category-roller-repeated',
+    )
+    expect(screen.getByText('Jephian')).not.toHaveClass(
+      'roll-category-roller-repeated',
+    )
+  })
 })
 
 function createRoll(overrides: Partial<RollRecord> = {}): RollRecord {
