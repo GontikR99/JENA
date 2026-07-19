@@ -16,7 +16,9 @@ describe('CategorizedRolls', () => {
       />,
     )
 
-    expect(screen.getByRole('heading', { name: '0..1000' })).toBeVisible()
+    const heading = screen.getByRole('heading', { name: '0–1,000' })
+    expect(heading).toBeVisible()
+    expect(heading).toHaveAttribute('title', 'Possible roll range')
     const table = screen.getByRole('table')
     const rows = within(table).getAllByRole('row')
 

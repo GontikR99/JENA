@@ -1,5 +1,8 @@
+import { Dices } from 'lucide-react'
 import type { RollRecord } from './types'
 import { categorizeRolls } from './categorizedRollsModel'
+
+const rollBoundFormatter = new Intl.NumberFormat()
 
 export function CategorizedRolls({ rolls }: { rolls: RollRecord[] }) {
   const categories = categorizeRolls(rolls)
@@ -13,8 +16,12 @@ export function CategorizedRolls({ rolls }: { rolls: RollRecord[] }) {
       {categories.map((category) => (
         <section className="roll-category-card" key={category.key}>
           <header className="roll-category-header">
-            <h2>
-              {category.lowerBound}..{category.upperBound}
+            <h2 className="roll-category-title" title="Possible roll range">
+              <Dices aria-hidden="true" size={17} />
+              <span>
+                {formatRollBound(category.lowerBound)}–
+                {formatRollBound(category.upperBound)}
+              </span>
             </h2>
             <span>
               {category.rolls.length}{' '}
@@ -52,6 +59,10 @@ export function CategorizedRolls({ rolls }: { rolls: RollRecord[] }) {
       ))}
     </div>
   )
+}
+
+function formatRollBound(value: number) {
+  return rollBoundFormatter.format(value)
 }
 
 function getRollTimestampTitle(roll: RollRecord) {

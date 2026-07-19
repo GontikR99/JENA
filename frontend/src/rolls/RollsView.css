@@ -203,6 +203,16 @@
   margin: 0;
 }
 
+.roll-category-title {
+  align-items: center;
+  display: inline-flex;
+  gap: 0.4rem;
+}
+
+.roll-category-title svg {
+  flex: 0 0 auto;
+}
+
 .roll-category-header span {
   color: #667085;
   font-size: 0.75rem;
