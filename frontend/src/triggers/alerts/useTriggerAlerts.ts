@@ -28,6 +28,9 @@ interface TriggerAlertHookOptions {
   decorate?: boolean
 }
 
+const characterSubstitutionPattern =
+  /\$?\{c(?:\.[A-Za-z0-9_]+(?::[^}]*)?)?\}/i
+
 export function useOnTriggerMatch(
   callback: (event: TriggerMatchEvent) => void,
   options: TriggerAlertHookOptions = {},
@@ -220,7 +223,10 @@ function withCharacterPrefix(
   if (text.trim().length === 0 || mode === 'never') {
     return text
   }
-  if (mode === 'if-not-present' && template.includes('{C}')) {
+  if (
+    mode === 'if-not-present' &&
+    characterSubstitutionPattern.test(template)
+  ) {
     return text
   }
 

@@ -458,6 +458,57 @@ describe('useTriggerAlerts', () => {
     expect(event.alert.timerName).toBe('Mesozoic Timer alert')
   })
 
+  it('evaluates lowercase character substitutions separately for each output field', () => {
+    const callback = vi.fn()
+    const trigger = withCanonicalTriggerId({
+      ...testTrigger,
+      actions: {
+        ...testTrigger.actions,
+        display: {
+          enabled: true,
+          text: 'Display alert',
+        },
+        speech: {
+          enabled: true,
+          interrupt: false,
+          text: '{c} Speech alert',
+        },
+      },
+      timer: {
+        durationMs: 10_000,
+        earlyEnders: [],
+        endedAction: null,
+        name: 'Timer alert',
+        startBehavior: 'restart',
+        type: 'countdown',
+        warningAction: null,
+        warningSeconds: 0,
+      },
+    })
+    hookState.includeCharacterNameForTriggerMatches = 'if-not-present'
+    hookState.triggers = [{
+      ...resolvedTrigger,
+      trigger,
+    }]
+
+    renderHook(() => useOnTriggerMatch(callback), { wrapper })
+    emit(
+      'alert.trigger-matched',
+      createTriggerAlert({
+        displayText: 'Display alert',
+        speechText: 'Mesozoic Speech alert',
+        timerName: 'Timer alert',
+        trigger,
+      }),
+    )
+
+    expect(callback).toHaveBeenCalledTimes(1)
+    const event = callback.mock.calls[0]?.[0] as TriggerMatchEvent
+    expect(event.alert.displayText).toBe('[Mesozoic] Display alert')
+    expect(event.alert.speechText).toBe('Mesozoic Speech alert')
+    expect(event.alert.timerName).toBe('[Mesozoic] Timer alert')
+  })
+
   it('accepts subscription broadcasts when an enabled local character is active', () => {
     const callback = vi.fn()
     const alert = createTriggerAlert({
