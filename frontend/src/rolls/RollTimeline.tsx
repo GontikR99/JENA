@@ -1,31 +1,30 @@
 import {
-  useCallback,
   useEffect,
   useId,
   useLayoutEffect,
   useMemo,
   useRef,
   useState,
-  type KeyboardEvent,
-  type MouseEvent,
+  type PointerEvent,
 } from 'react'
-import type { RollRecord } from './types'
+import type { RollRecord, RollTimeRange } from './types'
 import {
+  createTimelineRange,
   createTimelineTicks,
+  getTimelineTimestamp,
   getTimelineY,
+  isTimelineRangeDrag,
   type TimelineTick,
 } from './timelineModel'
 
 const maximumTimelineUpdateIntervalMs = 250
 const minimumTimelineUpdateIntervalMs = 16
 const timelineUpdateDisplacementPx = 0.15
-const cutoffKeyboardStepMs = 15_000
-const rollSnapDistancePx = 6
 
 interface RollTimelineProps {
-  cutoffMs: number | null
   durationMs: number
-  onCutoffChange: (cutoffMs: number | null) => void
+  onRangeChange: (range: RollTimeRange) => void
+  range: RollTimeRange
   rolls: RollRecord[]
 }
 
@@ -34,16 +33,29 @@ interface TimelineSize {
   width: number
 }
 
+interface TimelineDragState {
+  currentY: number
+  durationMs: number
+  isRangeDrag: boolean
+  nowMs: number
+  pointerId: number
+  startClientY: number
+  startY: number
+  timelineHeight: number
+}
+
 export function RollTimeline({
-  cutoffMs,
   durationMs,
-  onCutoffChange,
+  onRangeChange,
+  range,
   rolls,
 }: RollTimelineProps) {
   const [nowMs, setNowMs] = useState(Date.now)
   const [size, setSize] = useState<TimelineSize>({ height: 0, width: 0 })
+  const [draftRange, setDraftRange] = useState<RollTimeRange | null>(null)
+  const dragRef = useRef<TimelineDragState | null>(null)
   const svgRef = useRef<SVGSVGElement | null>(null)
-  const patternId = `roll-cutoff-hatch-${useId().replaceAll(':', '')}`
+  const patternId = `roll-range-hatch-${useId().replaceAll(':', '')}`
 
   useEffect(() => {
     const pixelsPerMs = size.height / durationMs
@@ -121,100 +133,144 @@ export function RollTimeline({
     () => createTimelineTicks(nowMs, durationMs, size.height),
     [durationMs, nowMs, size.height],
   )
-  const cutoffY =
-    cutoffMs === null
-      ? size.height
-      : clamp(
-          getTimelineY(cutoffMs, nowMs, durationMs, size.height),
-          0,
-          size.height,
-        )
-
-  const selectCutoffAtY = useCallback(
-    (pointerY: number) => {
-      if (size.height <= 0 || pointerY >= size.height - 1) {
-        onCutoffChange(null)
-        return
-      }
-
-      const clampedY = clamp(pointerY, 0, size.height)
-      const snappedRoll = getNearestRollAtY(
-        visibleRolls,
-        clampedY,
-        nowMs,
-        durationMs,
-        size.height,
-      )
-      const timestampMs = snappedRoll
-        ? snappedRoll.timestampMs
-        : Math.round(
-            getTimelineTimestamp(
-              clampedY,
-              nowMs,
-              durationMs,
-              size.height,
-            ) / 1000,
-          ) * 1000
-
-      onCutoffChange(clamp(timestampMs, nowMs - durationMs, nowMs))
-    }, [durationMs, nowMs, onCutoffChange, size.height, visibleRolls],
+  const displayedRange = draftRange ?? range
+  const beginY = getRangeBoundaryY(
+    displayedRange.beginMs,
+    size.height,
+    nowMs,
+    durationMs,
+    size.height,
+  )
+  const endY = getRangeBoundaryY(
+    displayedRange.endMs,
+    0,
+    nowMs,
+    durationMs,
+    size.height,
   )
 
-  function handleClick(event: MouseEvent<SVGSVGElement>) {
-    const bounds = event.currentTarget.getBoundingClientRect()
-    selectCutoffAtY(event.clientY - bounds.top)
-  }
-
-  function handleKeyDown(event: KeyboardEvent<SVGSVGElement>) {
-    if (event.key === 'Escape' || event.key === 'End') {
-      event.preventDefault()
-      onCutoffChange(null)
-      return
-    }
-
-    if (event.key === 'Home') {
-      event.preventDefault()
-      onCutoffChange(nowMs)
-      return
-    }
-
-    if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') {
+  function handlePointerDown(event: PointerEvent<SVGSVGElement>) {
+    if (event.button !== 0 || !event.isPrimary || size.height <= 0) {
       return
     }
 
     event.preventDefault()
-    const effectiveCutoffMs = cutoffMs ?? nowMs - durationMs
-    const direction = event.key === 'ArrowUp' ? 1 : -1
-    const nextCutoffMs = clamp(
-      effectiveCutoffMs + direction * cutoffKeyboardStepMs,
-      nowMs - durationMs,
-      nowMs,
-    )
+    const bounds = event.currentTarget.getBoundingClientRect()
+    const startY = getPointerY(event.clientY, bounds, size.height)
 
-    onCutoffChange(
-      nextCutoffMs <= nowMs - durationMs ? null : nextCutoffMs,
+    dragRef.current = {
+      currentY: startY,
+      durationMs,
+      isRangeDrag: false,
+      nowMs,
+      pointerId: event.pointerId,
+      startClientY: event.clientY,
+      startY,
+      timelineHeight: size.height,
+    }
+    event.currentTarget.setPointerCapture(event.pointerId)
+  }
+
+  function handlePointerMove(event: PointerEvent<SVGSVGElement>) {
+    const drag = dragRef.current
+    if (!drag || drag.pointerId !== event.pointerId) {
+      return
+    }
+
+    event.preventDefault()
+    const bounds = event.currentTarget.getBoundingClientRect()
+    const currentY = getPointerY(
+      event.clientY,
+      bounds,
+      drag.timelineHeight,
     )
+    const isRangeDrag =
+      drag.isRangeDrag ||
+      isTimelineRangeDrag(drag.startClientY, event.clientY)
+    const nextDrag = {
+      ...drag,
+      currentY,
+      isRangeDrag,
+    }
+
+    dragRef.current = nextDrag
+    if (isRangeDrag) {
+      setDraftRange(createRangeFromDrag(nextDrag))
+    }
+  }
+
+  function handlePointerUp(event: PointerEvent<SVGSVGElement>) {
+    const drag = dragRef.current
+    if (!drag || drag.pointerId !== event.pointerId) {
+      return
+    }
+
+    event.preventDefault()
+    const bounds = event.currentTarget.getBoundingClientRect()
+    const currentY = getPointerY(
+      event.clientY,
+      bounds,
+      drag.timelineHeight,
+    )
+    const completedDrag = {
+      ...drag,
+      currentY,
+      isRangeDrag:
+        drag.isRangeDrag ||
+        isTimelineRangeDrag(drag.startClientY, event.clientY),
+    }
+
+    onRangeChange(
+      completedDrag.isRangeDrag
+        ? createRangeFromDrag(completedDrag)
+        : {
+            beginMs: getTimelineTimestamp(
+              currentY,
+              completedDrag.nowMs,
+              completedDrag.durationMs,
+              completedDrag.timelineHeight,
+            ),
+            endMs: null,
+          },
+    )
+    clearDrag(event.currentTarget, event.pointerId)
+  }
+
+  function handlePointerCancel(event: PointerEvent<SVGSVGElement>) {
+    if (dragRef.current?.pointerId !== event.pointerId) {
+      return
+    }
+
+    clearDrag(event.currentTarget, event.pointerId)
+  }
+
+  function handleLostPointerCapture(event: PointerEvent<SVGSVGElement>) {
+    if (dragRef.current?.pointerId !== event.pointerId) {
+      return
+    }
+
+    dragRef.current = null
+    setDraftRange(null)
+  }
+
+  function clearDrag(svg: SVGSVGElement, pointerId: number) {
+    dragRef.current = null
+    setDraftRange(null)
+    if (svg.hasPointerCapture(pointerId)) {
+      svg.releasePointerCapture(pointerId)
+    }
   }
 
   return (
     <section className="roll-timeline" aria-label="Roll timeline">
       <svg
-        aria-label="Roll cutoff"
-        aria-orientation="vertical"
-        aria-valuemax={Math.round(nowMs)}
-        aria-valuemin={Math.round(nowMs - durationMs)}
-        aria-valuenow={Math.round(cutoffMs ?? nowMs - durationMs)}
-        aria-valuetext={
-          cutoffMs === null
-            ? 'No cutoff'
-            : `Rolls since ${formatTimelineTime(cutoffMs)}`
-        }
         className="roll-timeline-svg"
-        onClick={handleClick}
-        onKeyDown={handleKeyDown}
+        onLostPointerCapture={handleLostPointerCapture}
+        onPointerCancel={handlePointerCancel}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
         ref={svgRef}
-        role="slider"
-        tabIndex={0}
         viewBox={`0 0 ${size.width || 1} ${size.height || 1}`}
       >
         <defs>
@@ -228,21 +284,32 @@ export function RollTimeline({
             width="12"
           >
             <path
-              className="roll-timeline-cutoff-hatch-line"
+              className="roll-timeline-range-hatch-line"
               d="M-3 12 L12 -3 M6 15 L15 6"
             />
           </pattern>
         </defs>
 
         <g clipPath={`url(#${patternId}-clip)`}>
-          {cutoffY < size.height ? (
+          {displayedRange.endMs !== null && endY > 0 ? (
             <rect
-              className="roll-timeline-cutoff-hatch"
+              className="roll-timeline-range-hatch"
               fill={`url(#${patternId})`}
-              height={size.height - cutoffY}
+              height={endY}
               width={size.width}
               x="0"
-              y={cutoffY}
+              y="0"
+            />
+          ) : null}
+
+          {displayedRange.beginMs !== null && beginY < size.height ? (
+            <rect
+              className="roll-timeline-range-hatch"
+              fill={`url(#${patternId})`}
+              height={size.height - beginY}
+              width={size.width}
+              x="0"
+              y={beginY}
             />
           ) : null}
 
@@ -275,13 +342,23 @@ export function RollTimeline({
             />
           ))}
 
-          {cutoffMs !== null ? (
+          {displayedRange.beginMs !== null ? (
             <line
-              className="roll-timeline-cutoff-line"
+              className="roll-timeline-range-line"
               x1="0"
               x2={size.width}
-              y1={cutoffY}
-              y2={cutoffY}
+              y1={beginY}
+              y2={beginY}
+            />
+          ) : null}
+
+          {displayedRange.endMs !== null ? (
+            <line
+              className="roll-timeline-range-line"
+              x1="0"
+              x2={size.width}
+              y1={endY}
+              y2={endY}
             />
           ) : null}
         </g>
@@ -323,39 +400,42 @@ function TimelineTickMarks({
   )
 }
 
-function getTimelineTimestamp(
-  y: number,
+function getRangeBoundaryY(
+  timestampMs: number | null,
+  defaultY: number,
   nowMs: number,
   durationMs: number,
   height: number,
 ) {
-  return nowMs - (y / height) * durationMs
+  return timestampMs === null
+    ? defaultY
+    : clamp(getTimelineY(timestampMs, nowMs, durationMs, height), 0, height)
 }
 
-function getNearestRollAtY(
-  rolls: RollRecord[],
-  y: number,
-  nowMs: number,
-  durationMs: number,
-  height: number,
+function getPointerY(
+  clientY: number,
+  bounds: DOMRect,
+  timelineHeight: number,
 ) {
-  return rolls.reduce<RollRecord | null>((nearestRoll, roll) => {
-    const distance = Math.abs(
-      getTimelineY(roll.timestampMs, nowMs, durationMs, height) - y,
-    )
-    if (distance > rollSnapDistancePx) {
-      return nearestRoll
-    }
+  if (bounds.height <= 0) {
+    return 0
+  }
 
-    if (!nearestRoll) {
-      return roll
-    }
+  return clamp(
+    ((clientY - bounds.top) / bounds.height) * timelineHeight,
+    0,
+    timelineHeight,
+  )
+}
 
-    const nearestDistance = Math.abs(
-      getTimelineY(nearestRoll.timestampMs, nowMs, durationMs, height) - y,
-    )
-    return distance < nearestDistance ? roll : nearestRoll
-  }, null)
+function createRangeFromDrag(drag: TimelineDragState): RollTimeRange {
+  return createTimelineRange(
+    drag.startY,
+    drag.currentY,
+    drag.nowMs,
+    drag.durationMs,
+    drag.timelineHeight,
+  )
 }
 
 function formatTimelineTime(timestampMs: number) {

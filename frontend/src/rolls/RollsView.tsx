@@ -2,6 +2,7 @@ import { RotateCcw } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { CategorizedRolls } from './CategorizedRolls'
 import { RollTimeline } from './RollTimeline'
+import type { RollTimeRange } from './types'
 import { useRolls } from './useRolls'
 import './RollsView.css'
 
@@ -20,19 +21,16 @@ const durationOptions = [
 export function RollsView() {
   const { rolls } = useRolls()
   const [durationMs, setDurationMs] = useState(10 * minuteMs)
-  const [cutoffMs, setCutoffMs] = useState<number | null>(null)
+  const [range, setRange] = useState<RollTimeRange>({
+    beginMs: null,
+    endMs: null,
+  })
   const [nowMs, setNowMs] = useState(Date.now)
 
   useEffect(() => {
     const intervalId = globalThis.setInterval(() => {
       const nextNowMs = Date.now()
       setNowMs(nextNowMs)
-      setCutoffMs((currentCutoffMs) => {
-        return currentCutoffMs !== null &&
-          currentCutoffMs <= nextNowMs - durationMs
-          ? null
-          : currentCutoffMs
-      })
     }, categorizedClockIntervalMs)
 
     return () => {
@@ -40,23 +38,30 @@ export function RollsView() {
     }
   }, [durationMs])
 
-  const effectiveCutoffMs = cutoffMs ?? nowMs - durationMs
+  const visibleStartMs = nowMs - durationMs
+  const effectiveBeginMs = Math.max(
+    range.beginMs ?? visibleStartMs,
+    visibleStartMs,
+  )
+  const effectiveEndMs = Math.min(range.endMs ?? nowMs, nowMs)
   const visibleRolls = useMemo(
     () =>
-      rolls.filter(
-        (roll) =>
-          roll.timestampMs >= effectiveCutoffMs &&
-          roll.timestampMs <= nowMs,
-      ),
-    [effectiveCutoffMs, nowMs, rolls],
+      effectiveBeginMs <= effectiveEndMs
+        ? rolls.filter(
+            (roll) =>
+              roll.timestampMs >= effectiveBeginMs &&
+              roll.timestampMs <= effectiveEndMs,
+          )
+        : [],
+    [effectiveBeginMs, effectiveEndMs, rolls],
   )
 
   return (
     <div className="rolls-view">
       <RollTimeline
-        cutoffMs={cutoffMs}
         durationMs={durationMs}
-        onCutoffChange={setCutoffMs}
+        onRangeChange={setRange}
+        range={range}
         rolls={rolls}
       />
 
@@ -71,12 +76,6 @@ export function RollsView() {
 
                 setDurationMs(nextDurationMs)
                 setNowMs(nextNowMs)
-                setCutoffMs((currentCutoffMs) => {
-                  return currentCutoffMs !== null &&
-                    currentCutoffMs <= nextNowMs - nextDurationMs
-                    ? null
-                    : currentCutoffMs
-                })
               }}
               value={durationMs}
             >
@@ -93,11 +92,11 @@ export function RollsView() {
           </span>
 
           <button
-            aria-label="Clear roll cutoff"
-            className="rolls-reset-cutoff"
-            disabled={cutoffMs === null}
-            onClick={() => setCutoffMs(null)}
-            title="Clear cutoff"
+            aria-label="Clear roll range"
+            className="rolls-reset-range"
+            disabled={range.beginMs === null && range.endMs === null}
+            onClick={() => setRange({ beginMs: null, endMs: null })}
+            title="Clear range"
             type="button"
           >
             <RotateCcw aria-hidden="true" size={17} />

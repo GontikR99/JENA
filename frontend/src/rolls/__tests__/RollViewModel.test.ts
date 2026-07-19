@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import { categorizeRolls } from '../categorizedRollsModel'
-import { createTimelineTicks, getTimelineY } from '../timelineModel'
+import {
+  createTimelineRange,
+  createTimelineTicks,
+  getTimelineTimestamp,
+  getTimelineY,
+  isTimelineRangeDrag,
+} from '../timelineModel'
 import type { RollRecord } from '../types'
 
 describe('roll view models', () => {
@@ -21,6 +27,24 @@ describe('roll view models', () => {
   it('maps current time to the top and the duration boundary to the bottom', () => {
     expect(getTimelineY(100_000, 100_000, 10_000, 600)).toBe(0)
     expect(getTimelineY(90_000, 100_000, 10_000, 600)).toBe(600)
+    expect(getTimelineTimestamp(150, 100_000, 10_000, 600)).toBe(97_500)
+  })
+
+  it('requires ten vertical pixels before treating a pointer gesture as a range drag', () => {
+    expect(isTimelineRangeDrag(100, 109.99)).toBe(false)
+    expect(isTimelineRangeDrag(100, 110)).toBe(true)
+    expect(isTimelineRangeDrag(100, 90)).toBe(true)
+  })
+
+  it('creates the same absolute range in either drag direction without snapping', () => {
+    expect(createTimelineRange(100.25, 300.75, 100_000, 10_000, 600)).toEqual({
+      beginMs: 94_987.5,
+      endMs: 98_329.16666666667,
+    })
+    expect(createTimelineRange(300.75, 100.25, 100_000, 10_000, 600)).toEqual({
+      beginMs: 94_987.5,
+      endMs: 98_329.16666666667,
+    })
   })
 
   it('reduces labels and quarter-minute ticks for a one-hour ruler', () => {

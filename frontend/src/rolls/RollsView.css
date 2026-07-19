@@ -22,14 +22,12 @@
   height: 100%;
   outline: 0;
   shape-rendering: geometricPrecision;
+  touch-action: none;
+  user-select: none;
   width: 100%;
 }
 
-.roll-timeline-svg:focus-visible {
-  box-shadow: inset 0 0 0 2px #0d6efd;
-}
-
-.roll-timeline-cutoff-hatch-line {
+.roll-timeline-range-hatch-line {
   fill: none;
   stroke: rgba(139, 42, 42, 0.26);
   stroke-width: 1;
@@ -67,7 +65,7 @@
   stroke-width: 3px;
 }
 
-.roll-timeline-cutoff-line {
+.roll-timeline-range-line {
   stroke: #a33a3a;
   stroke-width: 2;
 }
@@ -111,7 +109,7 @@
   font-size: 0.8125rem;
 }
 
-.rolls-reset-cutoff {
+.rolls-reset-range {
   align-items: center;
   background: transparent;
   border: 0;
@@ -124,11 +122,11 @@
   width: 2rem;
 }
 
-.rolls-reset-cutoff:not(:disabled):hover {
+.rolls-reset-range:not(:disabled):hover {
   color: #0d6efd;
 }
 
-.rolls-reset-cutoff:disabled {
+.rolls-reset-range:disabled {
   color: #b6bdc7;
 }
 

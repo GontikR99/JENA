@@ -319,7 +319,7 @@ const unobserve = watcher.observe({
 
 `frontend/src/rolls/RollsProvider.tsx` is always mounted after the worker bridge. It owns a dedicated matcher namespace for EverQuest magic-die lines, retains one hour of in-memory roll history, and fuzzily deduplicates copies of the same roll observed from multiple local character logs. EverQuest wall-clock time controls history and display placement; the worker-local observation timestamp controls 500ms deduplication.
 
-`frontend/src/rolls/RollsView.tsx` presents a fixed-width SVG timeline and categorized roll cards. The timeline covers a selectable five-minute to one-hour range, uses overlapping green strokes to show roll density, and supports an absolute beginning cutoff. The right panel groups all selected rolls into one table per lower/upper bounds pair and sorts each table by descending roll value.
+`frontend/src/rolls/RollsView.tsx` presents a fixed-width SVG timeline and categorized roll cards. The timeline covers a selectable five-minute to one-hour range, uses overlapping green strokes to show roll density, and supports an exact absolute time range selected by clicking or dragging. The right panel groups all selected rolls into one table per lower/upper bounds pair and sorts each table by descending roll value.
 
 `frontend/src/worker/CharacterPresenceService.ts` listens to file-watcher activity and matcher messages, tracks character activity/zone, broadcasts `character-presence.characters`, and reports worker-side presence to the server through `server.character-presence.characters`.
 

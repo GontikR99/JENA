@@ -1,8 +1,12 @@
+import type { RollTimeRange } from './types'
+
 const quarterMinuteMs = 15_000
 const halfMinuteMs = 30_000
 const minuteMs = 60_000
 const minimumMinorTickSpacingPx = 3
 const minimumLabelSpacingPx = 18
+
+export const timelineRangeDragThresholdPx = 10
 
 export interface TimelineTick {
   kind: 'half' | 'minute' | 'quarter'
@@ -65,6 +69,51 @@ export function getTimelineY(
   height: number,
 ) {
   return ((nowMs - timestampMs) / durationMs) * height
+}
+
+export function getTimelineTimestamp(
+  y: number,
+  nowMs: number,
+  durationMs: number,
+  height: number,
+) {
+  return nowMs - (y / height) * durationMs
+}
+
+export function isTimelineRangeDrag(
+  startClientY: number,
+  currentClientY: number,
+) {
+  return (
+    Math.abs(currentClientY - startClientY) >=
+    timelineRangeDragThresholdPx
+  )
+}
+
+export function createTimelineRange(
+  firstY: number,
+  secondY: number,
+  nowMs: number,
+  durationMs: number,
+  height: number,
+): RollTimeRange {
+  const firstTimestampMs = getTimelineTimestamp(
+    firstY,
+    nowMs,
+    durationMs,
+    height,
+  )
+  const secondTimestampMs = getTimelineTimestamp(
+    secondY,
+    nowMs,
+    durationMs,
+    height,
+  )
+
+  return {
+    beginMs: Math.min(firstTimestampMs, secondTimestampMs),
+    endMs: Math.max(firstTimestampMs, secondTimestampMs),
+  }
 }
 
 function getLabelIntervalMinutes(minuteSpacingPx: number) {

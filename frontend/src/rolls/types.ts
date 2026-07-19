@@ -20,6 +20,11 @@ export interface RollRecord {
   value: number
 }
 
+export interface RollTimeRange {
+  beginMs: number | null
+  endMs: number | null
+}
+
 export interface RollCandidate extends RollObservation {
   lowerBound: number
   roller: string
