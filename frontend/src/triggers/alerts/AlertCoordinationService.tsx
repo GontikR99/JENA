@@ -249,17 +249,37 @@ function getAlertPatternBindings({
         }),
       )
     ) {
-      bindings.push({
-        compiledPattern: compileAlertMatcher(trigger.match, sessionId),
-        kind: 'trigger',
-        trigger,
-      })
+      const binding = getTriggerPatternBinding(trigger, sessionId)
+      if (binding) {
+        bindings.push(binding)
+      }
     }
 
     bindings.push(...getTimerEarlyEnderPatternBindings(trigger, sessionId))
   })
 
   return bindings
+}
+
+function getTriggerPatternBinding(
+  trigger: JenaTrigger,
+  sessionId: string,
+): AlertPatternBinding | null {
+  try {
+    return {
+      compiledPattern: compileAlertMatcher(trigger.match, sessionId),
+      kind: 'trigger',
+      trigger,
+    }
+  } catch (error) {
+    console.warn('[AlertCoordinationService] trigger pattern ignored', {
+      error,
+      triggerId: trigger.id,
+      triggerName: trigger.name,
+      triggerPattern: trigger.match.text,
+    })
+    return null
+  }
 }
 
 function isTriggerEnabledForCharacter({

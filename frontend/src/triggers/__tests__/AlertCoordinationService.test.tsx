@@ -234,6 +234,48 @@ describe('AlertCoordinationService', () => {
     )
   })
 
+  it('ignores a malformed trigger without preventing other patterns from registering', async () => {
+    const malformedTrigger = createTrigger({
+      matchText:
+        "a_mechanical_contraption whirs and clicks, 'Processing... Target --> ${1}",
+      name: 'Malformed Trigger',
+    })
+    const validTrigger = createTrigger()
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    hookState.userTriggers = [
+      resolveTrigger(malformedTrigger),
+      resolveTrigger(validTrigger),
+    ]
+
+    try {
+      render(<AlertCoordinationService />)
+      await flushPatternRegistration()
+
+      const registrationCall = getAlertPatternRegistrationCall()
+      expect(registrationCall?.[2]).toEqual({
+        namespace: 'alerts',
+        patterns: [
+          expect.objectContaining({
+            pattern: expect.stringContaining('Boss casts'),
+          }),
+        ],
+      })
+      expect(warn).toHaveBeenCalledWith(
+        '[AlertCoordinationService] trigger pattern ignored',
+        expect.objectContaining({
+          error: expect.objectContaining({
+            message: 'Unknown trigger capture reference "1".',
+          }),
+          triggerId: malformedTrigger.id,
+          triggerName: 'Malformed Trigger',
+          triggerPattern: malformedTrigger.match.text,
+        }),
+      )
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
   it('registers early enders for disabled triggers', async () => {
     const trigger = createTriggerWithEarlyEnder()
     hookState.userTriggers = [
