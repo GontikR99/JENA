@@ -235,6 +235,32 @@ describe('AlertCoordinationService', () => {
     )
   })
 
+  it('registers patterns before an inactive local character receives its first line', async () => {
+    const trigger = createTrigger()
+    hookState.localCharacters = [
+      {
+        active: false,
+        characterName: 'Mesozoic',
+        lastLogWriteMs: 1,
+        serverName: 'Bristlebane',
+        zone: '',
+      },
+    ]
+    hookState.userTriggers = [resolveTrigger(trigger)]
+
+    render(<AlertCoordinationService />)
+    await flushPatternRegistration()
+
+    expect(getAlertPatternRegistrationCall()?.[2]).toEqual({
+      namespace: 'alerts',
+      patterns: [
+        expect.objectContaining({
+          pattern: expect.stringContaining('Boss casts'),
+        }),
+      ],
+    })
+  })
+
   it('ignores a malformed trigger without preventing other patterns from registering', async () => {
     const malformedTrigger = createTrigger({
       matchText:

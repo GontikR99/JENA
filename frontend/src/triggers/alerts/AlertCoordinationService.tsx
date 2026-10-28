@@ -62,10 +62,10 @@ export function AlertCoordinationService() {
   const lastAlertBindingSignatureRef = useRef('')
   const localCharactersRef = useRef<CharacterPresence[]>([])
   const triggerCountersRef = useRef(new Map<string, number>())
-  const activeLocalCharacters = useMemo(
+  const availableLocalCharacters = useMemo(
     () =>
       localCharacters
-        .filter((character) => character.active)
+        .filter((character) => character.lastLogWriteMs > 0)
         .map(characterPresenceToTriggerCharacter),
     [localCharacters],
   )
@@ -81,7 +81,7 @@ export function AlertCoordinationService() {
   const replaceAlertPatterns = useCallback(() => {
     patternFlushTimerRef.current = null
     const bindings = getAlertPatternBindings({
-      activeLocalCharacters,
+      availableLocalCharacters,
       getSubscribedTriggerAlertRegistrations,
       getUserTriggerAlertRegistration,
       sessionId: sessionIdRef.current,
@@ -106,7 +106,7 @@ export function AlertCoordinationService() {
       })
     })
   }, [
-    activeLocalCharacters,
+    availableLocalCharacters,
     call,
     getSubscribedTriggerAlertRegistrations,
     getUserTriggerAlertRegistration,
@@ -218,13 +218,13 @@ export function AlertCoordinationService() {
 }
 
 function getAlertPatternBindings({
-  activeLocalCharacters,
+  availableLocalCharacters,
   getSubscribedTriggerAlertRegistrations,
   getUserTriggerAlertRegistration,
   sessionId,
   triggers,
 }: {
-  activeLocalCharacters: JenaCharacterServer[]
+  availableLocalCharacters: JenaCharacterServer[]
   getSubscribedTriggerAlertRegistrations: (
     triggerId: string,
     character: JenaCharacterServer,
@@ -240,7 +240,7 @@ function getAlertPatternBindings({
 
   triggers.forEach((trigger) => {
     if (
-      activeLocalCharacters.some((character) =>
+      availableLocalCharacters.some((character) =>
         isTriggerEnabledForCharacter({
           character,
           getSubscribedTriggerAlertRegistrations,
