@@ -182,7 +182,7 @@ describe('broadcast timer runtime integration', () => {
     hookState.triggers = [resolveTrigger(trigger)]
   })
 
-  it('starts a timer from a broadcast trigger and stops it from a matching broadcast early ender', () => {
+  it('starts a timer from a broadcast trigger and stops it with differently capitalized captures', () => {
     renderHarness()
 
     act(() => {
@@ -222,7 +222,7 @@ describe('broadcast timer runtime integration', () => {
         alert: createEarlyEnderAlert({
           matchCaptures: createCaptureSnapshot({
             capturesByKey: {
-              S: 'Viral Decay',
+              S: 'vIRAL dECAY',
             },
           }),
         }),
@@ -272,7 +272,7 @@ describe('broadcast timer runtime integration', () => {
           characterName: 'Jephine',
           matchCaptures: createCaptureSnapshot({
             capturesByKey: {
-              S: 'Mask Click',
+              S: 'MASK CLICK',
             },
           }),
         }),

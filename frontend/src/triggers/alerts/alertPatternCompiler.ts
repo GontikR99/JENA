@@ -550,16 +550,16 @@ function resolveOriginalCaptureReference(
     return null
   }
 
-  const pattern = getCaseInsensitiveMapValue(
+  const entry = getCaseInsensitiveMapEntry(
     originalCapturePatterns.namedCaptures,
     normalized,
   )
 
-  return pattern
+  return entry?.[1]
     ? {
         kind: 'named',
-        name: normalized,
-        pattern,
+        name: entry[0],
+        pattern: entry[1],
       }
     : null
 }
@@ -573,17 +573,17 @@ function isCaptureReferenceName(value: string) {
   return /^[A-Za-z_][A-Za-z0-9_]*$/.test(value)
 }
 
-function getCaseInsensitiveMapValue(map: Map<string, string>, key: string) {
+function getCaseInsensitiveMapEntry(map: Map<string, string>, key: string) {
   const direct = map.get(key)
   if (direct !== undefined) {
-    return direct
+    return [key, direct] as const
   }
 
   return [...map.entries()].find(([candidateKey]) => {
     return candidateKey.localeCompare(key, undefined, {
       sensitivity: 'base',
     }) === 0
-  })?.[1]
+  })
 }
 
 function parseNumberToken(content: string): TokenParseResult | null {

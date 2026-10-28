@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { RegexMatchFoundMessage } from '../../shared/messages'
+import { matchPattern } from '../../test/matchPattern'
 import {
   compileAlertMatcher,
   compileTimerEarlyEnderMatcher,
@@ -272,6 +273,40 @@ describe('alert pattern compiler', () => {
     ])
   })
 
+  it('resolves differently capitalized early ender references to the declared capture names', () => {
+    const compiled = compileTimerEarlyEnderMatcher({
+      earlyEnder: {
+        isRegex: true,
+        text: '^--${PLAYER} has looted ${ITEM}--$',
+      },
+      sessionId: 'case-test',
+      triggerMatcher: {
+        isRegex: true,
+        text: '^A (?<item>.+) was given to (?<player>[A-Za-z]+)[.]$',
+      },
+    })
+    const context = createAlertMatchContext(
+      compiled,
+      runPattern(compiled, '--ALICE HAS LOOTED Fine Sword--', 'Alice'),
+    )
+
+    expect(context?.namedCaptures).toEqual({ player: 'ALICE', item: 'Fine Sword' })
+  })
+
+  it('prefers an exact capture name when names differ only by case', () => {
+    const compiled = compileTimerEarlyEnderMatcher({
+      earlyEnder: { isRegex: true, text: '^${Player}$' },
+      sessionId: 'case-test',
+      triggerMatcher: { isRegex: true, text: '(?<player>Lower) (?<Player>Upper)' },
+    })
+    const context = createAlertMatchContext(
+      compiled,
+      runPattern(compiled, 'UPPER', 'Alice'),
+    )
+
+    expect(context?.namedCaptures).toEqual({ Player: 'UPPER' })
+  })
+
   it('rejects unknown early ender trigger capture references', () => {
     expect(() =>
       compileTimerEarlyEnderMatcher({
@@ -294,8 +329,7 @@ function runPattern(
   text: string,
   characterName: string,
 ): RegexMatchFoundMessage {
-  const regex = new RegExp(compiled.pattern, 'i')
-  const match = regex.exec(text)
+  const match = matchPattern(compiled.pattern, text)
 
   if (!match) {
     throw new Error(`Pattern did not match: ${compiled.pattern}`)

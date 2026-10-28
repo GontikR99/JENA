@@ -11,6 +11,7 @@ import type {
 } from '../shared/messages'
 import { getDependency, type Deps } from './di'
 import { MessageBroker } from './MessageBroker'
+import { compileJavaScriptPattern } from '../shared/regexValidation'
 
 const directoryScanIntervalMs = 1_000
 const tailIntervalMs = 100
@@ -1052,7 +1053,7 @@ function createLogSearchMatcher(query: string, useRegex: boolean) {
   }
 
   if (useRegex) {
-    const regex = new RegExp(query, 'i')
+    const regex = compileJavaScriptPattern(query)
     return (text: string) => regex.test(text)
   }
 

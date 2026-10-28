@@ -151,6 +151,26 @@ describe('Pip', () => {
     expect(screen.getAllByText('AE Timer')).toHaveLength(1)
   })
 
+  it('restarts timers with names differing only by case', () => {
+    renderPip()
+
+    act(() => {
+      emitTriggerMatch({
+        timer: createTimer({ startBehavior: 'restartMatchingTimerName' }),
+        timerName: 'AE Timer',
+      })
+    })
+    act(() => {
+      emitTriggerMatch({
+        timer: createTimer({ startBehavior: 'restartMatchingTimerName' }),
+        timerName: 'ae TIMER',
+      })
+    })
+
+    expect(screen.getByText('ae TIMER')).toBeInTheDocument()
+    expect(screen.queryByText('AE Timer')).not.toBeInTheDocument()
+  })
+
   it('removes countdown timers when they complete', () => {
     renderPip()
 
@@ -276,7 +296,7 @@ describe('Pip', () => {
     expect(screen.queryByText('[Mesozoic] Endable Timer')).not.toBeInTheDocument()
   })
 
-  it('removes timers when early ender captures match the original trigger captures', () => {
+  it('removes timers when early ender captures differ only by case', () => {
     renderPip()
 
     act(() => {
@@ -301,12 +321,12 @@ describe('Pip', () => {
       emitTimerEarlyEnder({
         matchCaptures: createCaptureSnapshot({
           capturesByKey: {
-            S: 'Viral Decay',
+            S: 'viral decay',
           },
           namedCaptures: {
-            effect: 'Viral Decay',
+            effect: 'VIRAL DECAY',
           },
-          positionalCaptures: ['Viral Decay'],
+          positionalCaptures: ['vIRAL dECAY'],
         }),
       })
     })
@@ -314,7 +334,12 @@ describe('Pip', () => {
     expect(screen.queryByText('Captured Timer')).not.toBeInTheDocument()
   })
 
-  it('keeps timers when early ender captures differ from the original trigger captures', () => {
+  it.each([
+    { capturesByKey: { S: 'Mana Drain' } },
+    { namedCaptures: { effect: 'Mana Drain' } },
+    { positionalCaptures: ['Mana Drain'] },
+    { capturesByKey: { S: 'Viral Décay' } },
+  ])('keeps timers when early ender capture values differ: %j', (constraints) => {
     renderPip()
 
     act(() => {
@@ -323,6 +348,8 @@ describe('Pip', () => {
           capturesByKey: {
             S: 'Viral Decay',
           },
+          namedCaptures: { effect: 'Viral Decay' },
+          positionalCaptures: ['Viral Decay'],
         }),
         timer: createTimer({ startBehavior: 'restart' }),
         timerName: 'Captured Timer',
@@ -333,18 +360,20 @@ describe('Pip', () => {
 
     act(() => {
       emitTimerEarlyEnder({
-        matchCaptures: createCaptureSnapshot({
-          capturesByKey: {
-            S: 'Mana Drain',
-          },
-        }),
+        matchCaptures: createCaptureSnapshot(constraints),
       })
     })
 
     expect(screen.getByText('Captured Timer')).toBeInTheDocument()
   })
 
-  it('keeps timers when early ender captures are missing from the original trigger captures', () => {
+  it.each([
+    { capturesByKey: { S: 'Viral Decay' } },
+    { capturesByKey: { S: '' } },
+    { namedCaptures: { effect: '' } },
+    { positionalCaptures: [''] },
+    { positionalCaptures: [''], positionalCaptureIndexes: [2] },
+  ])('keeps timers when early ender captures are missing: %j', (constraints) => {
     renderPip()
 
     act(() => {
@@ -359,18 +388,14 @@ describe('Pip', () => {
 
     act(() => {
       emitTimerEarlyEnder({
-        matchCaptures: createCaptureSnapshot({
-          capturesByKey: {
-            S: 'Viral Decay',
-          },
-        }),
+        matchCaptures: createCaptureSnapshot(constraints),
       })
     })
 
     expect(screen.getByText('Captured Timer')).toBeInTheDocument()
   })
 
-  it('uses positional capture indexes when matching early enders to timers', () => {
+  it('uses positional capture indexes and ignores case when matching early enders to timers', () => {
     renderPip()
 
     act(() => {
@@ -389,7 +414,7 @@ describe('Pip', () => {
       emitTimerEarlyEnder({
         matchCaptures: createCaptureSnapshot({
           positionalCaptureIndexes: [2],
-          positionalCaptures: ['Succor'],
+          positionalCaptures: ['sUCCOR'],
         }),
       })
     })

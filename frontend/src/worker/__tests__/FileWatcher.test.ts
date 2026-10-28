@@ -441,6 +441,49 @@ describe('FileWatcher', () => {
     expect(logsDirectory.valuesCallCount).toBe(valuesCallCountAfterClear)
   })
 
+  it.each([
+    { query: 'Ready', useRegex: false, expected: ['READY', 'Ready', 'ready'] },
+    { query: '^Ready$', useRegex: true, expected: ['READY', 'Ready', 'ready'] },
+    { query: '(?-i)^Ready$', useRegex: true, expected: ['Ready'] },
+  ])('searches with case defaults and overrides: $query', async ({ query, useRegex, expected }) => {
+    const { broker, fileWatcher, logsDirectory, setFileHandle } = createHarness([
+      'eqlog_Arias_bertox.txt',
+    ])
+    const matches: LogSearchMatchMessage[] = []
+    const done: LogSearchDoneMessage[] = []
+    broker.listen('client.log-search.match-found', ({ payload }) => {
+      matches.push(payload as LogSearchMatchMessage)
+    })
+    broker.listen('client.log-search.done', ({ payload }) => {
+      done.push(payload as LogSearchDoneMessage)
+    })
+    logsDirectory.getFile('eqlog_Arias_bertox.txt').append(
+      ['READY', 'Ready', 'ready', 'Waiting'].map((text, index) =>
+        `[Sun Jun 14 10:00:0${index} 2026] ${text}\n`,
+      ).join(''),
+    )
+
+    try {
+      await setFileHandle()
+      await waitFor(async () => (await getCharacters(broker)).characters.length === 1)
+      await broker.call('test.file-watcher', 'file-watcher', 'startLogSearch', {
+        characterName: 'Arias',
+        endMs: new Date(2026, 5, 14, 11, 0, 0).getTime(),
+        query,
+        searchId: 'case-search',
+        serverName: 'bertox',
+        startPolicy: 'replace',
+        startMs: new Date(2026, 5, 14, 10, 0, 0).getTime(),
+        useRegex,
+      })
+      await waitFor(() => done.length === 1)
+      expect(done[0]).toMatchObject({ status: 'complete', matchCount: expected.length })
+      expect(matches.map((match) => match.text)).toEqual(expected)
+    } finally {
+      fileWatcher.dispose()
+    }
+  })
+
   it('logs search failures before reporting the failed search', async () => {
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
     const { broker, fileWatcher, logsDirectory, setFileHandle } = createHarness([

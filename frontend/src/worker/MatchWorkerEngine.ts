@@ -1,4 +1,4 @@
-import { RE2Set, type RE2JS } from 're2js'
+import { RE2JS, RE2Set } from 're2js'
 import type {
   RegexCaptures,
   RegexPatternRegistration,
@@ -241,7 +241,7 @@ function compilePatternSet(
     }
   }
 
-  const set = new RE2Set()
+  const set = new RE2Set(RE2Set.UNANCHORED, RE2JS.CASE_INSENSITIVE)
   const patternsBySetIndex: Re2PatternRegistration[] = []
 
   registrations.forEach((registration) => {

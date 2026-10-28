@@ -4,6 +4,7 @@ import { render } from '@testing-library/react'
 import { act } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { RegexMatchFoundMessage } from '../../shared/messages'
+import { matchPattern } from '../../test/matchPattern'
 import {
   createEmptyTrigger,
   withCanonicalTriggerId,
@@ -487,13 +488,13 @@ function createEarlyEnderMatch(
         return false
       }
 
-      return new RegExp(registration.pattern, 'i').test(text)
+      return matchPattern(registration.pattern, text) !== null
     },
   )?.pattern
   if (typeof pattern !== 'string') {
     throw new Error('Early ender pattern was not registered')
   }
-  const match = new RegExp(pattern, 'i').exec(text)
+  const match = matchPattern(pattern, text)
   if (!match) {
     throw new Error(`Pattern did not match: ${pattern}`)
   }
@@ -523,7 +524,7 @@ function createMatch(): RegexMatchFoundMessage {
     throw new Error('Trigger pattern was not registered')
   }
   const text = 'Boss casts Fireball on Mesozoic'
-  const match = new RegExp(pattern, 'i').exec(text)
+  const match = matchPattern(pattern, text)
   if (!match) {
     throw new Error(`Pattern did not match: ${pattern}`)
   }

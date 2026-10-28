@@ -2,12 +2,32 @@
 
 JENA trigger text can be either literal text or a regular expression.
 
+Trigger patterns and timer early-ender patterns are case-insensitive by default.
+For example, `The Master Raises His Sword` matches `The Master raises his sword`.
+Captured text retains its original capitalization for display, speech, and other
+output actions.
+
 When a trigger matcher is not marked as a regular expression, JENA treats the
 entire matcher as literal text. Regular expression metacharacters and
-GINA-style brace variables are escaped and matched exactly.
+GINA-style brace variables are escaped and matched literally, ignoring case.
 
 When a trigger matcher is marked as a regular expression, JENA supports the
 GINA/EQLogParser-style brace variables below.
+
+Regex patterns can explicitly override case handling: `(?-i)ExactCase` requires
+matching capitalization, while `(?i)` enables case-insensitive matching. RE2 also
+supports scoped overrides such as `Boss (?-i:ExactCase)`. These overrides apply
+to regex early enders as well. The JavaScript fallback and regex log search
+support leading `i`, `m`, and `s` flag groups, including disabling flags with `-`.
+Other modifier syntax requires support from the selected regex engine; unsupported
+syntax produces a validation error.
+
+After an early ender matches, its captured values are compared case-insensitively
+with the active timer's original captures. This includes GINA variables, named
+captures, and positional captures. Named references such as `${PLAYER}` resolve
+to the declared capture name, such as `player`; an exact name takes precedence
+when multiple names differ only by case. Missing or different capture values
+do not end a timer. The "restart matching timer name" behavior also ignores case.
 
 ## Pattern Variables
 

@@ -412,7 +412,9 @@ function findTimerIndex(
   }
 
   if (timer.startBehavior === 'restartMatchingTimerName') {
-    return timers.findIndex((runtimeTimer) => runtimeTimer.timerName === timerName)
+    return timers.findIndex((runtimeTimer) =>
+      isSameText(runtimeTimer.timerName, timerName),
+    )
   }
 
   return timers.findIndex(
@@ -442,8 +444,11 @@ function doesEarlyEnderMatchTimer(
   )
 }
 
-function isSameText(left: string, right: string) {
-  return left.localeCompare(right, undefined, { sensitivity: 'accent' }) === 0
+function isSameText(left: string | undefined, right: string) {
+  return (
+    typeof left === 'string' &&
+    left.localeCompare(right, undefined, { sensitivity: 'accent' }) === 0
+  )
 }
 
 function doCaptureConstraintsMatchTimer(
@@ -466,7 +471,7 @@ function doRecordConstraintsMatch(
   timerCaptures: Record<string, string>,
 ) {
   return Object.entries(constraints).every(([key, value]) => {
-    return timerCaptures[key] === value
+    return isSameText(timerCaptures[key], value)
   })
 }
 
@@ -480,12 +485,14 @@ function doPositionalConstraintsMatch(
       const captureIndex = constraintIndexes[index]
       return (
         typeof captureIndex === 'number' &&
-        timerCaptures[captureIndex - 1] === value
+        isSameText(timerCaptures[captureIndex - 1], value)
       )
     })
   }
 
-  return constraints.every((value, index) => timerCaptures[index] === value)
+  return constraints.every((value, index) =>
+    isSameText(timerCaptures[index], value),
+  )
 }
 
 function getAlertCaptureSnapshot(
